@@ -62,9 +62,10 @@ Start all services:
 # Terminal 1 — Redis
 redis-server
 
-# Terminal 2 — Celery worker
+# Terminal 2 — Celery worker (auto-restarts on .py file changes)
 source .venv/bin/activate
-celery -A leafletter worker -l info
+watchmedo auto-restart --directory=. --pattern='*.py' --recursive -- \
+  celery -A leafletter worker -l info
 
 # Terminal 3 — Django dev server
 source .venv/bin/activate
@@ -78,6 +79,45 @@ python manage.py runserver
   - Use the **Publish** action to publish and trigger OSM street import
   - Wait for `map_status` to become **Ready**
 - `/c/<slug>/` — Worker map view; tap streets, log trips
+
+## Debugging Celery tasks
+
+Task results are stored in MySQL via `django-celery-results` and visible in Django Admin at:
+
+```
+/admin/django_celery_results/taskresult/
+```
+
+Each row shows the task name, status (`SUCCESS` / `FAILURE` / `PENDING`), arguments, return value, and full traceback on failure.
+
+**Useful patterns:**
+
+Run a task synchronously in a shell (bypasses Celery/Redis entirely):
+
+```bash
+source .venv/bin/activate
+python manage.py shell
+```
+
+```python
+from campaigns.tasks import fetch_osm_segments
+fetch_osm_segments(campaign_id=1)   # runs inline, prints log output
+```
+
+Trigger a task and inspect its result:
+
+```python
+result = fetch_osm_segments.delay(1)
+print(result.status)   # PENDING / SUCCESS / FAILURE
+print(result.result)   # return value or exception
+```
+
+Run the Celery worker with verbose logging to see tasks execute in real time:
+
+```bash
+watchmedo auto-restart --directory=. --pattern='*.py' --recursive -- \
+  celery -A leafletter worker -l debug
+```
 
 ## URLs
 

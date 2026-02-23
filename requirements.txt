@@ -3,3 +3,5 @@ mysqlclient
 django[argon2]
 celery[redis]
 requests
+django-celery-results
+watchdog

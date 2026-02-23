@@ -28,9 +28,13 @@ class CampaignAdmin(admin.ModelAdmin):
     list_display = ('name', 'slug', 'status', 'map_status_badge', 'start_date', 'end_date')
     list_filter = ('status', 'map_status')
     search_fields = ('name', 'slug')
-    prepopulated_fields = {'slug': ('name',)}
     actions = ['publish_campaigns', 'soft_delete_campaigns']
     inlines = [TripInline]
+
+    def get_prepopulated_fields(self, request, obj=None):
+        if obj and obj.status == 'published':
+            return {}
+        return {'slug': ('name',)}
 
     def get_readonly_fields(self, request, obj=None):
         if obj and obj.status == 'published':
