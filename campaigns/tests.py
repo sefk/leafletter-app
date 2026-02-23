@@ -534,13 +534,13 @@ class CampaignAdminTest(TestCase):
         self.assertIn(active.pk, pks)
         self.assertNotIn(deleted.pk, pks)
 
-    def test_readonly_fields_includes_slug_and_cities_for_published(self):
+    def test_readonly_fields_includes_slug_for_published(self):
         c = make_campaign(slug='pub-ro', status='published')
         readonly = self.ma.get_readonly_fields(self.request, obj=c)
         self.assertIn('slug', readonly)
-        self.assertIn('cities', readonly)
+        self.assertNotIn('cities', readonly)  # cities is editable on published campaigns
 
-    def test_readonly_fields_excludes_slug_and_cities_for_draft(self):
+    def test_readonly_fields_excludes_slug_for_draft(self):
         c = make_campaign(slug='draft-ro', status='draft')
         readonly = self.ma.get_readonly_fields(self.request, obj=c)
         self.assertNotIn('slug', readonly)
@@ -581,6 +581,90 @@ class CampaignAdminTest(TestCase):
     def test_publish_action_skips_deleted_campaigns(self, mock_task):
         c = make_campaign(slug='skip-deleted', status='deleted')
         self.ma.publish_campaigns(self.request, Campaign.objects.filter(pk=c.pk))
+        mock_task.delay.assert_not_called()
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_response_change_publish_button_sets_published_and_queues_task(self, mock_task):
+        c = make_campaign(slug='btn-pub', status='draft')
+        request = make_admin_request('post')
+        request.POST = {'_publish': '1'}
+        self.ma.response_change(request, c)
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'published')
+        self.assertEqual(c.map_status, 'pending')
+        mock_task.delay.assert_called_once_with(c.pk)
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_does_not_queue_task_when_publish_button_used(self, mock_task):
+        """Prevents double-triggering when Publish button submitted."""
+        c = make_campaign(slug='no-double', status='draft')
+        c.status = 'published'
+        request = make_admin_request('post')
+        request.POST = {'_publish': '1'}
+        form = MagicMock()
+        self.ma.save_model(request, c, form, change=True)
+        mock_task.delay.assert_not_called()
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_queues_task_when_creating_published_campaign(self, mock_task):
+        form = MagicMock()
+        c = Campaign(name='New Camp', slug='new-camp', goal='g', cities=['x'], status='published')
+        self.ma.save_model(self.request, c, form, change=False)
+        mock_task.delay.assert_called_once_with(c.pk)
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_does_not_queue_task_for_draft_on_create(self, mock_task):
+        form = MagicMock()
+        c = Campaign(name='Draft Camp', slug='draft-new', goal='g', cities=['x'], status='draft')
+        self.ma.save_model(self.request, c, form, change=False)
+        mock_task.delay.assert_not_called()
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_queues_task_when_editing_draft_to_published(self, mock_task):
+        c = make_campaign(slug='edit-to-pub', status='draft')
+        c.status = 'published'
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
+        mock_task.delay.assert_called_once_with(c.pk)
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_does_not_requeue_task_for_already_published(self, mock_task):
+        c = make_campaign(slug='already-pub', status='published')
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
+        mock_task.delay.assert_not_called()
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_requeues_task_when_cities_change_on_published(self, mock_task):
+        c = make_campaign(slug='cities-change', status='published', cities=['Palo Alto'])
+        c.cities = ['Palo Alto', 'Menlo Park']
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
+        mock_task.delay.assert_called_once_with(c.pk)
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_resets_map_status_to_pending_when_cities_change(self, mock_task):
+        c = make_campaign(slug='cities-pending', status='published', cities=['Palo Alto'])
+        c.cities = ['Menlo Park']
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
+        c.refresh_from_db()
+        self.assertEqual(c.map_status, 'pending')
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_does_not_requeue_when_cities_unchanged(self, mock_task):
+        c = make_campaign(slug='cities-same', status='published', cities=['Palo Alto'])
+        c.cities = ['Palo Alto']  # same value
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
+        mock_task.delay.assert_not_called()
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_save_model_does_not_requeue_cities_change_on_draft(self, mock_task):
+        c = make_campaign(slug='cities-draft', status='draft', cities=['Palo Alto'])
+        c.cities = ['Menlo Park']
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
         mock_task.delay.assert_not_called()
 
     def test_soft_delete_action_marks_all_as_deleted(self):

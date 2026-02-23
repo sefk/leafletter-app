@@ -1,0 +1,12 @@
+{% extends "admin/change_form.html" %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  {% if original and original.status != 'published' and original.status != 'deleted' %}
+    <div class="submit-row">
+      <input type="submit" name="_publish" value="Publish Campaign"
+             style="background:#1a6b3c;color:#fff;padding:10px 15px;
+                    border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:bold;">
+    </div>
+  {% endif %}
+{% endblock %}

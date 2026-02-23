@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.http import HttpResponseRedirect
 from django.utils.html import format_html
 from django.utils.text import slugify
 
@@ -38,7 +39,7 @@ class CampaignAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         if obj and obj.status == 'published':
-            return ('slug', 'cities', 'map_status_badge', 'status')
+            return ('slug', 'map_status_badge', 'status')
         return ('map_status_badge',)
 
     def get_fields(self, request, obj=None):
@@ -61,10 +62,38 @@ class CampaignAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         if not change:
-            # Auto-generate slug from name if not set
             if not obj.slug:
                 obj.slug = slugify(obj.name)
-        super().save_model(request, obj, form, change)
+            super().save_model(request, obj, form, change)
+            if obj.status == 'published':
+                fetch_osm_segments.delay(obj.pk)
+            return
+
+        # For edits, detect transitions that require a re-fetch.
+        # Skip if the Publish button was clicked — response_change handles that.
+        if '_publish' not in request.POST:
+            old = Campaign.objects.get(pk=obj.pk)
+            super().save_model(request, obj, form, change)
+            transitioning_to_published = obj.status == 'published' and old.status != 'published'
+            cities_changed = obj.status == 'published' and obj.cities != old.cities
+            if transitioning_to_published or cities_changed:
+                obj.map_status = 'pending'
+                obj.save(update_fields=['map_status'])
+                fetch_osm_segments.delay(obj.pk)
+                if cities_changed:
+                    self.message_user(request, 'Cities updated — OSM street fetch re-queued.')
+        else:
+            super().save_model(request, obj, form, change)
+
+    def response_change(self, request, obj):
+        if '_publish' in request.POST:
+            obj.status = 'published'
+            obj.map_status = 'pending'
+            obj.save(update_fields=['status', 'map_status'])
+            fetch_osm_segments.delay(obj.pk)
+            self.message_user(request, f'"{obj}" published and OSM street fetch queued.')
+            return HttpResponseRedirect(request.path)
+        return super().response_change(request, obj)
 
     def delete_model(self, request, obj):
         # Soft delete
