@@ -2,6 +2,44 @@
 
 A web app for coordinating volunteer leafletting campaigns.
 
+## Current State
+
+### What's built
+A working MVP. Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap streets to select them, and submit a trip. Campaign managers use Django Admin to create campaigns, publish them (triggering a background OSM street import), and monitor coverage.
+
+### Tech stack
+
+| Layer | Choice |
+|---|---|
+| Web framework | Django 5+ / GeoDjango |
+| Database | MySQL 8.0+ with spatial support |
+| DB driver | `mysqlclient` |
+| Spatial backend | `django.contrib.gis.db.backends.mysql` |
+| Background tasks | Celery + Redis |
+| Task results/debugging | `django-celery-results` (stores in MySQL, visible in admin) |
+| File watching | `watchdog` / `watchmedo` (auto-restarts Celery worker) |
+| Frontend map | Leaflet.js via CDN |
+| OSM data | Overpass API via `requests` |
+
+### Key decisions and constraints
+- **MySQL** (not PostgreSQL) — GeoDjango spatial backend via `django.contrib.gis.db.backends.mysql`
+- **Coverage GeoJSON returns individual features** — MySQL doesn't support spatial union aggregates, so covered streets are returned as individual GeoJSON features rather than a merged geometry
+- **Soft delete** on Campaign — sets `status='deleted'`, never removes rows
+- **Cities are editable on published campaigns** — editing triggers a fresh OSM fetch and resets `map_status` to pending
+- **Task trigger in `save_model` and `response_change`** — publishing via the status dropdown, the Publish button, or the bulk action all queue an OSM fetch
+- **79 tests** covering models, all views, the Overpass task, and admin behaviour
+
+### Known gaps (see TODO.md)
+1. City search is name-only — ambiguous for common city names
+2. Worker map doesn't enforce a bounding box or minimum zoom
+3. Trip selection is whole-street, not block-level
+4. Trip UX is basic (no lasso, no undo)
+5. Bug: multiple trips may overwrite each other
+6. Landing page redirects to admin login instead of a public campaign list
+7. No purpose-built campaign manager UI — managers use raw Django Admin
+
+---
+
 ## Stack
 
 - Django 5+ with GeoDjango (spatial fields)
