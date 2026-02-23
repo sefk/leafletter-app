@@ -1,0 +1,595 @@
+"""
+Tests for the campaigns app.
+
+Run with:
+    python manage.py test campaigns
+"""
+import json
+import uuid
+from unittest.mock import MagicMock, patch
+
+from django.contrib import admin as django_admin
+from django.contrib.gis.geos import LineString
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.db import IntegrityError
+from django.test import Client, RequestFactory, TestCase
+
+from .admin import CampaignAdmin, MAP_STATUS_COLORS
+from .models import Campaign, Street, Trip
+from .tasks import fetch_osm_segments, query_overpass
+
+# ── Shared test geometry ──────────────────────────────────────────────────────
+
+GEOM = LineString((-122.1, 37.4), (-122.15, 37.45), srid=4326)
+GEOM2 = LineString((-122.2, 37.5), (-122.25, 37.55), srid=4326)
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+def make_campaign(slug='test-campaign', status='published', **kwargs):
+    defaults = dict(
+        name='Test Campaign',
+        slug=slug,
+        goal='Get out the vote',
+        cities=['Palo Alto'],
+        status=status,
+    )
+    defaults.update(kwargs)
+    return Campaign.objects.create(**defaults)
+
+
+def make_street(campaign, osm_id=1001, name='Main St', geometry=None):
+    return Street.objects.create(
+        campaign=campaign,
+        osm_id=osm_id,
+        name=name,
+        geometry=geometry or GEOM,
+    )
+
+
+def make_trip(campaign, streets=None, worker_name='Alice'):
+    trip = Trip.objects.create(campaign=campaign, worker_name=worker_name)
+    if streets:
+        trip.streets.set(streets)
+    return trip
+
+
+def make_admin_request(method='get'):
+    """Build a lightweight request suitable for calling admin methods directly."""
+    factory = RequestFactory()
+    request = getattr(factory, method)('/')
+    request.session = {}
+    request._messages = FallbackStorage(request)
+    return request
+
+
+# ── Model tests ───────────────────────────────────────────────────────────────
+
+class CampaignModelTest(TestCase):
+
+    def test_str_returns_name(self):
+        c = Campaign(name='My Campaign')
+        self.assertEqual(str(c), 'My Campaign')
+
+    def test_default_status_is_draft(self):
+        c = Campaign.objects.create(name='Draft', slug='draft-x', goal='g', cities=['x'])
+        self.assertEqual(c.status, 'draft')
+
+    def test_default_map_status_is_pending(self):
+        c = Campaign.objects.create(name='Draft', slug='draft-y', goal='g', cities=['x'])
+        self.assertEqual(c.map_status, 'pending')
+
+    def test_slug_is_unique(self):
+        make_campaign(slug='unique-slug')
+        with self.assertRaises(Exception):
+            make_campaign(slug='unique-slug')
+
+
+class StreetModelTest(TestCase):
+
+    def setUp(self):
+        self.campaign = make_campaign()
+
+    def test_str_with_name(self):
+        s = Street(campaign=self.campaign, osm_id=123, name='Oak Ave', geometry=GEOM)
+        self.assertEqual(str(s), 'Oak Ave (123)')
+
+    def test_str_without_name(self):
+        s = Street(campaign=self.campaign, osm_id=456, name='', geometry=GEOM)
+        self.assertEqual(str(s), 'Unnamed (456)')
+
+    def test_unique_together_campaign_osm_id(self):
+        make_street(self.campaign, osm_id=999)
+        with self.assertRaises(IntegrityError):
+            make_street(self.campaign, osm_id=999)
+
+    def test_same_osm_id_allowed_across_campaigns(self):
+        other = make_campaign(slug='other-camp')
+        make_street(self.campaign, osm_id=777)
+        # Should not raise:
+        make_street(other, osm_id=777)
+
+
+class TripModelTest(TestCase):
+
+    def setUp(self):
+        self.campaign = make_campaign()
+
+    def test_str_with_worker_name(self):
+        trip = Trip.objects.create(campaign=self.campaign, worker_name='Bob')
+        self.assertIn('Bob', str(trip))
+
+    def test_str_without_worker_name(self):
+        trip = Trip.objects.create(campaign=self.campaign, worker_name='')
+        self.assertIn('Anonymous', str(trip))
+
+    def test_primary_key_is_uuid(self):
+        trip = Trip.objects.create(campaign=self.campaign)
+        self.assertIsInstance(trip.pk, uuid.UUID)
+
+    def test_streets_many_to_many(self):
+        street = make_street(self.campaign, osm_id=10)
+        trip = make_trip(self.campaign, streets=[street])
+        self.assertIn(street, trip.streets.all())
+
+
+# ── View tests: campaign_detail ───────────────────────────────────────────────
+
+class CampaignDetailViewTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='detail-camp')
+
+    def test_published_campaign_returns_200(self):
+        resp = self.client.get('/c/detail-camp/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_page_contains_campaign_name(self):
+        resp = self.client.get('/c/detail-camp/')
+        self.assertContains(resp, 'Test Campaign')
+
+    def test_draft_campaign_returns_404(self):
+        make_campaign(slug='draft-v', status='draft')
+        resp = self.client.get('/c/draft-v/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_deleted_campaign_returns_404(self):
+        make_campaign(slug='del-v', status='deleted')
+        resp = self.client.get('/c/del-v/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unknown_slug_returns_404(self):
+        resp = self.client.get('/c/does-not-exist/')
+        self.assertEqual(resp.status_code, 404)
+
+
+# ── View tests: streets.geojson ───────────────────────────────────────────────
+
+class StreetsGeoJSONViewTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='geo-camp')
+
+    def test_returns_200_and_feature_collection(self):
+        resp = self.client.get('/c/geo-camp/streets.geojson')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['type'], 'FeatureCollection')
+
+    def test_empty_campaign_returns_no_features(self):
+        data = self.client.get('/c/geo-camp/streets.geojson').json()
+        self.assertEqual(data['features'], [])
+
+    def test_feature_count_matches_streets(self):
+        make_street(self.campaign, osm_id=1)
+        make_street(self.campaign, osm_id=2)
+        data = self.client.get('/c/geo-camp/streets.geojson').json()
+        self.assertEqual(len(data['features']), 2)
+
+    def test_feature_properties_contain_osm_id_and_name(self):
+        make_street(self.campaign, osm_id=42, name='Elm St')
+        feature = self.client.get('/c/geo-camp/streets.geojson').json()['features'][0]
+        self.assertEqual(feature['properties']['osm_id'], 42)
+        self.assertEqual(feature['properties']['name'], 'Elm St')
+
+    def test_feature_geometry_is_linestring(self):
+        make_street(self.campaign, osm_id=1)
+        feature = self.client.get('/c/geo-camp/streets.geojson').json()['features'][0]
+        self.assertEqual(feature['geometry']['type'], 'LineString')
+
+    def test_draft_campaign_returns_404(self):
+        make_campaign(slug='draft-geo', status='draft')
+        resp = self.client.get('/c/draft-geo/streets.geojson')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_post_not_allowed(self):
+        resp = self.client.post('/c/geo-camp/streets.geojson')
+        self.assertEqual(resp.status_code, 405)
+
+
+# ── View tests: coverage.geojson ─────────────────────────────────────────────
+
+class CoverageGeoJSONViewTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='cov-camp')
+        self.street1 = make_street(self.campaign, osm_id=1, name='A St')
+        self.street2 = make_street(self.campaign, osm_id=2, name='B St')
+
+    def test_no_trips_returns_empty_features(self):
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(data['features'], [])
+
+    def test_returns_covered_street_after_trip(self):
+        make_trip(self.campaign, streets=[self.street1])
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(len(data['features']), 1)
+        self.assertEqual(data['features'][0]['properties']['osm_id'], 1)
+
+    def test_uncovered_street_not_in_coverage(self):
+        make_trip(self.campaign, streets=[self.street1])
+        osm_ids = [f['properties']['osm_id'] for f in
+                   self.client.get('/c/cov-camp/coverage.geojson').json()['features']]
+        self.assertNotIn(2, osm_ids)
+
+    def test_deduplicates_street_covered_by_multiple_trips(self):
+        make_trip(self.campaign, streets=[self.street1], worker_name='Alice')
+        make_trip(self.campaign, streets=[self.street1], worker_name='Bob')
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(len(data['features']), 1)
+
+    def test_only_returns_streets_from_this_campaign(self):
+        other = make_campaign(slug='other-cov')
+        other_street = make_street(other, osm_id=99)
+        make_trip(other, streets=[other_street])
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(data['features'], [])
+
+
+# ── View tests: log_trip ──────────────────────────────────────────────────────
+
+class LogTripViewTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='trip-camp')
+        self.street = make_street(self.campaign, osm_id=10)
+
+    def _post(self, data, slug='trip-camp'):
+        return self.client.post(
+            f'/c/{slug}/trip/',
+            data=json.dumps(data),
+            content_type='application/json',
+        )
+
+    def test_valid_trip_returns_200_with_trip_id(self):
+        resp = self._post({'segment_ids': [self.street.pk], 'worker_name': 'Alice'})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body['status'], 'ok')
+        self.assertIn('trip_id', body)
+
+    def test_valid_trip_creates_trip_in_db(self):
+        self._post({'segment_ids': [self.street.pk], 'worker_name': 'Alice'})
+        self.assertEqual(Trip.objects.filter(campaign=self.campaign).count(), 1)
+
+    def test_valid_trip_associates_streets(self):
+        self._post({'segment_ids': [self.street.pk]})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertIn(self.street, trip.streets.all())
+
+    def test_multiple_streets_in_one_trip(self):
+        street2 = make_street(self.campaign, osm_id=11, geometry=GEOM2)
+        self._post({'segment_ids': [self.street.pk, street2.pk]})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.streets.count(), 2)
+
+    def test_worker_name_and_notes_saved(self):
+        self._post({'segment_ids': [self.street.pk], 'worker_name': 'Bob', 'notes': 'Cold day'})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.worker_name, 'Bob')
+        self.assertEqual(trip.notes, 'Cold day')
+
+    def test_worker_name_is_stripped(self):
+        self._post({'segment_ids': [self.street.pk], 'worker_name': '  Alice  '})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.worker_name, 'Alice')
+
+    def test_empty_segment_ids_returns_400(self):
+        resp = self._post({'segment_ids': []})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_missing_segment_ids_returns_400(self):
+        resp = self._post({'worker_name': 'Alice'})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_invalid_json_returns_400(self):
+        resp = self.client.post('/c/trip-camp/trip/', data='not-json',
+                                content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_segments_from_other_campaign_returns_400(self):
+        other = make_campaign(slug='other-trip')
+        other_street = make_street(other, osm_id=999)
+        resp = self._post({'segment_ids': [other_street.pk]})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_nonexistent_segment_ids_returns_400(self):
+        resp = self._post({'segment_ids': [99999]})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_draft_campaign_returns_404(self):
+        make_campaign(slug='draft-trip', status='draft')
+        resp = self._post({'segment_ids': [self.street.pk]}, slug='draft-trip')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_get_not_allowed(self):
+        resp = self.client.get('/c/trip-camp/trip/')
+        self.assertEqual(resp.status_code, 405)
+
+    def test_partial_ids_only_saves_valid_streets(self):
+        """Mix of valid + nonexistent IDs: trip is created with only valid streets."""
+        resp = self._post({'segment_ids': [self.street.pk, 99999]})
+        self.assertEqual(resp.status_code, 200)
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.streets.count(), 1)
+
+
+# ── Task tests: query_overpass ────────────────────────────────────────────────
+
+OVERPASS_RESPONSE = {
+    'elements': [
+        {
+            'id': 111,
+            'tags': {'highway': 'residential', 'name': 'Oak Ave'},
+            'geometry': [{'lon': -122.1, 'lat': 37.4}, {'lon': -122.2, 'lat': 37.5}],
+        },
+        {
+            'id': 222,
+            'tags': {'highway': 'footway'},     # excluded type
+            'geometry': [{'lon': -122.1, 'lat': 37.4}, {'lon': -122.2, 'lat': 37.5}],
+        },
+        {
+            'id': 333,
+            'tags': {'highway': 'primary'},
+            'geometry': [{'lon': -122.1, 'lat': 37.4}],  # only 1 point — skip
+        },
+        {
+            'id': 444,
+            'tags': {'highway': 'primary', 'name': 'Main St'},
+            'geometry': [{'lon': -122.0, 'lat': 37.3}, {'lon': -122.05, 'lat': 37.35}],
+        },
+    ]
+}
+
+
+def _make_overpass_response(data=None, status_code=200):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = data or OVERPASS_RESPONSE
+    if status_code >= 400:
+        mock_resp.raise_for_status.side_effect = Exception(f'HTTP {status_code}')
+    else:
+        mock_resp.raise_for_status.return_value = None
+    return mock_resp
+
+
+class QueryOverpassTest(TestCase):
+
+    @patch('campaigns.tasks.requests.post')
+    def test_included_highway_types_are_returned(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        ids = [w['osm_id'] for w in ways]
+        self.assertIn(111, ids)   # residential
+        self.assertIn(444, ids)   # primary
+
+    @patch('campaigns.tasks.requests.post')
+    def test_excluded_highway_type_is_filtered(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        ids = [w['osm_id'] for w in ways]
+        self.assertNotIn(222, ids)   # footway
+
+    @patch('campaigns.tasks.requests.post')
+    def test_way_with_single_point_is_skipped(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        ids = [w['osm_id'] for w in ways]
+        self.assertNotIn(333, ids)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_coords_are_lon_lat_tuples(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        oak = next(w for w in ways if w['osm_id'] == 111)
+        self.assertEqual(oak['coords'][0], (-122.1, 37.4))
+        self.assertEqual(oak['coords'][1], (-122.2, 37.5))
+
+    @patch('campaigns.tasks.requests.post')
+    def test_name_extracted_from_tags(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        main = next(w for w in ways if w['osm_id'] == 444)
+        self.assertEqual(main['name'], 'Main St')
+
+    @patch('campaigns.tasks.requests.post')
+    def test_missing_name_tag_returns_empty_string(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        # osm_id 222 is filtered; osm_id 333 is filtered; osm_id 111 has name
+        # Let's use a response with no name tag
+        no_name_data = {'elements': [
+            {'id': 1, 'tags': {'highway': 'residential'},
+             'geometry': [{'lon': -1.0, 'lat': 1.0}, {'lon': -2.0, 'lat': 2.0}]},
+        ]}
+        mock_post.return_value = _make_overpass_response(data=no_name_data)
+        ways = query_overpass('Anywhere')
+        self.assertEqual(ways[0]['name'], '')
+
+    @patch('campaigns.tasks.requests.post')
+    def test_raises_on_http_error(self, mock_post):
+        mock_post.return_value = _make_overpass_response(status_code=503)
+        with self.assertRaises(Exception):
+            query_overpass('BadCity')
+
+    @patch('campaigns.tasks.requests.post')
+    def test_raises_on_network_error(self, mock_post):
+        mock_post.side_effect = ConnectionError('network down')
+        with self.assertRaises(Exception):
+            query_overpass('BadCity')
+
+
+# ── Task tests: fetch_osm_segments ────────────────────────────────────────────
+
+class FetchOSMSegmentsTaskTest(TestCase):
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='task-camp')
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_sets_map_status_to_generating_then_ready(self, mock_qo):
+        statuses = []
+
+        def capture_status(city):
+            self.campaign.refresh_from_db()
+            statuses.append(self.campaign.map_status)
+            return [{'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]}]
+
+        mock_qo.side_effect = capture_status
+        fetch_osm_segments(self.campaign.pk)
+
+        self.assertIn('generating', statuses)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'ready')
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_sets_map_status_error_on_failure(self, mock_qo):
+        mock_qo.side_effect = RuntimeError('Overpass down')
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_creates_streets_in_db(self, mock_qo):
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+            {'osm_id': 20, 'name': 'B St', 'coords': [(-122.3, 37.6), (-122.4, 37.7)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        self.assertEqual(self.campaign.streets.count(), 2)
+        names = set(self.campaign.streets.values_list('name', flat=True))
+        self.assertEqual(names, {'A St', 'B St'})
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_update_or_create_prevents_duplicate_streets_on_rerun(self, mock_qo):
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        fetch_osm_segments(self.campaign.pk)
+        self.assertEqual(self.campaign.streets.count(), 1)
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_iterates_all_cities(self, mock_qo):
+        self.campaign.cities = ['City A', 'City B']
+        self.campaign.save(update_fields=['cities'])
+        mock_qo.return_value = []
+        fetch_osm_segments(self.campaign.pk)
+        self.assertEqual(mock_qo.call_count, 2)
+        mock_qo.assert_any_call('City A')
+        mock_qo.assert_any_call('City B')
+
+    def test_missing_campaign_pk_does_not_raise(self):
+        fetch_osm_segments(99999)   # should return silently
+
+
+# ── Admin tests ───────────────────────────────────────────────────────────────
+
+class CampaignAdminTest(TestCase):
+
+    def setUp(self):
+        self.site = django_admin.AdminSite()
+        self.ma = CampaignAdmin(Campaign, self.site)
+        self.request = make_admin_request()
+
+    def test_delete_model_soft_deletes_row(self):
+        c = make_campaign(slug='to-delete')
+        self.ma.delete_model(self.request, c)
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'deleted')
+        self.assertTrue(Campaign.objects.filter(pk=c.pk).exists())
+
+    def test_delete_queryset_soft_deletes(self):
+        c = make_campaign(slug='qs-delete')
+        self.ma.delete_queryset(self.request, Campaign.objects.filter(pk=c.pk))
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'deleted')
+
+    def test_get_queryset_excludes_deleted_campaigns(self):
+        active = make_campaign(slug='active-one')
+        deleted = make_campaign(slug='deleted-one', status='deleted')
+        pks = list(self.ma.get_queryset(self.request).values_list('pk', flat=True))
+        self.assertIn(active.pk, pks)
+        self.assertNotIn(deleted.pk, pks)
+
+    def test_readonly_fields_includes_slug_and_cities_for_published(self):
+        c = make_campaign(slug='pub-ro', status='published')
+        readonly = self.ma.get_readonly_fields(self.request, obj=c)
+        self.assertIn('slug', readonly)
+        self.assertIn('cities', readonly)
+
+    def test_readonly_fields_excludes_slug_and_cities_for_draft(self):
+        c = make_campaign(slug='draft-ro', status='draft')
+        readonly = self.ma.get_readonly_fields(self.request, obj=c)
+        self.assertNotIn('slug', readonly)
+        self.assertNotIn('cities', readonly)
+
+    def test_readonly_fields_for_new_object_excludes_slug(self):
+        readonly = self.ma.get_readonly_fields(self.request, obj=None)
+        self.assertNotIn('slug', readonly)
+
+    def test_map_status_badge_renders_correct_color_for_each_status(self):
+        for status, expected_color in MAP_STATUS_COLORS.items():
+            c = Campaign(map_status=status)
+            badge = self.ma.map_status_badge(c)
+            self.assertIn(expected_color, badge,
+                          msg=f"Expected color {expected_color} for status {status}")
+
+    def test_map_status_badge_contains_display_label(self):
+        c = Campaign(map_status='ready')
+        badge = self.ma.map_status_badge(c)
+        self.assertIn('Ready', badge)
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_publish_action_sets_status_and_queues_task(self, mock_task):
+        c = make_campaign(slug='to-publish', status='draft')
+        self.ma.publish_campaigns(self.request, Campaign.objects.filter(pk=c.pk))
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'published')
+        mock_task.delay.assert_called_once_with(c.pk)
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_publish_action_resets_map_status_to_pending(self, mock_task):
+        c = make_campaign(slug='repub', status='draft', map_status='error')
+        self.ma.publish_campaigns(self.request, Campaign.objects.filter(pk=c.pk))
+        c.refresh_from_db()
+        self.assertEqual(c.map_status, 'pending')
+
+    @patch('campaigns.admin.fetch_osm_segments')
+    def test_publish_action_skips_deleted_campaigns(self, mock_task):
+        c = make_campaign(slug='skip-deleted', status='deleted')
+        self.ma.publish_campaigns(self.request, Campaign.objects.filter(pk=c.pk))
+        mock_task.delay.assert_not_called()
+
+    def test_soft_delete_action_marks_all_as_deleted(self):
+        c1 = make_campaign(slug='del-1')
+        c2 = make_campaign(slug='del-2')
+        self.ma.soft_delete_campaigns(
+            self.request, Campaign.objects.filter(pk__in=[c1.pk, c2.pk])
+        )
+        c1.refresh_from_db()
+        c2.refresh_from_db()
+        self.assertEqual(c1.status, 'deleted')
+        self.assertEqual(c2.status, 'deleted')

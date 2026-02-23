@@ -1,0 +1,5 @@
+Django>=5.0
+mysqlclient
+django[argon2]
+celery[redis]
+requests
