@@ -30,6 +30,22 @@ The current tap-to-select model is basic. Consider:
 - **Visual feedback**: highlight selected segments in a distinct color with a count badge
 - **Drag-to-select**: hold and drag along a street to select contiguous blocks
 
+### 6. Landing page: show list of published campaigns instead of admin redirect
+The root URL (`/`) currently redirects to `/admin/`, which requires a login.
+Instead it should render a simple public page listing all published campaigns,
+each linking to its worker map view (`/c/<slug>/`). The page needs no authentication.
+Consider showing campaign name, goal summary, and date range for each entry.
+
+### 7. Campaign manager UI: replace Django Admin with a purpose-built interface
+Campaign managers currently use the full Django Admin, which exposes unrelated
+models and has no guided workflow. Replace (or supplement) it with a custom
+management interface that:
+- Shows only the manager's campaigns in a clear list with status indicators
+- Guides the manager through discrete steps: Create → Configure cities → Publish → Monitor coverage
+- Surfaces map_status prominently with actionable next steps (e.g. "Re-fetch streets" on error)
+- Hides irrelevant admin machinery (log entries, auth tables, etc.)
+- Still requires authentication but does not require superuser/staff privileges
+
 ### 5. Bug: multiple trips overwrite each other
 The second trip submitted for a campaign appears to replace the first rather than
 accumulating. Likely cause: the coverage GeoJSON query or the frontend reload
