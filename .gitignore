@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Django
+staticfiles/
+db.sqlite3
+*.log
+
+# Environment
+.env
+.envrc
+
+# Redis
+dump.rdb
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Claude
+.claude/
