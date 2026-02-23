@@ -11,9 +11,23 @@ A web app for coordinating volunteer leafletting campaigns.
 
 ## System Requirements
 
+**macOS**
 ```bash
 brew install gdal mysql redis
 ```
+
+**Ubuntu / Debian**
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  gdal-bin libgdal-dev \
+  mysql-server libmysqlclient-dev \
+  redis-server \
+  python3-dev python3-venv
+```
+
+> On Ubuntu, MySQL 8.0+ is available from the default repos on 22.04+.
+> If your distro ships an older version, add the [MySQL APT repository](https://dev.mysql.com/downloads/repo/apt/) first.
 
 ## Setup
 
@@ -27,14 +41,29 @@ pip install -r requirements.txt
 
 ### 2. Set up MySQL database
 
+**macOS** — MySQL runs as your user, so no password is needed for root:
 ```bash
 mysql -u root -e "
   CREATE DATABASE leafletter CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
   CREATE USER 'leafletter'@'localhost' IDENTIFIED BY 'leafletter';
   GRANT ALL PRIVILEGES ON leafletter.* TO 'leafletter'@'localhost';
+  GRANT ALL PRIVILEGES ON \`test_leafletter\`.* TO 'leafletter'@'localhost';
   FLUSH PRIVILEGES;
 "
 ```
+
+**Linux** — the root MySQL account uses `sudo` by default:
+```bash
+sudo mysql -e "
+  CREATE DATABASE leafletter CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER 'leafletter'@'localhost' IDENTIFIED BY 'leafletter';
+  GRANT ALL PRIVILEGES ON leafletter.* TO 'leafletter'@'localhost';
+  GRANT ALL PRIVILEGES ON \`test_leafletter\`.* TO 'leafletter'@'localhost';
+  FLUSH PRIVILEGES;
+"
+```
+
+> The `test_leafletter` grant is required so the test runner can create and drop the test database.
 
 ### 3. Run migrations
 
@@ -56,10 +85,22 @@ python manage.py collectstatic
 
 ## Running locally
 
-Start all services:
+**macOS** — start Redis manually, MySQL via brew services:
+```bash
+brew services start mysql   # if not already running
+redis-server                # Terminal 1
+```
+
+**Linux** — Redis and MySQL run as system services:
+```bash
+sudo systemctl start mysql   # if not already running
+sudo systemctl start redis
+```
+
+Then start the app (both platforms):
 
 ```bash
-# Terminal 1 — Redis
+# Terminal 1 (Linux only — macOS uses the commands above instead)
 redis-server
 
 # Terminal 2 — Celery worker (auto-restarts on .py file changes)
