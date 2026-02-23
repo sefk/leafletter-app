@@ -5,7 +5,9 @@ A web app for coordinating volunteer leafletting campaigns.
 ## Current State
 
 ### What's built
-A working MVP. Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap streets to select them, and submit a trip. Campaign managers use Django Admin to create campaigns, publish them (triggering a background OSM street import), and monitor coverage.
+Not quite an MVP yet, but getting there.
+
+Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap streets to select them, and submit a trip. Campaign managers use Django Admin to create campaigns, publish them (triggering a background OSM street import), and monitor coverage.
 
 ### Tech stack
 
@@ -29,14 +31,7 @@ A working MVP. Workers visit a campaign URL, see a Leaflet map of OSM street seg
 - **Task trigger in `save_model` and `response_change`** — publishing via the status dropdown, the Publish button, or the bulk action all queue an OSM fetch
 - **79 tests** covering models, all views, the Overpass task, and admin behaviour
 
-### Known gaps (see TODO.md)
-1. City search is name-only — ambiguous for common city names
-2. Worker map doesn't enforce a bounding box or minimum zoom
-3. Trip selection is whole-street, not block-level
-4. Trip UX is basic (no lasso, no undo)
-5. Bug: multiple trips may overwrite each other
-6. Landing page redirects to admin login instead of a public campaign list
-7. No purpose-built campaign manager UI — managers use raw Django Admin
+**Known gaps -- [TODO.md](TODO.md)**
 
 ---
 
