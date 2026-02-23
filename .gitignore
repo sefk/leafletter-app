@@ -9,10 +9,6 @@ staticfiles/
 db.sqlite3
 *.log
 
-# Environment
-.env
-.envrc
-
 # Redis
 dump.rdb
 
