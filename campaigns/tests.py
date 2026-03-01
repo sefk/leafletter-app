@@ -17,7 +17,7 @@ from django.test import Client, RequestFactory, TestCase
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
 from .models import Campaign, Street, Trip
-from .tasks import fetch_osm_segments, find_intersection_nodes, query_overpass, split_way_at_intersections
+from .tasks import fetch_osm_segments, find_intersection_nodes, lookup_city, query_overpass, split_way_at_intersections
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
 
@@ -552,6 +552,11 @@ class FetchOSMSegmentsTaskTest(TestCase):
 
     def setUp(self):
         self.campaign = make_campaign(slug='task-camp')
+        self.lookup_patcher = patch('campaigns.tasks.lookup_city')
+        self.mock_lookup = self.lookup_patcher.start()
+
+    def tearDown(self):
+        self.lookup_patcher.stop()
 
     @patch('campaigns.tasks.query_overpass')
     def test_sets_map_status_to_generating_then_ready(self, mock_qo):
@@ -600,7 +605,9 @@ class FetchOSMSegmentsTaskTest(TestCase):
     def test_iterates_all_cities(self, mock_qo):
         self.campaign.cities = ['City A', 'City B']
         self.campaign.save(update_fields=['cities'])
-        mock_qo.return_value = []
+        mock_qo.return_value = [
+            {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
         fetch_osm_segments(self.campaign.pk)
         self.assertEqual(mock_qo.call_count, 2)
         mock_qo.assert_any_call('City A')
@@ -853,6 +860,11 @@ class WorkerFlowEndToEndTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.lookup_patcher = patch('campaigns.tasks.lookup_city')
+        self.mock_lookup = self.lookup_patcher.start()
+
+    def tearDown(self):
+        self.lookup_patcher.stop()
 
     @patch('campaigns.tasks.query_overpass')
     def test_full_worker_flow(self, mock_qo):
@@ -1097,3 +1109,127 @@ class ManagerUITest(TestCase):
         make_campaign(slug='hidden-del', status='deleted', name='Hidden Deleted Camp')
         resp = self.client.get('/manage/')
         self.assertNotContains(resp, 'Hidden Deleted Camp')
+
+
+# ── Task tests: lookup_city ───────────────────────────────────────────────────
+
+def _make_nominatim_response(results, status_code=200):
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = results
+    if status_code >= 400:
+        mock_resp.raise_for_status.side_effect = Exception(f'HTTP {status_code}')
+    else:
+        mock_resp.raise_for_status.return_value = None
+    return mock_resp
+
+
+class LookupCityTest(TestCase):
+
+    @patch('campaigns.tasks.requests.get')
+    def test_single_city_result_raises_no_exception(self, mock_get):
+        mock_get.return_value = _make_nominatim_response([
+            {'class': 'place', 'type': 'city', 'display_name': 'Palo Alto, CA'},
+        ])
+        lookup_city('Palo Alto')  # should not raise
+
+    @patch('campaigns.tasks.requests.get')
+    def test_no_results_raises_value_error_not_found(self, mock_get):
+        mock_get.return_value = _make_nominatim_response([])
+        with self.assertRaises(ValueError) as ctx:
+            lookup_city('xyznotacity')
+        self.assertIn('not found', str(ctx.exception))
+
+    @patch('campaigns.tasks.requests.get')
+    def test_multiple_results_raises_value_error_with_count(self, mock_get):
+        mock_get.return_value = _make_nominatim_response([
+            {'class': 'place', 'type': 'city', 'display_name': 'Springfield, IL'},
+            {'class': 'place', 'type': 'city', 'display_name': 'Springfield, MA'},
+            {'class': 'place', 'type': 'town', 'display_name': 'Springfield, OH'},
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            lookup_city('Springfield')
+        self.assertIn('3', str(ctx.exception))
+
+    @patch('campaigns.tasks.requests.get')
+    def test_non_place_class_results_are_filtered_out(self, mock_get):
+        mock_get.return_value = _make_nominatim_response([
+            {'class': 'boundary', 'type': 'city', 'display_name': 'Palo Alto county'},
+            {'class': 'place', 'type': 'city', 'display_name': 'Palo Alto, CA'},
+        ])
+        lookup_city('Palo Alto')  # only one place-class result — should not raise
+
+    @patch('campaigns.tasks.requests.get')
+    def test_http_error_propagates(self, mock_get):
+        mock_get.return_value = _make_nominatim_response([], status_code=503)
+        with self.assertRaises(Exception):
+            lookup_city('AnyCity')
+
+    @patch('campaigns.tasks.requests.get')
+    def test_network_error_propagates(self, mock_get):
+        mock_get.side_effect = ConnectionError('network down')
+        with self.assertRaises(Exception):
+            lookup_city('AnyCity')
+
+
+# ── Task tests: fetch_osm_segments error handling ─────────────────────────────
+
+class FetchOSMErrorHandlingTest(TestCase):
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='err-camp')
+        self.lookup_patcher = patch('campaigns.tasks.lookup_city')
+        self.mock_lookup = self.lookup_patcher.start()
+        self.overpass_patcher = patch('campaigns.tasks.query_overpass')
+        self.mock_overpass = self.overpass_patcher.start()
+
+    def tearDown(self):
+        self.lookup_patcher.stop()
+        self.overpass_patcher.stop()
+
+    def test_lookup_city_raises_sets_error_status_and_message(self):
+        self.mock_lookup.side_effect = ValueError('City "xyznotacity" not found in OpenStreetMap')
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+        self.assertIn('xyznotacity', self.campaign.map_error)
+        self.assertIn('not found', self.campaign.map_error)
+
+    def test_query_overpass_returns_empty_sets_no_streets_error(self):
+        self.mock_overpass.return_value = []
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+        self.assertIn('no streets', self.campaign.map_error)
+
+    def test_successful_fetch_clears_preexisting_map_error(self):
+        self.campaign.map_error = 'Previous error message'
+        self.campaign.save(update_fields=['map_error'])
+        self.mock_overpass.return_value = [
+            {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'ready')
+        self.assertEqual(self.campaign.map_error, '')
+
+    def test_map_error_cleared_at_start_of_fetch(self):
+        self.campaign.map_error = 'Old error'
+        self.campaign.save(update_fields=['map_error'])
+
+        captured_error = []
+
+        def capture_on_overpass_call(city):
+            self.campaign.refresh_from_db()
+            captured_error.append(self.campaign.map_error)
+            return [{'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]}]
+
+        self.mock_overpass.side_effect = capture_on_overpass_call
+        fetch_osm_segments(self.campaign.pk)
+        self.assertEqual(captured_error[0], '', 'map_error should be cleared before processing starts')
+
+    def test_ambiguous_city_error_message_included(self):
+        self.mock_lookup.side_effect = ValueError('3 places named "Springfield" found; use a more specific name')
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+        self.assertIn('Springfield', self.campaign.map_error)

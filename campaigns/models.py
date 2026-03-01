@@ -28,6 +28,7 @@ class Campaign(models.Model):
     contact_info = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default='draft')
     map_status = models.CharField(max_length=20, choices=MAP_STATUS, default='pending')
+    map_error = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

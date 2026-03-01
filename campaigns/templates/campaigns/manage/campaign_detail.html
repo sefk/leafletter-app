@@ -69,7 +69,10 @@
       <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
 
     {% elif campaign.map_status == 'error' %}
-      <p style="color:#c62828; margin-bottom:12px;">Street import failed. Try fetching again, or check the city names in the campaign settings.</p>
+      <p style="color:#c62828; margin-bottom:8px;">
+        <strong>Street import failed:</strong>
+        {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
+      </p>
       <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
         {% csrf_token %}
         <button type="submit" class="btn btn-danger">Re-fetch Streets</button>

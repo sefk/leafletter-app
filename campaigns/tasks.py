@@ -10,6 +10,9 @@ from .models import Campaign, Street
 logger = logging.getLogger(__name__)
 
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+NOMINATIM_HEADERS = {'User-Agent': 'Leafletter/1.0 (github.com/sefk/leafletter-app)'}
+CITY_TYPES = {'city', 'town', 'village', 'municipality', 'borough'}
 
 # Highway types to include (exclude footways, paths, etc.)
 HIGHWAY_INCLUDE = {
@@ -18,6 +21,26 @@ HIGHWAY_INCLUDE = {
     'primary_link', 'secondary_link', 'tertiary_link', 'living_street',
     'service',
 }
+
+
+def lookup_city(city_name: str) -> None:
+    """
+    Pre-check that city_name resolves to exactly one city-type place in Nominatim.
+    Raises ValueError if the city is not found or is ambiguous.
+    """
+    resp = requests.get(
+        NOMINATIM_URL,
+        params={'q': city_name, 'format': 'json', 'limit': 10},
+        headers=NOMINATIM_HEADERS,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    results = [r for r in resp.json() if r.get('class') == 'place' and r.get('type') in CITY_TYPES]
+    n = len(results)
+    if n == 0:
+        raise ValueError(f'City "{city_name}" not found in OpenStreetMap')
+    if n > 1:
+        raise ValueError(f'{n} places named "{city_name}" found; use a more specific name')
 
 
 def query_overpass(city: str) -> list[dict]:
@@ -117,12 +140,14 @@ def fetch_osm_segments(campaign_id: int) -> None:
         return
 
     campaign.map_status = 'generating'
-    campaign.save(update_fields=['map_status'])
+    campaign.map_error = ''
+    campaign.save(update_fields=['map_status', 'map_error'])
 
     try:
         cities = campaign.cities  # list of city name strings
         for city in cities:
             logger.info("Fetching OSM segments for city: %s", city)
+            lookup_city(city)
             ways = query_overpass(city)
             intersection_nodes = find_intersection_nodes(ways)
             block_count = 0
@@ -143,9 +168,12 @@ def fetch_osm_segments(campaign_id: int) -> None:
                     )
                     block_count += 1
             logger.info("Imported %d blocks for %s", block_count, city)
+            if block_count == 0:
+                raise ValueError(f'City "{city}" was found but no streets were imported')
         campaign.map_status = 'ready'
     except Exception as exc:
         logger.error("fetch_osm_segments failed for campaign %s: %s", campaign_id, exc)
         campaign.map_status = 'error'
+        campaign.map_error = str(exc)
     finally:
-        campaign.save(update_fields=['map_status'])
+        campaign.save(update_fields=['map_status', 'map_error'])
