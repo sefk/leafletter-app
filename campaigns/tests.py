@@ -822,3 +822,102 @@ class CampaignAdminTest(TestCase):
         c2.refresh_from_db()
         self.assertEqual(c1.status, 'deleted')
         self.assertEqual(c2.status, 'deleted')
+
+
+# ── End-to-end: publish → import → worker flow ───────────────────────────────
+
+class WorkerFlowEndToEndTest(TestCase):
+    """
+    Full pipeline: campaign published → OSM fetch (mocked) splits ways at
+    intersections → worker sees blocks on map → worker logs a trip →
+    coverage reflects that trip.
+
+    Two intersecting ways share node 2, so 'Main St' (nodes 1-2-3) splits
+    into two blocks and 'Cross St' (nodes 2-4) stays as one block.
+    Expected Street rows: 3 total (Main St block 0, Main St block 1, Cross St block 0).
+    """
+
+    WAYS = [
+        {
+            'osm_id': 10, 'name': 'Main St',
+            'node_ids': [1, 2, 3],
+            'coords': [(-122.10, 37.40), (-122.15, 37.45), (-122.20, 37.50)],
+        },
+        {
+            'osm_id': 20, 'name': 'Cross St',
+            'node_ids': [2, 4],
+            'coords': [(-122.15, 37.45), (-122.25, 37.55)],
+        },
+    ]
+
+    def setUp(self):
+        self.client = Client()
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_full_worker_flow(self, mock_qo):
+        mock_qo.return_value = self.WAYS
+
+        # ── 1. Publish campaign and run OSM import ────────────────────────────
+        campaign = make_campaign(slug='e2e-camp', cities=['Testville'])
+        fetch_osm_segments(campaign.pk)
+        campaign.refresh_from_db()
+
+        self.assertEqual(campaign.map_status, 'ready')
+        self.assertEqual(campaign.streets.count(), 3,
+                         "Main St should split into 2 blocks; Cross St stays 1")
+
+        main_blocks = campaign.streets.filter(osm_id=10).order_by('block_index')
+        self.assertEqual(main_blocks.count(), 2)
+        self.assertEqual(main_blocks[0].start_node_id, 1)
+        self.assertEqual(main_blocks[0].end_node_id, 2)
+        self.assertEqual(main_blocks[1].start_node_id, 2)
+        self.assertEqual(main_blocks[1].end_node_id, 3)
+
+        cross_block = campaign.streets.get(osm_id=20)
+        self.assertEqual(cross_block.block_index, 0)
+
+        # ── 2. Worker fetches streets GeoJSON ─────────────────────────────────
+        resp = self.client.get(f'/c/e2e-camp/streets.geojson')
+        self.assertEqual(resp.status_code, 200)
+        streets_data = resp.json()
+        self.assertEqual(len(streets_data['features']), 3)
+        returned_ids = {f['id'] for f in streets_data['features']}
+        expected_ids = set(campaign.streets.values_list('pk', flat=True))
+        self.assertEqual(returned_ids, expected_ids)
+
+        # ── 3. Coverage is empty before any trips ─────────────────────────────
+        resp = self.client.get(f'/c/e2e-camp/coverage.geojson')
+        self.assertEqual(resp.json()['features'], [])
+
+        # ── 4. Worker logs a trip covering Main St block 0 and Cross St ───────
+        trip_segment_ids = [main_blocks[0].pk, cross_block.pk]
+        resp = self.client.post(
+            f'/c/e2e-camp/trip/',
+            data=json.dumps({'segment_ids': trip_segment_ids, 'worker_name': 'Alice'}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'ok')
+
+        # ── 5. Coverage reflects exactly the logged trip ───────────────────────
+        resp = self.client.get(f'/c/e2e-camp/coverage.geojson')
+        coverage_data = resp.json()
+        covered_osm_ids = {f['properties']['osm_id'] for f in coverage_data['features']}
+        self.assertEqual(len(coverage_data['features']), 2)
+        self.assertIn(10, covered_osm_ids)   # Main St block 0
+        self.assertIn(20, covered_osm_ids)   # Cross St
+        # Main St block 1 was not walked — should not appear
+        covered_ids = {f['id'] for f in coverage_data['features']}
+        self.assertNotIn(main_blocks[1].pk, covered_ids)
+
+        # ── 6. Second worker logs a trip covering the remaining block ──────────
+        resp = self.client.post(
+            f'/c/e2e-camp/trip/',
+            data=json.dumps({'segment_ids': [main_blocks[1].pk], 'worker_name': 'Bob'}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.client.get(f'/c/e2e-camp/coverage.geojson')
+        self.assertEqual(len(resp.json()['features']), 3,
+                         "All 3 blocks should now be covered")
