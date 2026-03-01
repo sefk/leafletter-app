@@ -289,3 +289,7 @@ The following questions were discussed and resolved during initial planning.
 | 3 | Manager authentication | **Username + password** | Simple, no external dependencies. Accounts created by an administrator; no self-service registration. |
 | 4 | Campaign URL base | **Single fixed domain** (`leafletter.app/c/<slug>`) | Trivial to deploy and easy for managers to share links. |
 | 5 | OSM geometry fetch at campaign creation | **Background job** (Celery + Redis) | Avoids blocking the form submission for a potentially long operation; provides a clear "Generating map…" → "Ready" status in the UI. |
+
+## Colophon
+
+This was written by Claude Code, starting with detailed input [here](https://docs.google.com/document/d/1Z57Y39GXIw4cuJiibijPU0hWBx0ayz88G-mxyV3Yb_4/edit?usp=sharing).
