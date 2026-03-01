@@ -43,15 +43,28 @@ def lookup_city(city_name: str) -> None:
         raise ValueError(f'{n} places named "{city_name}" found; use a more specific name')
 
 
-def query_overpass(city: str) -> list[dict]:
+def query_overpass(city) -> list[dict]:
     """
     Query Overpass API for driveable highway ways within a named area.
+    city may be a string (city name) or a dict with osm_id/osm_type keys.
     Returns a list of dicts: {osm_id, name, coords, node_ids}.
     coords is a list of (lon, lat) tuples; node_ids is the parallel list of OSM node IDs.
     """
-    query = f"""
+    if isinstance(city, dict) and city.get('osm_type') == 'relation' and 'osm_id' in city:
+        area_id = 3600000000 + city['osm_id']
+        city_label = city.get('name', str(city['osm_id']))
+        query = f"""
 [out:json][timeout:60];
-area[name="{city}"]->.searchArea;
+area({area_id})->.searchArea;
+way["highway"](area.searchArea);
+out geom;
+"""
+    else:
+        city_name = city if isinstance(city, str) else city.get('name', str(city))
+        city_label = city_name
+        query = f"""
+[out:json][timeout:60];
+area[name="{city_name}"]->.searchArea;
 way["highway"](area.searchArea);
 out geom;
 """
@@ -60,7 +73,7 @@ out geom;
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
-        logger.error("Overpass query failed for city %s: %s", city, exc)
+        logger.error("Overpass query failed for city %s: %s", city_label, exc)
         raise
 
     ways = []
@@ -144,10 +157,13 @@ def fetch_osm_segments(campaign_id: int) -> None:
     campaign.save(update_fields=['map_status', 'map_error'])
 
     try:
-        cities = campaign.cities  # list of city name strings
+        cities = campaign.cities  # list of city name strings or dicts
         for city in cities:
-            logger.info("Fetching OSM segments for city: %s", city)
-            lookup_city(city)
+            city_label = city if isinstance(city, str) else city.get('name', str(city))
+            logger.info("Fetching OSM segments for city: %s", city_label)
+            # Only call lookup_city for string-format cities (dict cities have osm_id already)
+            if isinstance(city, str):
+                lookup_city(city)
             ways = query_overpass(city)
             intersection_nodes = find_intersection_nodes(ways)
             block_count = 0
@@ -167,9 +183,9 @@ def fetch_osm_segments(campaign_id: int) -> None:
                         },
                     )
                     block_count += 1
-            logger.info("Imported %d blocks for %s", block_count, city)
+            logger.info("Imported %d blocks for %s", block_count, city_label)
             if block_count == 0:
-                raise ValueError(f'City "{city}" was found but no streets were imported')
+                raise ValueError(f'City "{city_label}" was found but no streets were imported')
         campaign.map_status = 'ready'
     except Exception as exc:
         logger.error("fetch_osm_segments failed for campaign %s: %s", campaign_id, exc)

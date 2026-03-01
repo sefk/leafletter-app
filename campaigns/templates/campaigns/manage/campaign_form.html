@@ -13,7 +13,7 @@
 </div>
 
 <div class="card">
-  <form method="post">
+  <form method="post" id="campaign-form">
     {% csrf_token %}
 
     {% if form.non_field_errors %}
@@ -23,20 +23,49 @@
     {% endif %}
 
     {% for field in form %}
-    <div style="margin-bottom:16px;">
-      <label for="{{ field.id_for_label }}"
-             style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
-        {{ field.label }}{% if field.field.required %} *{% endif %}
-      </label>
-      {{ field }}
-      {% if field.help_text %}
-        <div style="font-size:0.8rem; color:#777; margin-top:4px;">{{ field.help_text }}</div>
+      {% if field.html_name == 'cities_json' %}
+        {# Rendered separately below as the city picker #}
+        {{ field }}
+      {% else %}
+      <div style="margin-bottom:16px;">
+        <label for="{{ field.id_for_label }}"
+               style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+          {{ field.label }}{% if field.field.required %} *{% endif %}
+        </label>
+        {{ field }}
+        {% if field.help_text %}
+          <div style="font-size:0.8rem; color:#777; margin-top:4px;">{{ field.help_text }}</div>
+        {% endif %}
+        {% if field.errors %}
+          <div style="font-size:0.82rem; color:#c62828; margin-top:4px;">{{ field.errors }}</div>
+        {% endif %}
+      </div>
       {% endif %}
-      {% if field.errors %}
-        <div style="font-size:0.82rem; color:#c62828; margin-top:4px;">{{ field.errors }}</div>
+    {% endfor %}
+
+    <!-- City Picker -->
+    <div style="margin-bottom:16px;">
+      <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Cities *
+      </label>
+
+      <!-- Search row -->
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <input type="text" id="city-search-input" placeholder="Search for a city…"
+               style="flex:1; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+        <button type="button" id="city-search-btn" class="btn btn-secondary">Search</button>
+      </div>
+
+      <!-- Results dropdown -->
+      <div id="city-results" style="display:none; border:1px solid #ccc; border-radius:4px; background:#fff; max-height:200px; overflow-y:auto; margin-bottom:8px;"></div>
+
+      <!-- Selected cities tags -->
+      <div id="city-tags" style="display:flex; flex-wrap:wrap; gap:6px; min-height:32px;"></div>
+
+      {% if form.cities_json.errors %}
+        <div style="font-size:0.82rem; color:#c62828; margin-top:4px;">{{ form.cities_json.errors }}</div>
       {% endif %}
     </div>
-    {% endfor %}
 
     <div style="margin-top:8px;">
       <button type="submit" class="btn btn-primary">{{ action }} Campaign</button>
@@ -54,7 +83,112 @@
     font-family: inherit;
   }
   input:focus, textarea:focus { outline: none; border-color: #1a6b3c; }
+
+  .city-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #e8f5e9; color: #1b5e20;
+    border: 1px solid #a5d6a7; border-radius: 4px;
+    padding: 4px 10px; font-size: 0.85rem;
+  }
+  .city-tag button {
+    background: none; border: none; cursor: pointer;
+    color: #1b5e20; font-size: 1rem; line-height: 1; padding: 0;
+  }
+  .city-result-item {
+    padding: 8px 12px; cursor: pointer; font-size: 0.9rem; border-bottom: 1px solid #eee;
+  }
+  .city-result-item:last-child { border-bottom: none; }
+  .city-result-item:hover { background: #f5f5f5; }
 </style>
+
+<script>
+(function () {
+  var cities = {{ form.cities_json.value|default:"[]" }};
+  var hiddenInput = document.getElementById('id_cities_json');
+  var searchInput = document.getElementById('city-search-input');
+  var searchBtn   = document.getElementById('city-search-btn');
+  var resultsDiv  = document.getElementById('city-results');
+  var tagsDiv     = document.getElementById('city-tags');
+
+  function renderTags() {
+    tagsDiv.innerHTML = '';
+    cities.forEach(function (city, idx) {
+      var tag = document.createElement('span');
+      tag.className = 'city-tag';
+      tag.textContent = city.display_name || city.name;
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '\u00d7';
+      removeBtn.setAttribute('aria-label', 'Remove ' + city.name);
+      removeBtn.addEventListener('click', function () {
+        cities.splice(idx, 1);
+        sync();
+      });
+      tag.appendChild(removeBtn);
+      tagsDiv.appendChild(tag);
+    });
+    hiddenInput.value = JSON.stringify(cities);
+  }
+
+  function sync() {
+    renderTags();
+  }
+
+  function doSearch() {
+    var q = searchInput.value.trim();
+    if (!q) return;
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#777; font-size:0.9rem;">Searching…</div>';
+    fetch('/manage/city-search/?q=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        resultsDiv.innerHTML = '';
+        if (data.error) {
+          resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#c62828;">Error: ' + data.error + '</div>';
+          return;
+        }
+        if (!data.results || data.results.length === 0) {
+          resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#777; font-size:0.9rem;">No city results found.</div>';
+          return;
+        }
+        data.results.forEach(function (city) {
+          var item = document.createElement('div');
+          item.className = 'city-result-item';
+          item.textContent = city.display_name || city.name;
+          item.addEventListener('click', function () {
+            // Avoid duplicates
+            var exists = cities.some(function (c) { return c.osm_id === city.osm_id; });
+            if (!exists) {
+              cities.push(city);
+              sync();
+            }
+            resultsDiv.style.display = 'none';
+            searchInput.value = '';
+          });
+          resultsDiv.appendChild(item);
+        });
+      })
+      .catch(function (err) {
+        resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#c62828;">Request failed.</div>';
+      });
+  }
+
+  searchBtn.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+  });
+
+  // Close results when clicking outside
+  document.addEventListener('click', function (e) {
+    if (!resultsDiv.contains(e.target) && e.target !== searchInput && e.target !== searchBtn) {
+      resultsDiv.style.display = 'none';
+    }
+  });
+
+  // Initial render from existing data
+  sync();
+})();
+</script>
 
 {% if action == 'Create' %}
 <script>

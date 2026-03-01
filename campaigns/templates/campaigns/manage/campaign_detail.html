@@ -13,7 +13,7 @@
   <div class="card-title">Campaign Details</div>
   <table style="margin:0;">
     <tr><th style="width:140px;">Goal</th><td>{{ campaign.goal }}</td></tr>
-    <tr><th>Cities</th><td>{{ campaign.cities|join:", " }}</td></tr>
+    <tr><th>Cities</th><td>{% for city in campaign.cities %}{% if city.display_name %}{{ city.display_name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
     <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
     {% if campaign.instructions %}
     <tr><th>Instructions</th><td>{{ campaign.instructions }}</td></tr>

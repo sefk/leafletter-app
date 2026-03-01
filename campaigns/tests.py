@@ -989,12 +989,18 @@ class ManagerUITest(TestCase):
 
     # ── Create ────────────────────────────────────────────────────────────────
 
+    def _city_json(self, name='San Jose', osm_id=112143):
+        return json.dumps([{
+            'name': name, 'osm_id': osm_id,
+            'osm_type': 'relation', 'display_name': f'{name}, CA',
+        }])
+
     def test_create_saves_as_draft(self):
         self._login()
         self.client.post('/manage/new/', {
             'name': 'Brand New Campaign',
             'goal': 'Reach voters',
-            'cities_input': 'San Jose',
+            'cities_json': self._city_json('San Jose'),
             'start_date': '2026-06-01',
         })
         campaign = Campaign.objects.get(name='Brand New Campaign')
@@ -1005,7 +1011,7 @@ class ManagerUITest(TestCase):
         resp = self.client.post('/manage/new/', {
             'name': 'Redirect Test',
             'goal': 'Goal text',
-            'cities_input': 'Palo Alto',
+            'cities_json': self._city_json('Palo Alto', 123),
             'start_date': '2026-06-01',
         })
         self.assertEqual(resp.status_code, 302)
@@ -1016,7 +1022,7 @@ class ManagerUITest(TestCase):
         self.client.post('/manage/new/', {
             'name': 'Auto Slug Campaign',
             'goal': 'Goal',
-            'cities_input': 'Sunnyvale',
+            'cities_json': self._city_json('Sunnyvale', 456),
             'start_date': '2026-06-01',
         })
         campaign = Campaign.objects.get(name='Auto Slug Campaign')
@@ -1073,29 +1079,45 @@ class ManagerUITest(TestCase):
         self.assertEqual(self.campaign.map_status, 'pending')
         mock_task.delay.assert_called_once_with(self.campaign.pk)
 
-    # ── Cities input parsing ──────────────────────────────────────────────────
+    # ── Cities JSON parsing ───────────────────────────────────────────────────
 
-    def test_cities_input_parsed_to_json_list(self):
+    def test_cities_json_saved_as_dict_list(self):
         self._login()
+        cities = [
+            {'name': 'San Jose', 'osm_id': 112143, 'osm_type': 'relation', 'display_name': 'San José, CA'},
+            {'name': 'Palo Alto', 'osm_id': 999, 'osm_type': 'relation', 'display_name': 'Palo Alto, CA'},
+        ]
         self.client.post('/manage/new/', {
             'name': 'City Parse Test',
             'goal': 'Goal',
-            'cities_input': 'San Jose\nPalo Alto\n\n   ',
+            'cities_json': json.dumps(cities),
             'start_date': '2026-06-01',
         })
         campaign = Campaign.objects.get(name='City Parse Test')
-        self.assertEqual(campaign.cities, ['San Jose', 'Palo Alto'])
+        self.assertEqual(campaign.cities[0]['name'], 'San Jose')
+        self.assertEqual(campaign.cities[1]['osm_id'], 999)
 
-    def test_cities_input_strips_whitespace(self):
+    def test_cities_json_invalid_json_fails_validation(self):
         self._login()
-        self.client.post('/manage/new/', {
-            'name': 'Whitespace Test',
+        resp = self.client.post('/manage/new/', {
+            'name': 'Bad JSON Test',
             'goal': 'Goal',
-            'cities_input': '  Mountain View  \n  Sunnyvale  ',
+            'cities_json': 'not-json',
             'start_date': '2026-06-01',
         })
-        campaign = Campaign.objects.get(name='Whitespace Test')
-        self.assertEqual(campaign.cities, ['Mountain View', 'Sunnyvale'])
+        self.assertEqual(resp.status_code, 200)  # form re-rendered with errors
+        self.assertFalse(Campaign.objects.filter(name='Bad JSON Test').exists())
+
+    def test_cities_json_empty_list_fails_validation(self):
+        self._login()
+        resp = self.client.post('/manage/new/', {
+            'name': 'Empty Cities Test',
+            'goal': 'Goal',
+            'cities_json': '[]',
+            'start_date': '2026-06-01',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Campaign.objects.filter(name='Empty Cities Test').exists())
 
     # ── List view ─────────────────────────────────────────────────────────────
 
@@ -1233,3 +1255,92 @@ class FetchOSMErrorHandlingTest(TestCase):
         self.campaign.refresh_from_db()
         self.assertEqual(self.campaign.map_status, 'error')
         self.assertIn('Springfield', self.campaign.map_error)
+
+    def test_dict_city_skips_lookup_city(self):
+        """Dict-format cities (with osm_id) bypass lookup_city entirely."""
+        dict_city = {'name': 'San Jose', 'osm_id': 112143, 'osm_type': 'relation',
+                     'display_name': 'San José, CA'}
+        self.campaign.cities = [dict_city]
+        self.campaign.save(update_fields=['cities'])
+        self.mock_overpass.return_value = [
+            {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        self.mock_lookup.assert_not_called()
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'ready')
+
+
+# ── Task tests: query_overpass dict city ──────────────────────────────────────
+
+class QueryOverpassDictCityTest(TestCase):
+
+    @patch('campaigns.tasks.requests.post')
+    def test_dict_city_uses_area_id_query(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        query_overpass({'name': 'San Jose', 'osm_id': 112143, 'osm_type': 'relation',
+                        'display_name': 'San José, CA'})
+        call_data = mock_post.call_args[1]['data']['data']
+        self.assertIn('area(3600112143)', call_data)
+        self.assertNotIn('area[name=', call_data)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_string_city_uses_name_query(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        query_overpass('Palo Alto')
+        call_data = mock_post.call_args[1]['data']['data']
+        self.assertIn('area[name="Palo Alto"]', call_data)
+
+
+# ── Manager UI tests: city_search view ───────────────────────────────────────
+
+class CitySearchViewTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='searcher', password='pass123')
+
+    def _login(self):
+        self.client.login(username='searcher', password='pass123')
+
+    def test_unauthenticated_redirects_to_login(self):
+        resp = self.client.get('/manage/city-search/?q=San+Jose')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+
+    @patch('campaigns.views.requests.get')
+    def test_returns_filtered_city_results(self, mock_get):
+        mock_get.return_value = _make_nominatim_response([
+            # large city stored as boundary/administrative (e.g. Fresno, San Jose)
+            {'class': 'boundary', 'type': 'administrative', 'osm_id': '112143', 'osm_type': 'relation',
+             'name': 'San Jose', 'display_name': 'San José, Santa Clara County, California, United States'},
+            # smaller city stored as place/city
+            {'class': 'place', 'type': 'city', 'osm_id': '999', 'osm_type': 'relation',
+             'name': 'San Jose', 'display_name': 'San José, Costa Rica'},
+            # street — should be excluded
+            {'class': 'highway', 'type': 'street', 'osm_id': '1', 'osm_type': 'way',
+             'name': 'San Jose Ave', 'display_name': 'San Jose Ave, Anytown'},
+        ])
+        self._login()
+        resp = self.client.get('/manage/city-search/?q=San+Jose')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data['results']), 2)
+        self.assertEqual(data['results'][0]['osm_id'], 112143)
+        self.assertEqual(data['results'][0]['name'], 'San Jose')
+
+    @patch('campaigns.views.requests.get')
+    def test_empty_query_returns_empty_results(self, mock_get):
+        self._login()
+        resp = self.client.get('/manage/city-search/?q=')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {'results': []})
+        mock_get.assert_not_called()
+
+    @patch('campaigns.views.requests.get')
+    def test_nominatim_error_returns_500(self, mock_get):
+        mock_get.side_effect = ConnectionError('network down')
+        self._login()
+        resp = self.client.get('/manage/city-search/?q=Anywhere')
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn('error', resp.json())

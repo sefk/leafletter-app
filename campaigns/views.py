@@ -1,5 +1,6 @@
 import json
 
+import requests
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
 from django.http import JsonResponse, HttpResponseBadRequest
@@ -9,7 +10,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm
 from .models import Campaign, Street, Trip
-from .tasks import fetch_osm_segments
+from .tasks import fetch_osm_segments, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/admin/login/')
 
@@ -198,3 +199,35 @@ def manage_campaign_refetch(request, slug):
     campaign.save(update_fields=['map_status'])
     fetch_osm_segments.delay(campaign.pk)
     return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_GET
+def city_search(request):
+    q = request.GET.get('q', '').strip()
+    if not q:
+        return JsonResponse({'results': []})
+    try:
+        resp = requests.get(
+            NOMINATIM_URL,
+            params={'q': q, 'format': 'json', 'limit': 10},
+            headers=NOMINATIM_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+    results = []
+    for r in data:
+        is_place_city = r.get('class') == 'place' and r.get('type') in CITY_TYPES
+        is_boundary = r.get('class') == 'boundary' and r.get('type') == 'administrative'
+        if is_place_city or is_boundary:
+            results.append({
+                'name': r.get('name', q),
+                'osm_id': int(r['osm_id']),
+                'osm_type': r.get('osm_type', 'relation'),
+                'display_name': r.get('display_name', ''),
+            })
+    return JsonResponse({'results': results})
