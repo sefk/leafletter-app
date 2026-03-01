@@ -131,6 +131,7 @@
   window.STREETS_URL = "{% url 'campaigns:streets_geojson' campaign.slug %}";
   window.COVERAGE_URL = "{% url 'campaigns:coverage_geojson' campaign.slug %}";
   window.TRIP_URL = "{% url 'campaigns:log_trip' campaign.slug %}";
+  window.BBOX = {{ bbox_json }};
 </script>
 <script src="{% static 'campaigns/map.js' %}"></script>
 

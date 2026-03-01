@@ -657,6 +657,32 @@ class FetchOSMSegmentsTaskTest(TestCase):
         fetch_osm_segments(self.campaign.pk)
         self.assertEqual(self.campaign.streets.count(), 3)
 
+    @patch('campaigns.tasks.query_overpass')
+    def test_bbox_computed_after_successful_import(self, mock_qo):
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+            {'osm_id': 20, 'name': 'B St', 'coords': [(-122.3, 37.6), (-122.0, 37.3)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        bbox = self.campaign.bbox
+        self.assertIsNotNone(bbox)
+        # bbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]]
+        sw, ne = bbox
+        self.assertAlmostEqual(sw[0], 37.3)   # min lat
+        self.assertAlmostEqual(sw[1], -122.3)  # min lon
+        self.assertAlmostEqual(ne[0], 37.6)   # max lat
+        self.assertAlmostEqual(ne[1], -122.0)  # max lon
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_bbox_reset_to_none_on_fetch_error(self, mock_qo):
+        self.campaign.bbox = [[37.4, -122.1], [37.5, -122.0]]
+        self.campaign.save(update_fields=['bbox'])
+        mock_qo.side_effect = RuntimeError('Overpass down')
+        fetch_osm_segments(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertIsNone(self.campaign.bbox)
+
 
 # ── Admin tests ───────────────────────────────────────────────────────────────
 

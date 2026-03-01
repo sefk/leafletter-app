@@ -17,7 +17,10 @@ _login_required = login_required(login_url='/admin/login/')
 
 def campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
-    return render(request, 'campaigns/campaign_detail.html', {'campaign': campaign})
+    return render(request, 'campaigns/campaign_detail.html', {
+        'campaign': campaign,
+        'bbox_json': json.dumps(campaign.bbox),
+    })
 
 
 @require_GET

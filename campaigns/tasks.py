@@ -154,7 +154,8 @@ def fetch_osm_segments(campaign_id: int) -> None:
 
     campaign.map_status = 'generating'
     campaign.map_error = ''
-    campaign.save(update_fields=['map_status', 'map_error'])
+    campaign.bbox = None
+    campaign.save(update_fields=['map_status', 'map_error', 'bbox'])
 
     try:
         cities = campaign.cities  # list of city name strings or dicts
@@ -186,10 +187,20 @@ def fetch_osm_segments(campaign_id: int) -> None:
             logger.info("Imported %d blocks for %s", block_count, city_label)
             if block_count == 0:
                 raise ValueError(f'City "{city_label}" was found but no streets were imported')
+        min_lon = min_lat = float('inf')
+        max_lon = max_lat = float('-inf')
+        for street in campaign.streets.only('geometry'):
+            xmin, ymin, xmax, ymax = street.geometry.extent
+            min_lon = min(min_lon, xmin)
+            min_lat = min(min_lat, ymin)
+            max_lon = max(max_lon, xmax)
+            max_lat = max(max_lat, ymax)
+        if min_lon != float('inf'):
+            campaign.bbox = [[min_lat, min_lon], [max_lat, max_lon]]
         campaign.map_status = 'ready'
     except Exception as exc:
         logger.error("fetch_osm_segments failed for campaign %s: %s", campaign_id, exc)
         campaign.map_status = 'error'
         campaign.map_error = str(exc)
     finally:
-        campaign.save(update_fields=['map_status', 'map_error'])
+        campaign.save(update_fields=['map_status', 'map_error', 'bbox'])

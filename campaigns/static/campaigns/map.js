@@ -17,12 +17,24 @@
   const STYLE_COVERAGE = { color: '#ff6f00', weight: 5, opacity: 0.8 };
 
   // ── Init map ─────────────────────────────────────────────────────────────
-  map = L.map('map');
+  const mapOptions = { maxBoundsViscosity: 1.0 };
+  if (window.BBOX) {
+    const sw = window.BBOX[0], ne = window.BBOX[1];
+    const latPad = (ne[0] - sw[0]) * 0.25;
+    const lonPad = (ne[1] - sw[1]) * 0.25;
+    mapOptions.maxBounds = [[sw[0] - latPad, sw[1] - lonPad], [ne[0] + latPad, ne[1] + lonPad]];
+  }
+  map = L.map('map', mapOptions);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap contributors',
   }).addTo(map);
+
+  if (window.BBOX) {
+    map.fitBounds(window.BBOX, { padding: [20, 20], animate: false });
+    map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, true));
+  }
 
   // ── Load streets ─────────────────────────────────────────────────────────
   fetch(window.STREETS_URL)
@@ -55,8 +67,10 @@
         },
       }).addTo(map);
 
-      // Fit map to streets bounds
-      map.fitBounds(streetsLayer.getBounds(), { padding: [20, 20] });
+      // Fit map to streets bounds only if no server-provided bbox
+      if (!window.BBOX) {
+        map.fitBounds(streetsLayer.getBounds(), { padding: [20, 20] });
+      }
     })
     .catch(err => console.error('Failed to load streets:', err));
 

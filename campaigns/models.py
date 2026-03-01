@@ -29,6 +29,7 @@ class Campaign(models.Model):
     status = models.CharField(max_length=20, choices=STATUS, default='draft')
     map_status = models.CharField(max_length=20, choices=MAP_STATUS, default='pending')
     map_error = models.TextField(blank=True, default='')
+    bbox = models.JSONField(null=True, blank=True)  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

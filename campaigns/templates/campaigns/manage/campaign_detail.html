@@ -67,6 +67,10 @@
         </div>
       </div>
       <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
+      <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline; margin-left:8px;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
+      </form>
 
     {% elif campaign.map_status == 'error' %}
       <p style="color:#c62828; margin-bottom:8px;">
