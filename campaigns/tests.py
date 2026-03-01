@@ -234,6 +234,14 @@ class CoverageGeoJSONViewTest(TestCase):
                    self.client.get('/c/cov-camp/coverage.geojson').json()['features']]
         self.assertNotIn(2, osm_ids)
 
+    def test_accumulates_streets_across_multiple_trips(self):
+        make_trip(self.campaign, streets=[self.street1], worker_name='Alice')
+        make_trip(self.campaign, streets=[self.street2], worker_name='Bob')
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(len(data['features']), 2)
+        osm_ids = {f['properties']['osm_id'] for f in data['features']}
+        self.assertEqual(osm_ids, {1, 2})
+
     def test_deduplicates_street_covered_by_multiple_trips(self):
         make_trip(self.campaign, streets=[self.street1], worker_name='Alice')
         make_trip(self.campaign, streets=[self.street1], worker_name='Bob')

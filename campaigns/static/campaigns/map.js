@@ -130,6 +130,7 @@
       return;
     }
     setSelectionMode(false);
+    document.getElementById('btn-submit').disabled = false;
     document.getElementById('trip-form').style.display = 'block';
     document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
