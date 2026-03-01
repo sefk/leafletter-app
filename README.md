@@ -118,40 +118,32 @@ python manage.py collectstatic
 
 ## Running locally
 
-**macOS** — start Redis manually, MySQL via brew services:
+Install `honcho` if you haven't already:
 ```bash
-brew services start mysql   # if not already running
-redis-server                # Terminal 1
+pip install honcho
 ```
 
-**Linux** — Redis and MySQL run as system services:
+**macOS** — start MySQL via brew services, then use honcho to launch everything else (Redis, Celery worker, Django):
 ```bash
-sudo systemctl start mysql   # if not already running
-sudo systemctl start redis
+brew services start mysql
+honcho start
 ```
 
-Then start the app (both platforms):
-
+**Linux** — start MySQL as a system service, then use honcho:
 ```bash
-# Terminal 1 (Linux only — macOS uses the commands above instead)
-redis-server
-
-# Terminal 2 — Celery worker (auto-restarts on .py file changes)
-source .venv/bin/activate
-watchmedo auto-restart --directory=. --pattern='*.py' --recursive -- \
-  celery -A leafletter worker -l info
-
-# Terminal 3 — Django dev server
-source .venv/bin/activate
-python manage.py runserver
+sudo systemctl start mysql
+honcho start
 ```
+
+`honcho start` reads the `Procfile` and starts Redis, the Celery worker (with auto-restart on `.py` changes), and the Django dev server in a single terminal with colour-coded output.
 
 ## Usage
 
-- `/admin/` — Django Admin for Campaign Managers
+- `/manage/` — Campaign manager UI
   - Create a Campaign, fill in `cities` as a JSON list: `["Palo Alto", "Menlo Park"]`
-  - Use the **Publish** action to publish and trigger OSM street import
+  - Use the **Publish** button to publish and trigger OSM street import
   - Wait for `map_status` to become **Ready**
+- `/admin/` — Django Admin (superuser access; useful for debugging)
 - `/c/<slug>/` — Worker map view; tap streets, log trips
 
 ## Debugging Celery tasks
@@ -197,7 +189,8 @@ watchmedo auto-restart --directory=. --pattern='*.py' --recursive -- \
 
 | URL | Description |
 |-----|-------------|
-| `/` | Redirects to `/admin/` |
+| `/` | Redirects to `/manage/` |
+| `/manage/` | Campaign manager UI |
 | `/admin/` | Django Admin |
 | `/c/<slug>/` | Worker campaign map |
 | `/c/<slug>/streets.geojson` | All street segments (GeoJSON) |
