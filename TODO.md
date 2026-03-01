@@ -56,4 +56,18 @@ Instead it should render a simple public page listing all published campaigns,
 each linking to its worker map view (`/c/<slug>/`). The page needs no authentication.
 Consider showing campaign name, goal summary, and date range for each entry.
 
+## P2 Backlog
+
+### [P2] ACL-based per-manager campaign visibility
+Add a `created_by` ForeignKey to Campaign linking to the User who created it.
+Update the manager UI to filter campaigns by the logged-in user (all campaigns
+for superusers). This lets organizations have multiple campaign managers without
+each seeing the others' campaigns.
+
+### [P2] Self-service manager account signup / registration page
+Currently manager accounts are created manually by a superuser via Django Admin.
+Add a public `/manage/signup/` page where new campaign managers can register
+with email + password, subject to email verification or admin approval before
+the account is activated.
+
 ## Done

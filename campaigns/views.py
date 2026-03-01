@@ -1,11 +1,17 @@
 import json
 
+from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.http import JsonResponse, HttpResponseBadRequest
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
+from .forms import CampaignForm
 from .models import Campaign, Street, Trip
+from .tasks import fetch_osm_segments
+
+_login_required = login_required(login_url='/admin/login/')
 
 
 def campaign_detail(request, slug):
@@ -97,3 +103,98 @@ def log_trip(request, slug):
     trip.streets.set(streets)
 
     return JsonResponse({'status': 'ok', 'trip_id': str(trip.pk)})
+
+
+# ── Manager UI views ──────────────────────────────────────────────────────────
+
+@_login_required
+def manage_campaign_list(request):
+    campaigns = Campaign.objects.exclude(status='deleted').annotate(
+        street_count=Count('streets', distinct=True),
+        trip_count=Count('trips', distinct=True),
+    )
+    return render(request, 'campaigns/manage/campaign_list.html', {'campaigns': campaigns})
+
+
+@_login_required
+def manage_campaign_create(request):
+    if request.method == 'POST':
+        form = CampaignForm(request.POST)
+        if form.is_valid():
+            campaign = form.save(commit=False)
+            campaign.status = 'draft'
+            campaign.save()
+            return redirect('manage_campaign_detail', slug=campaign.slug)
+    else:
+        form = CampaignForm()
+    return render(request, 'campaigns/manage/campaign_form.html', {'form': form, 'action': 'Create'})
+
+
+@_login_required
+def manage_campaign_detail(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    total_blocks = campaign.streets.count()
+    covered_blocks = Street.objects.filter(trip__campaign=campaign).distinct().count()
+    trip_count = campaign.trips.count()
+    pct = round(covered_blocks / total_blocks * 100) if total_blocks else 0
+    recent_trips = campaign.trips.prefetch_related('streets').all()[:10]
+    return render(request, 'campaigns/manage/campaign_detail.html', {
+        'campaign': campaign,
+        'total_blocks': total_blocks,
+        'covered_blocks': covered_blocks,
+        'trip_count': trip_count,
+        'pct': pct,
+        'recent_trips': recent_trips,
+    })
+
+
+@_login_required
+def manage_campaign_edit(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    if request.method == 'POST':
+        form = CampaignForm(request.POST, instance=campaign)
+        if form.is_valid():
+            old_cities = campaign.cities
+            updated = form.save()
+            if updated.status == 'published' and updated.cities != old_cities:
+                updated.map_status = 'pending'
+                updated.save(update_fields=['map_status'])
+                fetch_osm_segments.delay(updated.pk)
+            return redirect('manage_campaign_detail', slug=updated.slug)
+    else:
+        form = CampaignForm(instance=campaign)
+    return render(request, 'campaigns/manage/campaign_form.html', {
+        'form': form,
+        'campaign': campaign,
+        'action': 'Edit',
+    })
+
+
+@_login_required
+@require_POST
+def manage_campaign_publish(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    campaign.status = 'published'
+    campaign.map_status = 'pending'
+    campaign.save(update_fields=['status', 'map_status'])
+    fetch_osm_segments.delay(campaign.pk)
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_campaign_delete(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    campaign.status = 'deleted'
+    campaign.save(update_fields=['status'])
+    return redirect('manage_campaign_list')
+
+
+@_login_required
+@require_POST
+def manage_campaign_refetch(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    campaign.map_status = 'pending'
+    campaign.save(update_fields=['map_status'])
+    fetch_osm_segments.delay(campaign.pk)
+    return redirect('manage_campaign_detail', slug=slug)

@@ -9,6 +9,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from django.contrib import admin as django_admin
+from django.contrib.auth.models import User
 from django.contrib.gis.geos import LineString
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.db import IntegrityError
@@ -921,3 +922,178 @@ class WorkerFlowEndToEndTest(TestCase):
         resp = self.client.get(f'/c/e2e-camp/coverage.geojson')
         self.assertEqual(len(resp.json()['features']), 3,
                          "All 3 blocks should now be covered")
+
+
+# ── Manager UI tests ──────────────────────────────────────────────────────────
+
+class ManagerUITest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='manager', password='password123')
+        self.campaign = make_campaign(slug='mgr-camp', status='draft')
+
+    def _login(self):
+        self.client.login(username='manager', password='password123')
+
+    # ── Authentication ────────────────────────────────────────────────────────
+
+    def test_unauthenticated_list_redirects_to_login(self):
+        resp = self.client.get('/manage/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+
+    def test_unauthenticated_detail_redirects_to_login(self):
+        resp = self.client.get(f'/manage/{self.campaign.slug}/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+
+    def test_unauthenticated_create_redirects_to_login(self):
+        resp = self.client.get('/manage/new/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+
+    # ── Authenticated access ──────────────────────────────────────────────────
+
+    def test_authenticated_can_access_list(self):
+        self._login()
+        resp = self.client.get('/manage/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_authenticated_can_access_create(self):
+        self._login()
+        resp = self.client.get('/manage/new/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_authenticated_can_access_detail(self):
+        self._login()
+        resp = self.client.get(f'/manage/{self.campaign.slug}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_authenticated_can_access_edit(self):
+        self._login()
+        resp = self.client.get(f'/manage/{self.campaign.slug}/edit/')
+        self.assertEqual(resp.status_code, 200)
+
+    # ── Create ────────────────────────────────────────────────────────────────
+
+    def test_create_saves_as_draft(self):
+        self._login()
+        self.client.post('/manage/new/', {
+            'name': 'Brand New Campaign',
+            'goal': 'Reach voters',
+            'cities_input': 'San Jose',
+            'start_date': '2026-06-01',
+        })
+        campaign = Campaign.objects.get(name='Brand New Campaign')
+        self.assertEqual(campaign.status, 'draft')
+
+    def test_create_redirects_to_detail(self):
+        self._login()
+        resp = self.client.post('/manage/new/', {
+            'name': 'Redirect Test',
+            'goal': 'Goal text',
+            'cities_input': 'Palo Alto',
+            'start_date': '2026-06-01',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/', resp['Location'])
+
+    def test_create_autogenerates_slug_when_blank(self):
+        self._login()
+        self.client.post('/manage/new/', {
+            'name': 'Auto Slug Campaign',
+            'goal': 'Goal',
+            'cities_input': 'Sunnyvale',
+            'start_date': '2026-06-01',
+        })
+        campaign = Campaign.objects.get(name='Auto Slug Campaign')
+        self.assertEqual(campaign.slug, 'auto-slug-campaign')
+
+    # ── Publish ───────────────────────────────────────────────────────────────
+
+    @patch('campaigns.views.fetch_osm_segments')
+    def test_publish_sets_status_and_queues_task(self, mock_task):
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/publish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'published')
+        self.assertEqual(self.campaign.map_status, 'pending')
+        mock_task.delay.assert_called_once_with(self.campaign.pk)
+
+    @patch('campaigns.views.fetch_osm_segments')
+    def test_publish_redirects_to_detail(self, mock_task):
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/publish/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
+
+    # ── Delete ────────────────────────────────────────────────────────────────
+
+    def test_soft_delete_marks_as_deleted(self):
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'deleted')
+
+    def test_deleted_campaign_not_in_list(self):
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        resp = self.client.get('/manage/')
+        self.assertNotContains(resp, self.campaign.name)
+
+    def test_delete_redirects_to_list(self):
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/', resp['Location'])
+
+    # ── Re-fetch ──────────────────────────────────────────────────────────────
+
+    @patch('campaigns.views.fetch_osm_segments')
+    def test_refetch_triggers_task_on_error_campaign(self, mock_task):
+        self.campaign.status = 'published'
+        self.campaign.map_status = 'error'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/refetch/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'pending')
+        mock_task.delay.assert_called_once_with(self.campaign.pk)
+
+    # ── Cities input parsing ──────────────────────────────────────────────────
+
+    def test_cities_input_parsed_to_json_list(self):
+        self._login()
+        self.client.post('/manage/new/', {
+            'name': 'City Parse Test',
+            'goal': 'Goal',
+            'cities_input': 'San Jose\nPalo Alto\n\n   ',
+            'start_date': '2026-06-01',
+        })
+        campaign = Campaign.objects.get(name='City Parse Test')
+        self.assertEqual(campaign.cities, ['San Jose', 'Palo Alto'])
+
+    def test_cities_input_strips_whitespace(self):
+        self._login()
+        self.client.post('/manage/new/', {
+            'name': 'Whitespace Test',
+            'goal': 'Goal',
+            'cities_input': '  Mountain View  \n  Sunnyvale  ',
+            'start_date': '2026-06-01',
+        })
+        campaign = Campaign.objects.get(name='Whitespace Test')
+        self.assertEqual(campaign.cities, ['Mountain View', 'Sunnyvale'])
+
+    # ── List view ─────────────────────────────────────────────────────────────
+
+    def test_list_shows_campaign_name(self):
+        self._login()
+        resp = self.client.get('/manage/')
+        self.assertContains(resp, self.campaign.name)
+
+    def test_list_excludes_deleted_campaigns(self):
+        self._login()
+        make_campaign(slug='hidden-del', status='deleted', name='Hidden Deleted Camp')
+        resp = self.client.get('/manage/')
+        self.assertNotContains(resp, 'Hidden Deleted Camp')

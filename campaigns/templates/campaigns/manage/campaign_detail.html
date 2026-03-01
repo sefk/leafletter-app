@@ -1,0 +1,114 @@
+{% extends "campaigns/manage/base.html" %}
+
+{% block title %}{{ campaign.name }} — Leafletter Manager{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+  <h1>{{ campaign.name }}</h1>
+  <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-secondary">Edit</a>
+</div>
+
+<!-- Campaign Info -->
+<div class="card">
+  <div class="card-title">Campaign Details</div>
+  <table style="margin:0;">
+    <tr><th style="width:140px;">Goal</th><td>{{ campaign.goal }}</td></tr>
+    <tr><th>Cities</th><td>{{ campaign.cities|join:", " }}</td></tr>
+    <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
+    {% if campaign.instructions %}
+    <tr><th>Instructions</th><td>{{ campaign.instructions }}</td></tr>
+    {% endif %}
+    {% if campaign.materials_url %}
+    <tr><th>Materials</th><td><a href="{{ campaign.materials_url }}" target="_blank">{{ campaign.materials_url }}</a></td></tr>
+    {% endif %}
+    {% if campaign.contact_info %}
+    <tr><th>Contact</th><td>{{ campaign.contact_info }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<!-- Status Panel -->
+<div class="card">
+  <div class="card-title">
+    Status:
+    <span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span>
+    &nbsp;
+    <span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
+  </div>
+
+  {% if campaign.status == 'draft' %}
+    <p style="color:#666; margin-bottom:12px;">This campaign is a draft. Publish it to make it visible to volunteers and begin the street import.</p>
+    <form method="post" action="/manage/{{ campaign.slug }}/publish/">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Publish Campaign</button>
+    </form>
+
+  {% elif campaign.status == 'published' %}
+    {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
+      <p style="color:#666;">Streets are being imported from OpenStreetMap… check back in a moment.</p>
+
+    {% elif campaign.map_status == 'ready' %}
+      <div style="margin-bottom:16px;">
+        <div class="stat">
+          <div class="stat-value">{{ covered_blocks }}</div>
+          <div class="stat-label">blocks covered</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">{{ total_blocks }}</div>
+          <div class="stat-label">total blocks</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">{{ pct }}%</div>
+          <div class="stat-label">complete</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">{{ trip_count }}</div>
+          <div class="stat-label">trips logged</div>
+        </div>
+      </div>
+      <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
+
+    {% elif campaign.map_status == 'error' %}
+      <p style="color:#c62828; margin-bottom:12px;">Street import failed. Try fetching again, or check the city names in the campaign settings.</p>
+      <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Re-fetch Streets</button>
+      </form>
+    {% endif %}
+  {% endif %}
+
+  <div class="action-row" style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
+    <form method="post" action="/manage/{{ campaign.slug }}/delete/"
+          onsubmit="return confirm('Soft-delete this campaign?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Delete Campaign</button>
+    </form>
+  </div>
+</div>
+
+<!-- Recent Trips -->
+{% if recent_trips %}
+<div class="card">
+  <div class="card-title">Recent Trips</div>
+  <table style="margin:0;">
+    <thead>
+      <tr>
+        <th>Worker</th>
+        <th>Date</th>
+        <th>Blocks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for trip in recent_trips %}
+      <tr>
+        <td>{{ trip.worker_name|default:"Anonymous" }}</td>
+        <td>{{ trip.recorded_at|date:"Y-m-d H:i" }}</td>
+        <td>{{ trip.streets.count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

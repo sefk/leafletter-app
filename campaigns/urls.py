@@ -9,3 +9,13 @@ urlpatterns = [
     path('<slug:slug>/coverage.geojson', views.campaign_coverage_geojson, name='coverage_geojson'),
     path('<slug:slug>/trip/', views.log_trip, name='log_trip'),
 ]
+
+manage_urlpatterns = [
+    path('', views.manage_campaign_list, name='manage_campaign_list'),
+    path('new/', views.manage_campaign_create, name='manage_campaign_create'),
+    path('<slug:slug>/', views.manage_campaign_detail, name='manage_campaign_detail'),
+    path('<slug:slug>/edit/', views.manage_campaign_edit, name='manage_campaign_edit'),
+    path('<slug:slug>/publish/', views.manage_campaign_publish, name='manage_campaign_publish'),
+    path('<slug:slug>/delete/', views.manage_campaign_delete, name='manage_campaign_delete'),
+    path('<slug:slug>/refetch/', views.manage_campaign_refetch, name='manage_campaign_refetch'),
+]

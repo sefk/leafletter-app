@@ -1,0 +1,39 @@
+{% extends "campaigns/manage/base.html" %}
+
+{% block title %}Campaigns — Leafletter Manager{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+  <h1>Campaigns</h1>
+  <a href="/manage/new/" class="btn btn-primary">+ New Campaign</a>
+</div>
+
+{% if campaigns %}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Map</th>
+      <th>Streets</th>
+      <th>Trips</th>
+      <th>Start Date</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for campaign in campaigns %}
+    <tr>
+      <td><a href="/manage/{{ campaign.slug }}/">{{ campaign.name }}</a></td>
+      <td><span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span></td>
+      <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
+      <td>{{ campaign.street_count }}</td>
+      <td>{{ campaign.trip_count }}</td>
+      <td>{{ campaign.start_date }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p style="color:#666;">No campaigns yet. <a href="/manage/new/">Create your first campaign.</a></p>
+{% endif %}
+{% endblock %}
