@@ -16,7 +16,7 @@ from django.test import Client, RequestFactory, TestCase
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
 from .models import Campaign, Street, Trip
-from .tasks import fetch_osm_segments, query_overpass
+from .tasks import fetch_osm_segments, find_intersection_nodes, query_overpass, split_way_at_intersections
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
 
@@ -38,12 +38,13 @@ def make_campaign(slug='test-campaign', status='published', **kwargs):
     return Campaign.objects.create(**defaults)
 
 
-def make_street(campaign, osm_id=1001, name='Main St', geometry=None):
+def make_street(campaign, osm_id=1001, name='Main St', geometry=None, block_index=0):
     return Street.objects.create(
         campaign=campaign,
         osm_id=osm_id,
         name=name,
         geometry=geometry or GEOM,
+        block_index=block_index,
     )
 
 
@@ -92,16 +93,21 @@ class StreetModelTest(TestCase):
 
     def test_str_with_name(self):
         s = Street(campaign=self.campaign, osm_id=123, name='Oak Ave', geometry=GEOM)
-        self.assertEqual(str(s), 'Oak Ave (123)')
+        self.assertEqual(str(s), 'Oak Ave (123 block 0)')
 
     def test_str_without_name(self):
         s = Street(campaign=self.campaign, osm_id=456, name='', geometry=GEOM)
-        self.assertEqual(str(s), 'Unnamed (456)')
+        self.assertEqual(str(s), 'Unnamed (456 block 0)')
 
-    def test_unique_together_campaign_osm_id(self):
-        make_street(self.campaign, osm_id=999)
+    def test_unique_together_campaign_osm_id_block_index(self):
+        make_street(self.campaign, osm_id=999, block_index=0)
         with self.assertRaises(IntegrityError):
-            make_street(self.campaign, osm_id=999)
+            make_street(self.campaign, osm_id=999, block_index=0)
+
+    def test_multiple_blocks_same_osm_id_allowed(self):
+        make_street(self.campaign, osm_id=999, block_index=0)
+        # Different block_index for same osm_id should not raise
+        make_street(self.campaign, osm_id=999, block_index=1, geometry=GEOM2)
 
     def test_same_osm_id_allowed_across_campaigns(self):
         other = make_campaign(slug='other-camp')
@@ -352,21 +358,25 @@ OVERPASS_RESPONSE = {
         {
             'id': 111,
             'tags': {'highway': 'residential', 'name': 'Oak Ave'},
+            'nodes': [1001, 1002],
             'geometry': [{'lon': -122.1, 'lat': 37.4}, {'lon': -122.2, 'lat': 37.5}],
         },
         {
             'id': 222,
             'tags': {'highway': 'footway'},     # excluded type
+            'nodes': [1002, 1003],
             'geometry': [{'lon': -122.1, 'lat': 37.4}, {'lon': -122.2, 'lat': 37.5}],
         },
         {
             'id': 333,
             'tags': {'highway': 'primary'},
+            'nodes': [1004],
             'geometry': [{'lon': -122.1, 'lat': 37.4}],  # only 1 point — skip
         },
         {
             'id': 444,
             'tags': {'highway': 'primary', 'name': 'Main St'},
+            'nodes': [1005, 1006],
             'geometry': [{'lon': -122.0, 'lat': 37.3}, {'lon': -122.05, 'lat': 37.35}],
         },
     ]
@@ -448,6 +458,92 @@ class QueryOverpassTest(TestCase):
         with self.assertRaises(Exception):
             query_overpass('BadCity')
 
+    @patch('campaigns.tasks.requests.post')
+    def test_node_ids_extracted(self, mock_post):
+        mock_post.return_value = _make_overpass_response()
+        ways = query_overpass('Palo Alto')
+        oak = next(w for w in ways if w['osm_id'] == 111)
+        self.assertEqual(oak['node_ids'], [1001, 1002])
+
+
+# ── Task tests: find_intersection_nodes ───────────────────────────────────────
+
+class FindIntersectionNodesTest(TestCase):
+
+    def test_shared_node_is_intersection(self):
+        ways = [{'node_ids': [1, 2, 3]}, {'node_ids': [3, 4, 5]}]
+        self.assertIn(3, find_intersection_nodes(ways))
+
+    def test_unshared_nodes_not_intersection(self):
+        ways = [{'node_ids': [1, 2, 3]}, {'node_ids': [4, 5, 6]}]
+        self.assertEqual(find_intersection_nodes(ways), set())
+
+    def test_loop_road_not_self_intersection(self):
+        ways = [{'node_ids': [1, 2, 3, 1]}]
+        self.assertEqual(find_intersection_nodes(ways), set())
+
+    def test_three_way_intersection(self):
+        ways = [
+            {'node_ids': [1, 2, 3]},
+            {'node_ids': [4, 2, 5]},
+            {'node_ids': [6, 2, 7]},
+        ]
+        self.assertEqual(find_intersection_nodes(ways), {2})
+
+    def test_empty_ways(self):
+        self.assertEqual(find_intersection_nodes([]), set())
+
+
+# ── Task tests: split_way_at_intersections ────────────────────────────────────
+
+class SplitWayAtIntersectionsTest(TestCase):
+
+    def _way(self, node_ids, coords=None):
+        if coords is None:
+            coords = [(float(-122 - i * 0.01), float(37 + i * 0.01)) for i in range(len(node_ids))]
+        return {'node_ids': node_ids, 'coords': coords}
+
+    def test_no_intersections_returns_single_segment(self):
+        way = self._way([1, 2, 3])
+        blocks = split_way_at_intersections(way, set())
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]['block_index'], 0)
+        self.assertEqual(len(blocks[0]['coords']), 3)
+
+    def test_midpoint_intersection_splits_into_two(self):
+        way = self._way([1, 2, 3])
+        blocks = split_way_at_intersections(way, {2})
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0]['start_node_id'], 1)
+        self.assertEqual(blocks[0]['end_node_id'], 2)
+        self.assertEqual(blocks[1]['start_node_id'], 2)
+        self.assertEqual(blocks[1]['end_node_id'], 3)
+        self.assertEqual([b['block_index'] for b in blocks], [0, 1])
+
+    def test_two_intersections_split_into_three(self):
+        way = self._way([1, 2, 3, 4, 5])
+        blocks = split_way_at_intersections(way, {2, 4})
+        self.assertEqual(len(blocks), 3)
+        self.assertEqual([b['block_index'] for b in blocks], [0, 1, 2])
+
+    def test_endpoint_only_intersections_give_single_block(self):
+        way = self._way([1, 2, 3])
+        blocks = split_way_at_intersections(way, {1, 3})
+        self.assertEqual(len(blocks), 1)
+
+    def test_adjacent_blocks_share_endpoint_coord(self):
+        coords = [(-122.1, 37.4), (-122.15, 37.45), (-122.2, 37.5)]
+        way = {'node_ids': [1, 2, 3], 'coords': coords}
+        blocks = split_way_at_intersections(way, {2})
+        self.assertEqual(blocks[0]['coords'][-1], (-122.15, 37.45))
+        self.assertEqual(blocks[1]['coords'][0], (-122.15, 37.45))
+
+    def test_missing_node_ids_fallback_to_single_segment(self):
+        way = {'node_ids': [], 'coords': [(-122.1, 37.4), (-122.2, 37.5)]}
+        blocks = split_way_at_intersections(way, {99})
+        self.assertEqual(len(blocks), 1)
+        self.assertIsNone(blocks[0]['start_node_id'])
+
 
 # ── Task tests: fetch_osm_segments ────────────────────────────────────────────
 
@@ -511,6 +607,47 @@ class FetchOSMSegmentsTaskTest(TestCase):
 
     def test_missing_campaign_pk_does_not_raise(self):
         fetch_osm_segments(99999)   # should return silently
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_intersecting_ways_split_into_blocks(self, mock_qo):
+        """A 3-node way sharing a node with another way is split into 2 blocks."""
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'node_ids': [1, 2, 3],
+             'coords': [(-122.1, 37.4), (-122.15, 37.45), (-122.2, 37.5)]},
+            {'osm_id': 20, 'name': 'B St', 'node_ids': [2, 4],
+             'coords': [(-122.15, 37.45), (-122.25, 37.55)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        # A St: 3 nodes, split at shared node 2 → 2 blocks; B St: 2 nodes → 1 block
+        self.assertEqual(self.campaign.streets.count(), 3)
+        a_blocks = self.campaign.streets.filter(osm_id=10).order_by('block_index')
+        self.assertEqual(a_blocks.count(), 2)
+        self.assertEqual(a_blocks[0].start_node_id, 1)
+        self.assertEqual(a_blocks[0].end_node_id, 2)
+        self.assertEqual(a_blocks[1].start_node_id, 2)
+        self.assertEqual(a_blocks[1].end_node_id, 3)
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_non_intersecting_way_is_single_block(self, mock_qo):
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'Dead End', 'node_ids': [1, 2, 3],
+             'coords': [(-122.1, 37.4), (-122.15, 37.45), (-122.2, 37.5)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        self.assertEqual(self.campaign.streets.count(), 1)
+        self.assertEqual(self.campaign.streets.first().block_index, 0)
+
+    @patch('campaigns.tasks.query_overpass')
+    def test_rerun_does_not_duplicate_blocks(self, mock_qo):
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'node_ids': [1, 2, 3],
+             'coords': [(-122.1, 37.4), (-122.15, 37.45), (-122.2, 37.5)]},
+            {'osm_id': 20, 'name': 'B St', 'node_ids': [2, 4],
+             'coords': [(-122.15, 37.45), (-122.25, 37.55)]},
+        ]
+        fetch_osm_segments(self.campaign.pk)
+        fetch_osm_segments(self.campaign.pk)
+        self.assertEqual(self.campaign.streets.count(), 3)
 
 
 # ── Admin tests ───────────────────────────────────────────────────────────────

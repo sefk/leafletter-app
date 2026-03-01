@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 
 import requests
 from celery import shared_task
@@ -22,7 +23,8 @@ HIGHWAY_INCLUDE = {
 def query_overpass(city: str) -> list[dict]:
     """
     Query Overpass API for driveable highway ways within a named area.
-    Returns a list of dicts: {osm_id, name, coords (list of (lon, lat) tuples)}.
+    Returns a list of dicts: {osm_id, name, coords, node_ids}.
+    coords is a list of (lon, lat) tuples; node_ids is the parallel list of OSM node IDs.
     """
     query = f"""
 [out:json][timeout:60];
@@ -51,8 +53,59 @@ out geom;
             'osm_id': element['id'],
             'name': element.get('tags', {}).get('name', ''),
             'coords': coords,
+            'node_ids': element.get('nodes', []),
         })
     return ways
+
+
+def find_intersection_nodes(ways: list[dict]) -> set:
+    """
+    Return the set of OSM node IDs that appear in two or more ways.
+    These are the points where ways intersect and where we split blocks.
+    """
+    node_counts = Counter()
+    for way in ways:
+        # Use a set per way so a loop road's repeated start/end node
+        # doesn't count as an intersection with itself.
+        node_counts.update(set(way.get('node_ids', [])))
+    return {node_id for node_id, count in node_counts.items() if count >= 2}
+
+
+def split_way_at_intersections(way: dict, intersection_nodes: set) -> list[dict]:
+    """
+    Split a way into block segments at every interior intersection node.
+    Returns a list of segment dicts with keys:
+      coords, start_node_id, end_node_id, block_index
+    Each segment has at least 2 coordinate points.
+    """
+    node_ids = way.get('node_ids', [])
+    coords = way['coords']
+
+    if not node_ids or len(node_ids) != len(coords):
+        return [{'coords': coords, 'start_node_id': None, 'end_node_id': None, 'block_index': 0}]
+
+    segments = []
+    current_coords = [coords[0]]
+    current_start_node = node_ids[0]
+    block_index = 0
+
+    for i in range(1, len(node_ids)):
+        current_coords.append(coords[i])
+        node_id = node_ids[i]
+        is_last = (i == len(node_ids) - 1)
+        # Split at interior intersection nodes and always at the final point
+        if node_id in intersection_nodes or is_last:
+            segments.append({
+                'coords': current_coords,
+                'start_node_id': current_start_node,
+                'end_node_id': node_id,
+                'block_index': block_index,
+            })
+            block_index += 1
+            current_coords = [coords[i]]
+            current_start_node = node_id
+
+    return segments or [{'coords': coords, 'start_node_id': node_ids[0], 'end_node_id': node_ids[-1], 'block_index': 0}]
 
 
 @shared_task
@@ -71,16 +124,25 @@ def fetch_osm_segments(campaign_id: int) -> None:
         for city in cities:
             logger.info("Fetching OSM segments for city: %s", city)
             ways = query_overpass(city)
+            intersection_nodes = find_intersection_nodes(ways)
+            block_count = 0
             for way in ways:
-                Street.objects.update_or_create(
-                    campaign=campaign,
-                    osm_id=way['osm_id'],
-                    defaults={
-                        'name': way['name'],
-                        'geometry': LineString(way['coords']),
-                    },
-                )
-            logger.info("Imported %d streets for %s", len(ways), city)
+                for block in split_way_at_intersections(way, intersection_nodes):
+                    if len(block['coords']) < 2:
+                        continue
+                    Street.objects.update_or_create(
+                        campaign=campaign,
+                        osm_id=way['osm_id'],
+                        block_index=block['block_index'],
+                        defaults={
+                            'name': way['name'],
+                            'geometry': LineString(block['coords']),
+                            'start_node_id': block['start_node_id'],
+                            'end_node_id': block['end_node_id'],
+                        },
+                    )
+                    block_count += 1
+            logger.info("Imported %d blocks for %s", block_count, city)
         campaign.map_status = 'ready'
     except Exception as exc:
         logger.error("fetch_osm_segments failed for campaign %s: %s", campaign_id, exc)

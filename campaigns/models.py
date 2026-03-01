@@ -43,12 +43,15 @@ class Street(models.Model):
     osm_id = models.BigIntegerField()
     name = models.CharField(max_length=200, blank=True)
     geometry = models.LineStringField(srid=4326)
+    block_index = models.PositiveSmallIntegerField(default=0)
+    start_node_id = models.BigIntegerField(null=True, blank=True)
+    end_node_id = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
-        unique_together = ('campaign', 'osm_id')
+        unique_together = ('campaign', 'osm_id', 'block_index')
 
     def __str__(self):
-        return f"{self.name or 'Unnamed'} ({self.osm_id})"
+        return f"{self.name or 'Unnamed'} ({self.osm_id} block {self.block_index})"
 
 
 class Trip(models.Model):
