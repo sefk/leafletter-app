@@ -4,7 +4,6 @@ django[argon2]
 celery
 kombu[sqlalchemy]
 GDAL
-gdal-config
 requests
 django-celery-results
 watchdog

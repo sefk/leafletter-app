@@ -2,13 +2,14 @@
 Django settings for leafletter project.
 """
 
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-wti#q9%lysc97#8y%cxo2ucna_kurpg2@gxhm(4-n01)t5=p4s'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-wti#q9%lysc97#8y%cxo2ucna_kurpg2@gxhm(4-n01)t5=p4s')
 
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
@@ -56,11 +57,11 @@ WSGI_APPLICATION = 'leafletter.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.mysql',
-        'NAME': 'leafletter',
-        'USER': 'leafletter',
-        'PASSWORD': 'leafletter',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': os.environ.get('MYSQL_DATABASE', 'leafletter'),
+        'USER': os.environ.get('MYSQL_USER', 'leafletter'),
+        'PASSWORD': os.environ.get('MYSQL_PASSWORD', 'leafletter'),
+        'HOST': os.environ.get('MYSQL_HOST', 'localhost'),
+        'PORT': os.environ.get('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
         },
@@ -87,7 +88,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = '/admin/login/'
 
 # Celery
-CELERY_BROKER_URL = 'sqla+mysql://leafletter:leafletter@localhost/leafletter'
+_mysql_user = os.environ.get('MYSQL_USER', 'leafletter')
+_mysql_password = os.environ.get('MYSQL_PASSWORD', 'leafletter')
+_mysql_host = os.environ.get('MYSQL_HOST', 'localhost')
+_mysql_port = os.environ.get('MYSQL_PORT', '3306')
+_mysql_db = os.environ.get('MYSQL_DATABASE', 'leafletter')
+CELERY_BROKER_URL = f'sqla+mysql://{_mysql_user}:{_mysql_password}@{_mysql_host}:{_mysql_port}/{_mysql_db}'
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
