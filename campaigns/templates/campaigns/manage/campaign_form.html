@@ -103,8 +103,8 @@
 
 <script>
 (function () {
-  var cities = {{ form.cities_json.value|default:"[]" }};
   var hiddenInput = document.getElementById('id_cities_json');
+  var cities = JSON.parse(hiddenInput.value || '[]');
   var searchInput = document.getElementById('city-search-input');
   var searchBtn   = document.getElementById('city-search-btn');
   var resultsDiv  = document.getElementById('city-results');
