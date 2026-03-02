@@ -5,16 +5,27 @@
 
   // ── State ────────────────────────────────────────────────────────────────
   const selectedIds = new Set();
+  const selectionStack = [];        // undo stack: each entry is an id (click) or id[] (lasso batch)
+  const layerById = new Map();      // id → Leaflet layer
+  const layerToId = new Map();      // layer → id (for lasso reverse lookup)
+  let isPointerDown = false;
   let selectionMode = false;
   let streetsLayer = null;
   let coverageLayer = null;
   let coverageVisible = false;
+  let lasso = null;
   let map = null;
 
   // Style helpers
   const STYLE_DEFAULT = { color: '#888', weight: 2, opacity: 0.7 };
   const STYLE_SELECTED = { color: '#1a6b3c', weight: 5, opacity: 1 };
   const STYLE_COVERAGE = { color: '#ff6f00', weight: 5, opacity: 0.8 };
+
+  // ── Pointer tracking (for drag-to-select) ────────────────────────────────
+  document.addEventListener('mousedown', () => { isPointerDown = true; });
+  document.addEventListener('mouseup', () => { isPointerDown = false; });
+  document.addEventListener('touchstart', () => { isPointerDown = true; });
+  document.addEventListener('touchend', () => { isPointerDown = false; });
 
   // ── Init map ─────────────────────────────────────────────────────────────
   const mapOptions = { maxBoundsViscosity: 1.0 };
@@ -51,21 +62,74 @@
           const id = feature.id;
           const name = feature.properties.name || 'Unnamed street';
 
+          layerById.set(id, layer);
+          layerToId.set(layer, id);
+
           layer.bindTooltip(name, { sticky: true });
 
           layer.on('click', () => {
             if (!selectionMode) return;
             if (selectedIds.has(id)) {
               selectedIds.delete(id);
+              // Remove from wherever it sits in the stack (may be inside a batch array)
+              for (let i = selectionStack.length - 1; i >= 0; i--) {
+                const entry = selectionStack[i];
+                if (Array.isArray(entry)) {
+                  const idx = entry.indexOf(id);
+                  if (idx !== -1) {
+                    entry.splice(idx, 1);
+                    if (entry.length === 0) selectionStack.splice(i, 1);
+                    break;
+                  }
+                } else if (entry === id) {
+                  selectionStack.splice(i, 1);
+                  break;
+                }
+              }
               layer.setStyle(STYLE_DEFAULT);
             } else {
               selectedIds.add(id);
+              selectionStack.push(id);
               layer.setStyle(STYLE_SELECTED);
             }
             updateSelectionCount();
+            updateUndoButton();
+          });
+
+          layer.on('mouseover', () => {
+            if (!selectionMode || !isPointerDown || selectedIds.has(id)) return;
+            selectedIds.add(id);
+            selectionStack.push(id);
+            layer.setStyle(STYLE_SELECTED);
+            updateSelectionCount();
+            updateUndoButton();
           });
         },
       }).addTo(map);
+
+      // Initialize lasso if plugin is loaded
+      if (typeof L.lasso === 'function') {
+        lasso = L.lasso(map, { intersect: true });
+        map.on('lasso.finished', event => {
+          const batch = [];
+          event.layers.forEach(layer => {
+            const id = layerToId.get(layer);
+            if (id !== undefined && !selectedIds.has(id)) {
+              selectedIds.add(id);
+              batch.push(id);
+              layer.setStyle(STYLE_SELECTED);
+            }
+          });
+          if (batch.length > 0) selectionStack.push(batch);
+          updateSelectionCount();
+          updateUndoButton();
+          document.getElementById('btn-lasso').textContent = 'Select Area';
+        });
+        // Show btn-lasso if already in selection mode (race condition guard)
+        if (selectionMode) {
+          document.getElementById('btn-lasso').style.display = '';
+        }
+      }
 
       // Fit map to streets bounds only if no server-provided bbox
       if (!window.BBOX) {
@@ -95,9 +159,18 @@
   // ── UI helpers ────────────────────────────────────────────────────────────
   function updateSelectionCount() {
     const el = document.getElementById('selection-count');
-    el.textContent = selectedIds.size > 0
-      ? `${selectedIds.size} segment${selectedIds.size === 1 ? '' : 's'} selected`
-      : '';
+    if (selectedIds.size > 0) {
+      el.textContent = `● ${selectedIds.size} block${selectedIds.size === 1 ? '' : 's'}`;
+      el.style.display = 'inline-flex';
+    } else {
+      el.textContent = '';
+      el.style.display = 'none';
+    }
+  }
+
+  function updateUndoButton() {
+    const btn = document.getElementById('btn-undo');
+    btn.style.display = (selectionMode && selectionStack.length > 0) ? '' : 'none';
   }
 
   function setSelectionMode(active) {
@@ -108,11 +181,26 @@
     if (streetsLayer) {
       map.getContainer().style.cursor = active ? 'crosshair' : '';
     }
+    if (active) {
+      map.dragging.disable();
+    } else {
+      map.dragging.enable();
+      if (lasso) {
+        lasso.disable();
+        document.getElementById('btn-lasso').textContent = 'Select Area';
+      }
+    }
+    if (lasso) {
+      document.getElementById('btn-lasso').style.display = active ? '' : 'none';
+    }
+    updateUndoButton();
   }
 
   function resetSelection() {
     selectedIds.clear();
+    selectionStack.length = 0;
     updateSelectionCount();
+    updateUndoButton();
     if (streetsLayer) {
       streetsLayer.setStyle(STYLE_DEFAULT);
     }
@@ -129,6 +217,10 @@
   document.getElementById('btn-log-trip').addEventListener('click', () => {
     setSelectionMode(true);
     updateSelectionCount();
+    if (lasso) {
+      lasso.enable();
+      document.getElementById('btn-lasso').textContent = 'Drawing…';
+    }
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
@@ -147,6 +239,26 @@
     document.getElementById('btn-submit').disabled = false;
     document.getElementById('trip-form').style.display = 'block';
     document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
+  });
+
+  document.getElementById('btn-undo').addEventListener('click', () => {
+    if (selectionStack.length === 0) return;
+    const entry = selectionStack.pop();
+    const ids = Array.isArray(entry) ? entry : [entry];
+    ids.forEach(id => {
+      selectedIds.delete(id);
+      const layer = layerById.get(id);
+      if (layer) layer.setStyle(STYLE_DEFAULT);
+    });
+    updateSelectionCount();
+    updateUndoButton();
+  });
+
+  document.getElementById('btn-lasso').addEventListener('click', () => {
+    if (lasso) {
+      lasso.enable();
+      document.getElementById('btn-lasso').textContent = 'Drawing…';
+    }
   });
 
   document.getElementById('btn-toggle-coverage').addEventListener('click', () => {

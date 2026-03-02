@@ -54,7 +54,16 @@
     .btn-danger { background: #c62828; color: #fff; }
     .btn:disabled { opacity: 0.5; cursor: default; }
 
-    #selection-count { font-size: 0.85rem; color: #555; }
+    #selection-count {
+      display: none;
+      background: #1a6b3c;
+      color: #fff;
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      align-items: center;
+    }
 
     .trip-form {
       display: none;
@@ -108,8 +117,10 @@
   <button id="btn-log-trip" class="btn btn-primary">Log a Trip</button>
   <button id="btn-done" class="btn btn-secondary" style="display:none;">Done — Add Details</button>
   <button id="btn-cancel" class="btn btn-danger" style="display:none;">Cancel</button>
-  <button id="btn-toggle-coverage" class="btn btn-secondary">Show Coverage</button>
+  <button id="btn-undo" class="btn btn-secondary" style="display:none;">↩ Undo</button>
+  <button id="btn-lasso" class="btn btn-secondary" style="display:none;">Select Area</button>
   <span id="selection-count"></span>
+  <button id="btn-toggle-coverage" class="btn btn-secondary">Show Coverage</button>
 </div>
 
 <div class="trip-form" id="trip-form">
@@ -125,6 +136,7 @@
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-lasso/dist/leaflet-lasso.umd.min.js"></script>
 {% load static %}
 <script>
   window.CAMPAIGN_SLUG = "{{ campaign.slug }}";
