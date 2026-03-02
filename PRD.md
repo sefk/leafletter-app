@@ -190,7 +190,7 @@ Recommended open data source: **OpenStreetMap** via a library such as Leaflet.js
 
 ### 7.3 Street Geometry
 
-Street geometry data comes from OpenStreetMap. When a campaign is saved, a **background job** (Celery + Redis) fetches and stores OSM road segments for the specified cities. The campaign shows a "Generating map…" status until this completes.
+Street geometry data comes from OpenStreetMap. When a campaign is saved, a **background job** (Celery) fetches and stores OSM road segments for the specified cities. The campaign shows a "Generating map…" status until this completes.
 
 Storage and query approach:
 - OSM street segments are stored in the database as PostGIS geometries, keyed by OSM way ID.
@@ -248,7 +248,7 @@ No special caching or real-time infrastructure is required at MVP scale.
 
 OSM geometry fetching at campaign creation runs as a background job.
 
-- **Queue:** Celery with Redis as the broker
+- **Queue:** Celery with MySQL as the broker
 - **Tasks:** `fetch_osm_segments(campaign_id)` — queries Overpass API, stores segments in PostGIS, updates campaign `map_status` field (`generating` → `ready` or `error`)
 - The admin UI polls or refreshes to reflect the current `map_status`.
 
@@ -288,7 +288,7 @@ The following questions were discussed and resolved during initial planning.
 | 2 | Map tile hosting | **Third-party hosted service** (Stadia Maps or Protomaps CDN) | No infrastructure to manage; free tiers cover MVP scale. |
 | 3 | Manager authentication | **Username + password** | Simple, no external dependencies. Accounts created by an administrator; no self-service registration. |
 | 4 | Campaign URL base | **Single fixed domain** (`leafletter.app/c/<slug>`) | Trivial to deploy and easy for managers to share links. |
-| 5 | OSM geometry fetch at campaign creation | **Background job** (Celery + Redis) | Avoids blocking the form submission for a potentially long operation; provides a clear "Generating map…" → "Ready" status in the UI. |
+| 5 | OSM geometry fetch at campaign creation | **Background job** (Celery) | Avoids blocking the form submission for a potentially long operation; provides a clear "Generating map…" → "Ready" status in the UI. |
 
 ## Colophon
 

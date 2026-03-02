@@ -39,14 +39,14 @@ Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap stre
 
 - Django 5+ with GeoDjango (spatial fields)
 - MySQL 8.0+ with spatial support
-- Celery + Redis (OSM background fetch)
+- Celery with MySQL broker (OSM background fetch)
 - Leaflet.js (frontend map)
 
 ## System Requirements
 
 **macOS**
 ```bash
-brew install gdal mysql redis
+brew install gdal mysql
 ```
 
 **Ubuntu / Debian**
@@ -55,7 +55,6 @@ sudo apt-get update
 sudo apt-get install -y \
   gdal-bin libgdal-dev \
   mysql-server libmysqlclient-dev \
-  redis-server \
   python3-dev python3-venv
 ```
 
@@ -123,7 +122,7 @@ Install `honcho` if you haven't already:
 pip install honcho
 ```
 
-**macOS** — start MySQL via brew services, then use honcho to launch everything else (Redis, Celery worker, Django):
+**macOS** — start MySQL via brew services, then use honcho to launch everything else (Celery worker, Django):
 ```bash
 brew services start mysql
 honcho start
@@ -135,7 +134,7 @@ sudo systemctl start mysql
 honcho start
 ```
 
-`honcho start` reads the `Procfile` and starts Redis, the Celery worker (with auto-restart on `.py` changes), and the Django dev server in a single terminal with colour-coded output.
+`honcho start` reads the `Procfile` and starts the Celery worker (with auto-restart on `.py` changes) and the Django dev server in a single terminal with colour-coded output.
 
 ## Usage
 
@@ -158,7 +157,7 @@ Each row shows the task name, status (`SUCCESS` / `FAILURE` / `PENDING`), argume
 
 **Useful patterns:**
 
-Run a task synchronously in a shell (bypasses Celery/Redis entirely):
+Run a task synchronously in a shell (bypasses Celery entirely):
 
 ```bash
 source .venv/bin/activate
