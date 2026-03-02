@@ -17,7 +17,7 @@ Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap stre
 | Database | MySQL 8.0+ with spatial support |
 | DB driver | `mysqlclient` |
 | Spatial backend | `django.contrib.gis.db.backends.mysql` |
-| Background tasks | Celery + Redis |
+| Background tasks | Celery (MySQL broker) |
 | Task results/debugging | `django-celery-results` (stores in MySQL, visible in admin) |
 | File watching | `watchdog` / `watchmedo` (auto-restarts Celery worker) |
 | Frontend map | Leaflet.js via CDN |

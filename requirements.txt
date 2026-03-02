@@ -3,6 +3,7 @@ mysqlclient
 django[argon2]
 celery
 kombu[sqlalchemy]
+GDAL
 requests
 django-celery-results
 watchdog
