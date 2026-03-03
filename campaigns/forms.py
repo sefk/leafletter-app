@@ -18,6 +18,7 @@ class CampaignForm(forms.ModelForm):
                   'instructions', 'contact_info']
         widgets = {
             'instructions': forms.HiddenInput(attrs={'id': 'id_instructions'}),
+            'contact_info': forms.TextInput(),
         }
 
     def __init__(self, *args, **kwargs):

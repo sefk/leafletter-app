@@ -289,10 +289,12 @@ def manage_campaign_edit(request, slug):
             return redirect('manage_campaign_detail', slug=updated.slug)
     else:
         form = CampaignForm(instance=campaign)
+    campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
     return render(request, 'campaigns/manage/campaign_form.html', {
         'form': form,
         'campaign': campaign,
         'action': 'Edit',
+        'campaign_url': campaign_url,
     })
 
 
