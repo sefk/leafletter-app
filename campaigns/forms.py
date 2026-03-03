@@ -15,7 +15,10 @@ class CampaignForm(forms.ModelForm):
     class Meta:
         model = Campaign
         fields = ['name', 'slug', 'goal', 'start_date', 'end_date',
-                  'instructions', 'materials_url', 'contact_info']
+                  'instructions', 'contact_info']
+        widgets = {
+            'instructions': forms.HiddenInput(attrs={'id': 'id_instructions'}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

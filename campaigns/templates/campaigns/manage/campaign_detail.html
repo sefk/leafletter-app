@@ -16,10 +16,7 @@
     <tr><th>Cities</th><td>{% for city in campaign.cities %}{% if city.display_name %}{{ city.display_name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
     <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
     {% if campaign.instructions %}
-    <tr><th>Instructions</th><td>{{ campaign.instructions }}</td></tr>
-    {% endif %}
-    {% if campaign.materials_url %}
-    <tr><th>Materials</th><td><a href="{{ campaign.materials_url }}" target="_blank">{{ campaign.materials_url }}</a></td></tr>
+    <tr><th>Instructions</th><td>{{ campaign.instructions|safe }}</td></tr>
     {% endif %}
     {% if campaign.contact_info %}
     <tr><th>Contact</th><td>{{ campaign.contact_info }}</td></tr>

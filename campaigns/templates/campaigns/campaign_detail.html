@@ -99,12 +99,9 @@
 <div class="campaign-info">
   <p><strong>Goal:</strong> {{ campaign.goal }}</p>
   {% if campaign.instructions %}
-    <p><strong>Instructions:</strong> {{ campaign.instructions }}</p>
+    <div class="instructions">{{ campaign.instructions|safe }}</div>
   {% endif %}
   <div class="links">
-    {% if campaign.materials_url %}
-      <a href="{{ campaign.materials_url }}" target="_blank">Campaign Materials</a>
-    {% endif %}
     {% if campaign.contact_info %}
       <span style="font-size:0.85rem;color:#555;">Contact: {{ campaign.contact_info }}</span>
     {% endif %}

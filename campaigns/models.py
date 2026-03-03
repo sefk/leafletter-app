@@ -23,8 +23,7 @@ class Campaign(models.Model):
     cities = models.JSONField()  # list of city name strings
     start_date = models.DateField(default=date.today)
     end_date = models.DateField(null=True, blank=True)
-    instructions = models.TextField(blank=True)
-    materials_url = models.URLField(blank=True)
+    instructions = models.TextField(blank=True)  # stores HTML from rich text editor
     contact_info = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default='draft')
     map_status = models.CharField(max_length=20, choices=MAP_STATUS, default='pending')
