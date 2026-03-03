@@ -33,6 +33,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -88,15 +89,15 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-# Use content-hashed filenames in production to bust browser caches automatically.
-# ManifestStaticFilesStorage requires collectstatic to have been run (done in Dockerfile).
-# In development, fall back to the default storage so runserver works without collectstatic.
+# WhiteNoise serves static files directly from gunicorn (no nginx needed).
+# CompressedManifestStaticFilesStorage adds content-hash cache-busting in production;
+# dev uses the plain default so runserver works without running collectstatic.
 STORAGES = {
     'staticfiles': {
         'BACKEND': (
             'django.contrib.staticfiles.storage.StaticFilesStorage'
             if DEBUG
-            else 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
+            else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
         ),
     },
     'default': {

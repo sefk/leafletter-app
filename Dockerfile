@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY . .
 
-RUN python manage.py collectstatic --noinput && chmod +x start_web.sh
+RUN DEBUG=False python manage.py collectstatic --noinput && chmod +x start_web.sh
 
 # Railway injects $PORT; fall back to 8000 for local docker run.
 # start_web.sh runs migrate then binds to 0.0.0.0:$PORT.
