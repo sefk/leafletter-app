@@ -7,3 +7,4 @@ requests
 django-celery-results
 watchdog
 honcho
+gunicorn
