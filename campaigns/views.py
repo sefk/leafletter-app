@@ -117,7 +117,11 @@ def manage_campaign_list(request):
         street_count=Count('streets', distinct=True),
         trip_count=Count('trips', distinct=True),
     )
-    return render(request, 'campaigns/manage/campaign_list.html', {'campaigns': campaigns})
+    inflight = campaigns.filter(map_status__in=('pending', 'generating')).order_by('updated_at')
+    return render(request, 'campaigns/manage/campaign_list.html', {
+        'campaigns': campaigns,
+        'inflight': inflight,
+    })
 
 
 @_login_required

@@ -8,6 +8,42 @@
   <a href="/manage/new/" class="btn btn-primary">+ New Campaign</a>
 </div>
 
+{% if inflight %}
+<div class="card" style="border-left:4px solid #e6ac00;">
+  <div class="card-title" style="display:flex; align-items:center; gap:10px;">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite;"></span>
+    Street import in progress — {{ inflight|length }} campaign{{ inflight|length|pluralize }} queued
+  </div>
+  <table style="margin:0;">
+    <thead>
+      <tr>
+        <th>Campaign</th>
+        <th>Stage</th>
+        <th>Streets so far</th>
+        <th>Last activity</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in inflight %}
+      <tr>
+        <td><a href="/manage/{{ c.slug }}/">{{ c.name }}</a></td>
+        <td><span class="badge badge-{{ c.map_status }}">{{ c.get_map_status_display }}</span></td>
+        <td>{{ c.street_count }}</td>
+        <td>{{ c.updated_at|timesince }} ago</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="font-size:0.8rem; color:#888; margin-top:10px; margin-bottom:0;">
+    This page refreshes automatically every 10 seconds.
+  </p>
+</div>
+<script>setTimeout(function(){ location.reload(); }, 10000);</script>
+<style>
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+</style>
+{% endif %}
+
 {% if campaigns %}
 <table>
   <thead>

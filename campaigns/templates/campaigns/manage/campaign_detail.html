@@ -41,7 +41,26 @@
 
   {% elif campaign.status == 'published' %}
     {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
-      <p style="color:#666;">Streets are being imported from OpenStreetMap… check back in a moment.</p>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
+        <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
+      </div>
+      <table style="margin:0 0 4px;">
+        <tr>
+          <th style="width:140px;">Stage</th>
+          <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
+        </tr>
+        <tr>
+          <th>Streets so far</th>
+          <td>{{ total_blocks }}</td>
+        </tr>
+        <tr>
+          <th>Last activity</th>
+          <td>{{ campaign.updated_at|timesince }} ago</td>
+        </tr>
+      </table>
+      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+      <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
 
     {% elif campaign.map_status == 'ready' %}
       <div style="margin-bottom:16px;">
@@ -73,10 +92,17 @@
         <strong>Street import failed:</strong>
         {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
       </p>
-      <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-danger">Re-fetch Streets</button>
-      </form>
+      <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+        If the error is about a city name (not found or ambiguous), edit the campaign to fix the
+        city, then re-fetch. Otherwise you can re-fetch directly to retry.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
+        <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
+        </form>
+      </div>
     {% endif %}
   {% endif %}
 
