@@ -3,11 +3,15 @@
 (function () {
   'use strict';
 
+  // ── Debug mode (append ?debug=1 to URL) ──────────────────────────────────
+  const DEBUG_MODE = new URLSearchParams(location.search).get('debug') === '1';
+
   // ── State ────────────────────────────────────────────────────────────────
   const selectedIds = new Set();
   const selectionStack = [];        // undo stack: each entry is an id (click) or id[] (lasso batch)
   const layerById = new Map();      // id → Leaflet layer
   const layerToId = new Map();      // layer → id (for lasso reverse lookup)
+  const nameById = new Map();       // id → street name (debug)
   let isPointerDown = false;
   let selectionMode = false;
   let streetsLayer = null;
@@ -64,6 +68,7 @@
 
           layerById.set(id, layer);
           layerToId.set(layer, id);
+          nameById.set(id, name);
 
           layer.bindTooltip(name, { sticky: true });
 
@@ -166,6 +171,7 @@
       el.textContent = '';
       el.style.display = 'none';
     }
+    updateDebugPanel();
   }
 
   function updateUndoButton() {
@@ -206,6 +212,21 @@
     }
   }
 
+  function updateDebugPanel() {
+    if (!DEBUG_MODE) return;
+    const panel = document.getElementById('debug-panel');
+    if (!panel) return;
+    if (selectedIds.size === 0) {
+      panel.innerHTML = '<em style="color:#888;">No segments selected.</em>';
+      return;
+    }
+    const rows = Array.from(selectedIds).map(id => {
+      const name = nameById.get(id) || 'Unnamed';
+      return `<tr><td style="padding:2px 8px 2px 0; font-family:monospace; font-size:0.8rem;">${id}</td><td style="font-size:0.85rem;">${name}</td></tr>`;
+    });
+    panel.innerHTML = `<table>${rows.join('')}</table>`;
+  }
+
   function showStatus(msg, type) {
     const el = document.getElementById('status-message');
     el.textContent = msg;
@@ -238,6 +259,10 @@
     setSelectionMode(false);
     document.getElementById('btn-submit').disabled = false;
     document.getElementById('trip-form').style.display = 'block';
+    if (DEBUG_MODE) {
+      document.getElementById('debug-section').style.display = 'block';
+      updateDebugPanel();
+    }
     document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
 
