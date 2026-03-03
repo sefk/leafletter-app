@@ -16,7 +16,7 @@ ALLOWED_HOSTS = ['*']
 # Required for Django 4.0+ behind Railway's HTTPS proxy.
 # Set CSRF_TRUSTED_ORIGINS to a comma-separated list of trusted origins, e.g.
 # "https://web-production-b863b.up.railway.app,https://yourdomain.com"
-_csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+_csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', 'https://leafletter.app')
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(',') if o.strip()]
 
 INSTALLED_APPS = [
