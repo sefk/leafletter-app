@@ -238,6 +238,10 @@
   document.getElementById('btn-log-trip').addEventListener('click', () => {
     setSelectionMode(true);
     updateSelectionCount();
+    if (DEBUG_MODE) {
+      document.getElementById('debug-section').style.display = 'block';
+      updateDebugPanel();
+    }
     if (lasso) {
       lasso.enable();
       document.getElementById('btn-lasso').textContent = 'Drawing…';
@@ -249,6 +253,7 @@
     resetSelection();
     document.getElementById('trip-form').style.display = 'none';
     document.getElementById('status-message').style.display = 'none';
+    document.getElementById('debug-section').style.display = 'none';
   });
 
   document.getElementById('btn-done').addEventListener('click', () => {
@@ -259,10 +264,6 @@
     setSelectionMode(false);
     document.getElementById('btn-submit').disabled = false;
     document.getElementById('trip-form').style.display = 'block';
-    if (DEBUG_MODE) {
-      document.getElementById('debug-section').style.display = 'block';
-      updateDebugPanel();
-    }
     document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
 
@@ -319,6 +320,7 @@
       })
       .then(() => {
         document.getElementById('trip-form').style.display = 'none';
+        document.getElementById('debug-section').style.display = 'none';
         showStatus('Trip logged! Thank you for your work.', 'success');
         resetSelection();
         // Reload coverage if visible

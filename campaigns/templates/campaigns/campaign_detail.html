@@ -119,16 +119,17 @@
   <button id="btn-toggle-coverage" class="btn btn-secondary">Show Coverage</button>
 </div>
 
+<div id="debug-section" style="display:none; padding:12px 16px; background:#f5f5f5; border-top:1px solid #ddd;">
+  <strong style="font-size:0.85rem;">Debug — selected segments:</strong>
+  <div id="debug-panel" style="margin-top:6px;"></div>
+</div>
+
 <div class="trip-form" id="trip-form">
   <h3>Log Your Trip</h3>
   <label for="worker-name">Your Name (optional)</label>
   <input type="text" id="worker-name" placeholder="e.g. Jane Smith">
   <label for="notes">Notes (optional)</label>
   <textarea id="notes" rows="3" placeholder="Any observations..."></textarea>
-  <div id="debug-section" style="display:none; margin-bottom:10px; padding:10px; background:#f5f5f5; border:1px solid #ddd; border-radius:4px;">
-    <strong style="font-size:0.85rem;">Debug — selected segments:</strong>
-    <div id="debug-panel" style="margin-top:6px;"></div>
-  </div>
   <button id="btn-submit" class="btn btn-primary">Submit Trip</button>
 </div>
 
