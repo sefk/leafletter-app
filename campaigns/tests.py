@@ -8,6 +8,8 @@ import json
 import uuid
 from unittest.mock import MagicMock, patch
 
+import requests
+
 from django.contrib import admin as django_admin
 from django.contrib.auth.models import User
 from django.contrib.gis.geos import LineString
@@ -1288,6 +1290,77 @@ class FetchOSMErrorHandlingTest(TestCase):
         self.mock_lookup.assert_not_called()
         self.campaign.refresh_from_db()
         self.assertEqual(self.campaign.map_status, 'ready')
+
+
+# ── Task tests: retry on transient errors ─────────────────────────────────────
+
+class FetchOSMRetryTest(TestCase):
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='retry-camp')
+        self.overpass_patcher = patch('campaigns.tasks.query_overpass')
+        self.mock_overpass = self.overpass_patcher.start()
+        self.lookup_patcher = patch('campaigns.tasks.lookup_city')
+        self.lookup_patcher.start()
+
+    def tearDown(self):
+        self.overpass_patcher.stop()
+        self.lookup_patcher.stop()
+
+    def _run_task(self, retries=0):
+        """Run the task with a mock request context simulating the given retry count."""
+        task = fetch_osm_segments
+        task.push_request(retries=retries)
+        try:
+            return task(self.campaign.pk)
+        finally:
+            task.pop_request()
+
+    def test_timeout_retries_and_stays_generating(self):
+        self.mock_overpass.side_effect = requests.exceptions.Timeout('timed out')
+        try:
+            self._run_task(retries=0)
+        except Exception:
+            pass  # Celery raises Retry internally; we only care about the saved state
+        self.campaign.refresh_from_db()
+        # Status should remain 'generating' while retrying, not 'error'
+        self.assertEqual(self.campaign.map_status, 'generating')
+
+    def test_timeout_on_final_retry_sets_error(self):
+        self.mock_overpass.side_effect = requests.exceptions.Timeout('timed out')
+        self._run_task(retries=5)  # max_retries=5, so retries=5 means exhausted
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+        self.assertIn('timed out', self.campaign.map_error)
+
+    def test_connection_error_on_final_retry_sets_error(self):
+        self.mock_overpass.side_effect = requests.exceptions.ConnectionError('network down')
+        self._run_task(retries=5)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+
+    def test_http_503_on_final_retry_sets_error(self):
+        resp = MagicMock()
+        resp.status_code = 503
+        self.mock_overpass.side_effect = requests.exceptions.HTTPError('503', response=resp)
+        self._run_task(retries=5)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+
+    def test_http_404_not_retried(self):
+        resp = MagicMock()
+        resp.status_code = 404
+        self.mock_overpass.side_effect = requests.exceptions.HTTPError('404', response=resp)
+        self._run_task(retries=0)
+        self.campaign.refresh_from_db()
+        # 4xx should not retry — sets error immediately
+        self.assertEqual(self.campaign.map_status, 'error')
+
+    def test_value_error_not_retried(self):
+        self.mock_overpass.side_effect = ValueError('city not found')
+        self._run_task(retries=0)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
 
 
 # ── Task tests: query_overpass dict city ──────────────────────────────────────

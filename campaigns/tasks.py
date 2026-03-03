@@ -144,8 +144,8 @@ def split_way_at_intersections(way: dict, intersection_nodes: set) -> list[dict]
     return segments or [{'coords': coords, 'start_node_id': node_ids[0], 'end_node_id': node_ids[-1], 'block_index': 0}]
 
 
-@shared_task
-def fetch_osm_segments(campaign_id: int) -> None:
+@shared_task(bind=True, max_retries=5)
+def fetch_osm_segments(self, campaign_id: int) -> None:
     try:
         campaign = Campaign.objects.get(pk=campaign_id)
     except Campaign.DoesNotExist:
@@ -198,6 +198,24 @@ def fetch_osm_segments(campaign_id: int) -> None:
         if min_lon != float('inf'):
             campaign.bbox = [[min_lat, min_lon], [max_lat, max_lon]]
         campaign.map_status = 'ready'
+    except (requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.HTTPError) as exc:
+        # For HTTPError only retry on 5xx (gateway/server errors), not 4xx
+        is_server_error = (
+            not isinstance(exc, requests.exceptions.HTTPError)
+            or (exc.response is not None and exc.response.status_code >= 500)
+        )
+        if is_server_error and self.request.retries < self.max_retries:
+            countdown = min(60 * 2 ** self.request.retries, 600)
+            logger.warning(
+                "fetch_osm_segments transient error for campaign %s, retrying in %ds (%d/%d): %s",
+                campaign_id, countdown, self.request.retries + 1, self.max_retries, exc,
+            )
+            raise self.retry(exc=exc, countdown=countdown)
+        logger.error("fetch_osm_segments failed for campaign %s: %s", campaign_id, exc)
+        campaign.map_status = 'error'
+        campaign.map_error = str(exc)
     except Exception as exc:
         logger.error("fetch_osm_segments failed for campaign %s: %s", campaign_id, exc)
         campaign.map_status = 'error'
