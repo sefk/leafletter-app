@@ -10,8 +10,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm
-from .models import Campaign, Street, Trip
-from .tasks import fetch_osm_segments, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .models import Campaign, CityFetchJob, Street, Trip
+from .tasks import fetch_city_osm_data, queue_city_fetches, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/admin/login/')
 
@@ -227,6 +227,30 @@ def street_search(request, slug):
     return JsonResponse({'results': results[:8]})
 
 
+# ── Manager UI helpers ────────────────────────────────────────────────────────
+
+def _incremental_city_indices(old_cities: list, new_cities: list) -> list[int] | None:
+    """
+    Return a list of indices in new_cities that are not in old_cities.
+    Returns None if a full refetch is needed (any old city was removed or changed).
+    Returns [] if the city list content is unchanged (e.g. only metadata tweaked).
+    Comparison is by osm_id for dict cities, or by name for string cities.
+    """
+    def city_key(c):
+        if isinstance(c, dict) and 'osm_id' in c:
+            return ('id', c['osm_id'])
+        return ('name', c if isinstance(c, str) else c.get('name', ''))
+
+    old_keys = {city_key(c) for c in old_cities}
+    new_keys_indexed = [(city_key(c), i) for i, c in enumerate(new_cities)]
+    new_key_set = {k for k, _ in new_keys_indexed}
+
+    if not old_keys.issubset(new_key_set):
+        return None  # an old city was removed or changed → full refetch
+
+    return [i for k, i in new_keys_indexed if k not in old_keys]
+
+
 # ── Manager UI views ──────────────────────────────────────────────────────────
 
 @_login_required
@@ -264,6 +288,7 @@ def manage_campaign_detail(request, slug):
     trip_count = campaign.trips.count()
     pct = round(covered_blocks / total_blocks * 100) if total_blocks else 0
     recent_trips = campaign.trips.prefetch_related('streets').all()[:10]
+    city_fetch_jobs = list(campaign.city_fetch_jobs.all())
     return render(request, 'campaigns/manage/campaign_detail.html', {
         'campaign': campaign,
         'total_blocks': total_blocks,
@@ -271,6 +296,7 @@ def manage_campaign_detail(request, slug):
         'trip_count': trip_count,
         'pct': pct,
         'recent_trips': recent_trips,
+        'city_fetch_jobs': city_fetch_jobs,
     })
 
 
@@ -283,9 +309,14 @@ def manage_campaign_edit(request, slug):
             old_cities = campaign.cities
             updated = form.save()
             if updated.status == 'published' and updated.cities != old_cities:
-                updated.map_status = 'pending'
-                updated.save(update_fields=['map_status'])
-                fetch_osm_segments.delay(updated.pk)
+                new_indices = _incremental_city_indices(old_cities, updated.cities)
+                if new_indices is None:
+                    # Cities were removed or changed — full refetch
+                    queue_city_fetches(updated.pk)
+                elif new_indices:
+                    # Only new cities added — fetch just those
+                    queue_city_fetches(updated.pk, city_indices=new_indices)
+                # else: no meaningful city changes, no fetch needed
             return redirect('manage_campaign_detail', slug=updated.slug)
     else:
         form = CampaignForm(instance=campaign)
@@ -303,9 +334,8 @@ def manage_campaign_edit(request, slug):
 def manage_campaign_publish(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     campaign.status = 'published'
-    campaign.map_status = 'pending'
-    campaign.save(update_fields=['status', 'map_status'])
-    fetch_osm_segments.delay(campaign.pk)
+    campaign.save(update_fields=['status'])
+    queue_city_fetches(campaign.pk)
     return redirect('manage_campaign_detail', slug=slug)
 
 
@@ -322,9 +352,29 @@ def manage_campaign_delete(request, slug):
 @require_POST
 def manage_campaign_refetch(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
-    campaign.map_status = 'pending'
-    campaign.save(update_fields=['map_status'])
-    fetch_osm_segments.delay(campaign.pk)
+    queue_city_fetches(campaign.pk)
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_city_refetch(request, slug, city_index):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    cities = campaign.cities
+    if city_index < 0 or city_index >= len(cities):
+        return HttpResponseBadRequest('Invalid city index')
+    city = cities[city_index]
+    city_name = city if isinstance(city, str) else city.get('name', str(city))
+    CityFetchJob.objects.update_or_create(
+        campaign=campaign,
+        city_index=city_index,
+        defaults={'status': 'pending', 'error': '', 'city_name': city_name},
+    )
+    Campaign.objects.filter(pk=campaign.pk).update(map_status='generating')
+    result = fetch_city_osm_data.delay(campaign.pk, city_index)
+    CityFetchJob.objects.filter(campaign=campaign, city_index=city_index).update(
+        celery_task_id=result.id,
+    )
     return redirect('manage_campaign_detail', slug=slug)
 
 

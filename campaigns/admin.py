@@ -3,8 +3,8 @@ from django.http import HttpResponseRedirect
 from django.utils.html import format_html
 from django.utils.text import slugify
 
-from .models import Campaign, Street, Trip
-from .tasks import fetch_osm_segments
+from .models import Campaign, CityFetchJob, Street, Trip
+from .tasks import queue_city_fetches
 
 
 MAP_STATUS_COLORS = {
@@ -66,7 +66,7 @@ class CampaignAdmin(admin.ModelAdmin):
                 obj.slug = slugify(obj.name)
             super().save_model(request, obj, form, change)
             if obj.status == 'published':
-                fetch_osm_segments.delay(obj.pk)
+                queue_city_fetches(obj.pk)
             return
 
         # For edits, detect transitions that require a re-fetch.
@@ -79,7 +79,7 @@ class CampaignAdmin(admin.ModelAdmin):
             if transitioning_to_published or cities_changed:
                 obj.map_status = 'pending'
                 obj.save(update_fields=['map_status'])
-                fetch_osm_segments.delay(obj.pk)
+                queue_city_fetches(obj.pk)
                 if cities_changed:
                     self.message_user(request, 'Cities updated — OSM street fetch re-queued.')
         else:
@@ -90,7 +90,7 @@ class CampaignAdmin(admin.ModelAdmin):
             obj.status = 'published'
             obj.map_status = 'pending'
             obj.save(update_fields=['status', 'map_status'])
-            fetch_osm_segments.delay(obj.pk)
+            queue_city_fetches(obj.pk)
             self.message_user(request, f'"{obj}" published and OSM street fetch queued.')
             return HttpResponseRedirect(request.path)
         return super().response_change(request, obj)
@@ -110,7 +110,7 @@ class CampaignAdmin(admin.ModelAdmin):
             campaign.status = 'published'
             campaign.map_status = 'pending'
             campaign.save(update_fields=['status', 'map_status'])
-            fetch_osm_segments.delay(campaign.pk)
+            queue_city_fetches(campaign.pk)
         self.message_user(request, f"Published {queryset.count()} campaign(s) and queued OSM fetch.")
 
     @admin.action(description='Soft-delete selected campaigns')
@@ -121,6 +121,14 @@ class CampaignAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         # Show all non-deleted campaigns in the list
         return super().get_queryset(request).exclude(status='deleted')
+
+
+@admin.register(CityFetchJob)
+class CityFetchJobAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'city_index', 'city_name', 'status', 'updated_at')
+    list_filter = ('status', 'campaign')
+    search_fields = ('city_name',)
+    readonly_fields = ('campaign', 'city_index', 'city_name', 'celery_task_id', 'created_at', 'updated_at')
 
 
 @admin.register(Street)

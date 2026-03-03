@@ -44,6 +44,7 @@ class Street(models.Model):
     name = models.CharField(max_length=200, blank=True)
     geometry = models.LineStringField(srid=4326)
     block_index = models.PositiveSmallIntegerField(default=0)
+    city_index = models.IntegerField(null=True, blank=True)  # index in campaign.cities list
     start_node_id = models.BigIntegerField(null=True, blank=True)
     end_node_id = models.BigIntegerField(null=True, blank=True)
     addr_from = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -54,6 +55,30 @@ class Street(models.Model):
 
     def __str__(self):
         return f"{self.name or 'Unnamed'} ({self.osm_id} block {self.block_index})"
+
+
+class CityFetchJob(models.Model):
+    STATUS = [
+        ('pending', 'Pending'),
+        ('generating', 'Generating'),
+        ('ready', 'Ready'),
+        ('error', 'Error'),
+    ]
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='city_fetch_jobs')
+    city_index = models.IntegerField()       # position in campaign.cities list
+    city_name = models.CharField(max_length=200)
+    status = models.CharField(max_length=20, choices=STATUS, default='pending')
+    error = models.TextField(blank=True, default='')
+    celery_task_id = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('campaign', 'city_index')
+        ordering = ['city_index']
+
+    def __str__(self):
+        return f"{self.city_name} (campaign {self.campaign_id}, idx {self.city_index})"
 
 
 class Trip(models.Model):

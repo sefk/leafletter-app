@@ -20,4 +20,5 @@ manage_urlpatterns = [
     path('<slug:slug>/publish/', views.manage_campaign_publish, name='manage_campaign_publish'),
     path('<slug:slug>/delete/', views.manage_campaign_delete, name='manage_campaign_delete'),
     path('<slug:slug>/refetch/', views.manage_campaign_refetch, name='manage_campaign_refetch'),
+    path('<slug:slug>/refetch-city/<int:city_index>/', views.manage_city_refetch, name='manage_city_refetch'),
 ]

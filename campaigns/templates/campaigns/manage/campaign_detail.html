@@ -51,70 +51,144 @@
     </form>
 
   {% elif campaign.status == 'published' %}
-    {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
-        <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
-      </div>
-      <table style="margin:0 0 4px;">
-        <tr>
-          <th style="width:140px;">Stage</th>
-          <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
-        </tr>
-        <tr>
-          <th>Streets so far</th>
-          <td>{{ total_blocks }}</td>
-        </tr>
-        <tr>
-          <th>Last activity</th>
-          <td>{{ campaign.updated_at|timesince }} ago</td>
-        </tr>
-      </table>
-      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
-      <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
 
-    {% elif campaign.map_status == 'ready' %}
-      <div style="margin-bottom:16px;">
-        <div class="stat">
-          <div class="stat-value">{{ covered_blocks }}</div>
-          <div class="stat-label">blocks covered</div>
+    {% if city_fetch_jobs %}
+      <!-- Per-city fetch status table -->
+      {% if campaign.map_status == 'generating' or campaign.map_status == 'pending' %}
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
+          <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
         </div>
-        <div class="stat">
-          <div class="stat-value">{{ total_blocks }}</div>
-          <div class="stat-label">total blocks</div>
+        <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+        <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
+      {% endif %}
+
+      <table style="margin:0 0 16px; width:100%;">
+        <thead>
+          <tr>
+            <th style="width:40%;">City</th>
+            <th style="width:18%;">Status</th>
+            <th>Error</th>
+            <th style="width:60px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for job in city_fetch_jobs %}
+          <tr>
+            <td style="font-size:0.9rem;">{{ job.city_name }}</td>
+            <td><span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span></td>
+            <td style="font-size:0.85rem; color:#c62828;">
+              {% if job.error %}{{ job.error }}{% endif %}
+            </td>
+            <td>
+              {% if job.status == 'ready' or job.status == 'error' %}
+              <form method="post" action="/manage/{{ campaign.slug }}/refetch-city/{{ job.city_index }}/" style="margin:0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
+                        title="Re-fetch this city">↺</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if campaign.map_status == 'ready' %}
+        <div style="margin-bottom:16px;">
+          <div class="stat">
+            <div class="stat-value">{{ covered_blocks }}</div>
+            <div class="stat-label">blocks covered</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ total_blocks }}</div>
+            <div class="stat-label">total blocks</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ pct }}%</div>
+            <div class="stat-label">complete</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ trip_count }}</div>
+            <div class="stat-label">trips logged</div>
+          </div>
         </div>
-        <div class="stat">
-          <div class="stat-value">{{ pct }}%</div>
-          <div class="stat-label">complete</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">{{ trip_count }}</div>
-          <div class="stat-label">trips logged</div>
-        </div>
-      </div>
-      <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
+        <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
+      {% endif %}
+
       <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline; margin-left:8px;">
         {% csrf_token %}
-        <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
+        <button type="submit" class="btn btn-secondary">Re-fetch All Streets</button>
       </form>
 
-    {% elif campaign.map_status == 'error' %}
-      <p style="color:#c62828; margin-bottom:8px;">
-        <strong>Street import failed:</strong>
-        {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
-      </p>
-      <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-        If the error is about a city name (not found or ambiguous), edit the campaign to fix the
-        city, then re-fetch. Otherwise you can re-fetch directly to retry.
-      </p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
-        <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
+    {% else %}
+      <!-- Legacy: no city fetch jobs yet (pre-migration campaigns) -->
+      {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
+          <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
+        </div>
+        <table style="margin:0 0 4px;">
+          <tr>
+            <th style="width:140px;">Stage</th>
+            <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
+          </tr>
+          <tr>
+            <th>Streets so far</th>
+            <td>{{ total_blocks }}</td>
+          </tr>
+          <tr>
+            <th>Last activity</th>
+            <td>{{ campaign.updated_at|timesince }} ago</td>
+          </tr>
+        </table>
+        <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+        <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
+
+      {% elif campaign.map_status == 'ready' %}
+        <div style="margin-bottom:16px;">
+          <div class="stat">
+            <div class="stat-value">{{ covered_blocks }}</div>
+            <div class="stat-label">blocks covered</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ total_blocks }}</div>
+            <div class="stat-label">total blocks</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ pct }}%</div>
+            <div class="stat-label">complete</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ trip_count }}</div>
+            <div class="stat-label">trips logged</div>
+          </div>
+        </div>
+        <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
+        <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline; margin-left:8px;">
           {% csrf_token %}
           <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
         </form>
-      </div>
+
+      {% elif campaign.map_status == 'error' %}
+        <p style="color:#c62828; margin-bottom:8px;">
+          <strong>Street import failed:</strong>
+          {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
+        </p>
+        <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+          If the error is about a city name (not found or ambiguous), edit the campaign to fix the
+          city, then re-fetch. Otherwise you can re-fetch directly to retry.
+        </p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
+          <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
+          </form>
+        </div>
+      {% endif %}
     {% endif %}
+
   {% endif %}
 
   <div class="action-row" style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
