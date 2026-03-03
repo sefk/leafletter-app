@@ -8,6 +8,7 @@ urlpatterns = [
     path('<slug:slug>/streets.geojson', views.campaign_streets_geojson, name='streets_geojson'),
     path('<slug:slug>/coverage.geojson', views.campaign_coverage_geojson, name='coverage_geojson'),
     path('<slug:slug>/trip/', views.log_trip, name='log_trip'),
+    path('<slug:slug>/street-search/', views.street_search, name='street_search'),
 ]
 
 manage_urlpatterns = [

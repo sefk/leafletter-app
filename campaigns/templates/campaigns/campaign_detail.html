@@ -85,6 +85,57 @@
     }
     #status-message.success { background: #e8f5e9; color: #2e7d32; }
     #status-message.error { background: #ffebee; color: #c62828; }
+
+    #street-search-panel {
+      display: none;
+      padding: 10px 16px;
+      background: #f9f9f9;
+      border-top: 1px solid #ddd;
+    }
+    #street-search-panel label {
+      font-size: 0.8rem;
+      color: #666;
+      display: block;
+      margin-bottom: 5px;
+    }
+    #street-search-wrap { position: relative; }
+    #street-search-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    #street-search-results {
+      display: none;
+      position: absolute;
+      z-index: 9999;
+      left: 0; right: 0;
+      top: 100%;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      max-height: 220px;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    #street-search-results .sr-item {
+      padding: 9px 12px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    #street-search-results .sr-item:last-child { border-bottom: none; }
+    #street-search-results .sr-item:hover { background: #e8f5e9; }
+    #street-search-results .sr-none {
+      padding: 9px 12px;
+      font-size: 0.85rem;
+      color: #999;
+      font-style: italic;
+    }
+    .sr-name { font-weight: 500; }
+    .sr-sub { color: #777; font-size: 0.82rem; margin-left: 4px; }
   </style>
 </head>
 <body>
@@ -119,6 +170,14 @@
   <button id="btn-toggle-coverage" class="btn btn-secondary">Hide Coverage</button>
 </div>
 
+<div id="street-search-panel">
+  <label for="street-search-input">Find a block by address:</label>
+  <div id="street-search-wrap">
+    <input type="text" id="street-search-input" placeholder='e.g. "600 Central" or "Main St"' autocomplete="off">
+    <div id="street-search-results"></div>
+  </div>
+</div>
+
 <div id="debug-section" style="display:none; padding:12px 16px; background:#f5f5f5; border-top:1px solid #ddd;">
   <strong style="font-size:0.85rem;">Debug — selected segments:</strong>
   <div id="debug-panel" style="margin-top:6px;"></div>
@@ -144,6 +203,7 @@
   window.STREETS_URL = "{% url 'campaigns:streets_geojson' campaign.slug %}";
   window.COVERAGE_URL = "{% url 'campaigns:coverage_geojson' campaign.slug %}";
   window.TRIP_URL = "{% url 'campaigns:log_trip' campaign.slug %}";
+  window.STREET_SEARCH_URL = "{% url 'campaigns:street_search' campaign.slug %}";
   window.BBOX = {{ bbox_json }};
 </script>
 <script src="{% static 'campaigns/map.js' %}"></script>

@@ -46,6 +46,8 @@ class Street(models.Model):
     block_index = models.PositiveSmallIntegerField(default=0)
     start_node_id = models.BigIntegerField(null=True, blank=True)
     end_node_id = models.BigIntegerField(null=True, blank=True)
+    addr_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    addr_to = models.PositiveSmallIntegerField(null=True, blank=True)
 
     class Meta:
         unique_together = ('campaign', 'osm_id', 'block_index')
