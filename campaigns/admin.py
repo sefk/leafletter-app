@@ -44,9 +44,9 @@ class CampaignAdmin(admin.ModelAdmin):
 
     def get_fields(self, request, obj=None):
         fields = [
-            'name', 'slug', 'goal', 'cities',
+            'name', 'slug', 'cities',
             'start_date', 'end_date',
-            'instructions', 'materials_url', 'contact_info',
+            'instructions', 'contact_info',
             'status', 'map_status_badge',
         ]
         return fields

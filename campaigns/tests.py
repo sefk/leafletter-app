@@ -31,7 +31,6 @@ def make_campaign(slug='test-campaign', status='published', **kwargs):
     defaults = dict(
         name='Test Campaign',
         slug=slug,
-        goal='Get out the vote',
         cities=['Palo Alto'],
         status=status,
     )
@@ -74,11 +73,11 @@ class CampaignModelTest(TestCase):
         self.assertEqual(str(c), 'My Campaign')
 
     def test_default_status_is_draft(self):
-        c = Campaign.objects.create(name='Draft', slug='draft-x', goal='g', cities=['x'])
+        c = Campaign.objects.create(name='Draft', slug='draft-x', cities=['x'])
         self.assertEqual(c.status, 'draft')
 
     def test_default_map_status_is_pending(self):
-        c = Campaign.objects.create(name='Draft', slug='draft-y', goal='g', cities=['x'])
+        c = Campaign.objects.create(name='Draft', slug='draft-y', cities=['x'])
         self.assertEqual(c.map_status, 'pending')
 
     def test_slug_is_unique(self):
@@ -787,14 +786,14 @@ class CampaignAdminTest(TestCase):
     @patch('campaigns.admin.fetch_osm_segments')
     def test_save_model_queues_task_when_creating_published_campaign(self, mock_task):
         form = MagicMock()
-        c = Campaign(name='New Camp', slug='new-camp', goal='g', cities=['x'], status='published')
+        c = Campaign(name='New Camp', slug='new-camp', cities=['x'], status='published')
         self.ma.save_model(self.request, c, form, change=False)
         mock_task.delay.assert_called_once_with(c.pk)
 
     @patch('campaigns.admin.fetch_osm_segments')
     def test_save_model_does_not_queue_task_for_draft_on_create(self, mock_task):
         form = MagicMock()
-        c = Campaign(name='Draft Camp', slug='draft-new', goal='g', cities=['x'], status='draft')
+        c = Campaign(name='Draft Camp', slug='draft-new', cities=['x'], status='draft')
         self.ma.save_model(self.request, c, form, change=False)
         mock_task.delay.assert_not_called()
 
@@ -1025,7 +1024,6 @@ class ManagerUITest(TestCase):
         self._login()
         self.client.post('/manage/new/', {
             'name': 'Brand New Campaign',
-            'goal': 'Reach voters',
             'cities_json': self._city_json('San Jose'),
             'start_date': '2026-06-01',
         })
@@ -1036,7 +1034,6 @@ class ManagerUITest(TestCase):
         self._login()
         resp = self.client.post('/manage/new/', {
             'name': 'Redirect Test',
-            'goal': 'Goal text',
             'cities_json': self._city_json('Palo Alto', 123),
             'start_date': '2026-06-01',
         })
@@ -1047,7 +1044,6 @@ class ManagerUITest(TestCase):
         self._login()
         self.client.post('/manage/new/', {
             'name': 'Auto Slug Campaign',
-            'goal': 'Goal',
             'cities_json': self._city_json('Sunnyvale', 456),
             'start_date': '2026-06-01',
         })
@@ -1115,7 +1111,6 @@ class ManagerUITest(TestCase):
         ]
         self.client.post('/manage/new/', {
             'name': 'City Parse Test',
-            'goal': 'Goal',
             'cities_json': json.dumps(cities),
             'start_date': '2026-06-01',
         })
@@ -1127,7 +1122,6 @@ class ManagerUITest(TestCase):
         self._login()
         resp = self.client.post('/manage/new/', {
             'name': 'Bad JSON Test',
-            'goal': 'Goal',
             'cities_json': 'not-json',
             'start_date': '2026-06-01',
         })
@@ -1138,7 +1132,6 @@ class ManagerUITest(TestCase):
         self._login()
         resp = self.client.post('/manage/new/', {
             'name': 'Empty Cities Test',
-            'goal': 'Goal',
             'cities_json': '[]',
             'start_date': '2026-06-01',
         })

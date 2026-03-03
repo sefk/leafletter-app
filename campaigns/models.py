@@ -19,7 +19,6 @@ class Campaign(models.Model):
 
     name = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
-    goal = models.TextField()
     cities = models.JSONField()  # list of city name strings
     start_date = models.DateField(default=date.today)
     end_date = models.DateField(null=True, blank=True)

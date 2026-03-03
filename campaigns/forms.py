@@ -14,7 +14,7 @@ class CampaignForm(forms.ModelForm):
 
     class Meta:
         model = Campaign
-        fields = ['name', 'slug', 'goal', 'start_date', 'end_date',
+        fields = ['name', 'slug', 'start_date', 'end_date',
                   'instructions', 'contact_info']
         widgets = {
             'instructions': forms.HiddenInput(attrs={'id': 'id_instructions'}),
