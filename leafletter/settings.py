@@ -88,6 +88,21 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Use content-hashed filenames in production to bust browser caches automatically.
+# ManifestStaticFilesStorage requires collectstatic to have been run (done in Dockerfile).
+# In development, fall back to the default storage so runserver works without collectstatic.
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': (
+            'django.contrib.staticfiles.storage.StaticFilesStorage'
+            if DEBUG
+            else 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
+        ),
+    },
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
