@@ -16,7 +16,7 @@
   let selectionMode = false;
   let streetsLayer = null;
   let coverageLayer = null;
-  let coverageVisible = false;
+  let coverageVisible = true;
   let lasso = null;
   let map = null;
 
@@ -140,6 +140,9 @@
       if (!window.BBOX) {
         map.fitBounds(streetsLayer.getBounds(), { padding: [20, 20] });
       }
+
+      // Load coverage by default
+      loadCoverage();
     })
     .catch(err => console.error('Failed to load streets:', err));
 
