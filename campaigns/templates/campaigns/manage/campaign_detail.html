@@ -24,6 +24,16 @@
         </ul>
       </td>
     </tr>
+    {% if campaign.status == 'published' %}
+    <tr>
+      <th>Public URL</th>
+      <td>
+        <div style="padding:8px 12px; background:#f1f8e9; border:1px solid #c5e1a5; border-radius:6px; display:inline-block;">
+          <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#1a6b3c; word-break:break-all;">{{ campaign_url }}</a>
+        </div>
+      </td>
+    </tr>
+    {% endif %}
     <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
     {% if campaign.instructions %}
     <tr><th>Instructions</th><td>{{ campaign.instructions|safe }}</td></tr>

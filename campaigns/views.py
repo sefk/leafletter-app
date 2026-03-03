@@ -289,8 +289,10 @@ def manage_campaign_detail(request, slug):
     pct = round(covered_blocks / total_blocks * 100) if total_blocks else 0
     recent_trips = campaign.trips.prefetch_related('streets').all()[:10]
     city_fetch_jobs = list(campaign.city_fetch_jobs.all())
+    campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
     return render(request, 'campaigns/manage/campaign_detail.html', {
         'campaign': campaign,
+        'campaign_url': campaign_url,
         'total_blocks': total_blocks,
         'covered_blocks': covered_blocks,
         'trip_count': trip_count,
