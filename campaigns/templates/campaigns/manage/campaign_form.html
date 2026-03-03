@@ -283,7 +283,7 @@
 
   // Pre-populate from existing value
   if (hiddenInput.value) {
-    quill.root.innerHTML = hiddenInput.value;
+    quill.clipboard.dangerouslyPasteHTML(hiddenInput.value);
   }
 
   // Sync to hidden input before form submission

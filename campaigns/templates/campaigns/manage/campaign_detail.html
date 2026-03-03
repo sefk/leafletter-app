@@ -36,7 +36,7 @@
     {% endif %}
     <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
     {% if campaign.instructions %}
-    <tr><th>Instructions</th><td>{{ campaign.instructions|safe }}</td></tr>
+    <tr><th style="vertical-align:top;">Instructions</th><td class="instructions">{{ campaign.instructions|safe }}</td></tr>
     {% endif %}
     {% if campaign.contact_info %}
     <tr><th>Contact</th><td>{{ campaign.contact_info }}</td></tr>
