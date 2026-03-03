@@ -172,6 +172,72 @@ class CampaignDetailViewTest(TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
+# ── Access control tests ──────────────────────────────────────────────────────
+
+class PublicAccessTest(TestCase):
+    """Public endpoints must be reachable without authentication."""
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='public-camp')
+
+    # Root
+    def test_root_returns_200_unauthenticated(self):
+        resp = self.client.get('/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_root_shows_published_campaign(self):
+        resp = self.client.get('/')
+        self.assertContains(resp, self.campaign.name)
+
+    def test_root_does_not_show_draft(self):
+        make_campaign(slug='draft-pub', status='draft')
+        resp = self.client.get('/')
+        self.assertNotContains(resp, 'draft-pub')
+
+    # Worker campaign page
+    def test_campaign_detail_returns_200_unauthenticated(self):
+        resp = self.client.get(f'/c/{self.campaign.slug}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_campaign_streets_geojson_returns_200_unauthenticated(self):
+        resp = self.client.get(f'/c/{self.campaign.slug}/streets.geojson')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_campaign_coverage_geojson_returns_200_unauthenticated(self):
+        resp = self.client.get(f'/c/{self.campaign.slug}/coverage.geojson')
+        self.assertEqual(resp.status_code, 200)
+
+
+class AuthGatingTest(TestCase):
+    """Manage and admin endpoints must redirect unauthenticated users to login."""
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='auth-camp', status='draft')
+
+    def _assert_redirects_to_login(self, url):
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+
+    def test_manage_list_requires_login(self):
+        self._assert_redirects_to_login('/manage/')
+
+    def test_manage_detail_requires_login(self):
+        self._assert_redirects_to_login(f'/manage/{self.campaign.slug}/')
+
+    def test_manage_new_requires_login(self):
+        self._assert_redirects_to_login('/manage/new/')
+
+    def test_manage_edit_requires_login(self):
+        self._assert_redirects_to_login(f'/manage/{self.campaign.slug}/edit/')
+
+    def test_admin_requires_login(self):
+        resp = self.client.get('/admin/')
+        self.assertEqual(resp.status_code, 302)
+
+
 # ── View tests: streets.geojson ───────────────────────────────────────────────
 
 class StreetsGeoJSONViewTest(TestCase):

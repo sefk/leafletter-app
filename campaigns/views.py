@@ -15,6 +15,11 @@ from .tasks import fetch_osm_segments, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TY
 _login_required = login_required(login_url='/admin/login/')
 
 
+def public_campaign_list(request):
+    campaigns = Campaign.objects.filter(status='published').order_by('start_date')
+    return render(request, 'campaigns/campaign_list.html', {'campaigns': campaigns})
+
+
 def campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
     return render(request, 'campaigns/campaign_detail.html', {
