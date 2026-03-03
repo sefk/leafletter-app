@@ -13,7 +13,11 @@ DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
-# Required for Django 4.0+ behind Railway's HTTPS proxy.
+# Railway terminates SSL at the load balancer and forwards requests to gunicorn over HTTP,
+# setting X-Forwarded-Proto: https. Tell Django to trust that header so request.is_secure()
+# returns True and CSRF referer validation works correctly.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 # Set CSRF_TRUSTED_ORIGINS to a comma-separated list of trusted origins, e.g.
 # "https://web-production-b863b.up.railway.app,https://yourdomain.com"
 _csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', 'https://leafletter.app')
