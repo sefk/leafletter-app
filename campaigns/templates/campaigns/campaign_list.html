@@ -24,16 +24,44 @@
       padding: 20px 24px;
       margin-bottom: 16px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      text-decoration: none;
       display: block;
-      color: inherit;
+      position: relative;
       border-left: 4px solid #1a6b3c;
       transition: box-shadow 0.15s;
     }
     .campaign-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
 
+    .campaign-link {
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
     .campaign-card h2 { font-size: 1.1rem; color: #1a6b3c; margin-bottom: 6px; }
     .campaign-card .meta { font-size: 0.85rem; color: #666; }
+
+    .gear-link {
+      position: absolute;
+      top: 50%;
+      right: 16px;
+      transform: translateY(-50%);
+      color: #aaa;
+      text-decoration: none;
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+    .gear-link:hover { color: #1a6b3c; }
+
+    .intro {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      font-size: 0.95rem;
+      color: #444;
+      line-height: 1.5;
+    }
+    .intro a { color: #1a6b3c; }
 
     .empty { text-align: center; color: #888; margin-top: 60px; font-size: 1rem; }
   </style>
@@ -46,16 +74,25 @@
 </div>
 
 <div class="content">
+  <div class="intro">
+    Leafletter is an app for logging where leaflets have been distributed in a neighborhood.
+    Click on one of the campaigns below to browse coverage or log your work.
+    Or you can use the <a href="/manage/">manage page</a> to create new campaigns or change existing ones (login required).
+  </div>
+
   {% if campaigns %}
     {% for campaign in campaigns %}
-    <a href="/c/{{ campaign.slug }}/" class="campaign-card">
-      <h2>{{ campaign.name }}</h2>
-      <div class="meta">
-        {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
-        &nbsp;·&nbsp;
-        {% for city in campaign.cities %}{% if city.display_name %}{{ city.display_name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
-      </div>
-    </a>
+    <div class="campaign-card">
+      <a href="/c/{{ campaign.slug }}/" class="campaign-link">
+        <h2>{{ campaign.name }}</h2>
+        <div class="meta">
+          {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
+          &nbsp;·&nbsp;
+          {% for city in campaign.cities %}{% if city.display_name %}{{ city.display_name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </div>
+      </a>
+      <a href="/manage/{{ campaign.slug }}/" class="gear-link" title="Manage campaign">⚙</a>
+    </div>
     {% endfor %}
   {% else %}
     <p class="empty">No active campaigns right now. Check back soon.</p>
