@@ -128,7 +128,12 @@
           if (batch.length > 0) selectionStack.push(batch);
           updateSelectionCount();
           updateUndoButton();
-          document.getElementById('btn-lasso').textContent = 'Select Area';
+          if (selectionMode) {
+            setTimeout(() => {
+              lasso.enable();
+              document.getElementById('btn-lasso').textContent = 'Drawing…';
+            }, 0);
+          }
         });
         // Show btn-lasso if already in selection mode (race condition guard)
         if (selectionMode) {
@@ -179,7 +184,12 @@
 
   function updateUndoButton() {
     const btn = document.getElementById('btn-undo');
-    btn.style.display = (selectionMode && selectionStack.length > 0) ? '' : 'none';
+    if (selectionMode) {
+      btn.style.display = '';
+      btn.disabled = selectionStack.length === 0;
+    } else {
+      btn.style.display = 'none';
+    }
   }
 
   function setSelectionMode(active) {
