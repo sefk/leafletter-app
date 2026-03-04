@@ -195,8 +195,9 @@
   function setSelectionMode(active) {
     selectionMode = active;
     document.getElementById('btn-log-trip').style.display = active ? 'none' : '';
-    document.getElementById('btn-done').style.display = active ? '' : 'none';
+    document.getElementById('btn-submit').style.display = active ? '' : 'none';
     document.getElementById('btn-cancel').style.display = active ? '' : 'none';
+    document.getElementById('trip-form').style.display = active ? 'block' : 'none';
     document.getElementById('street-search-panel').style.display = active ? 'block' : 'none';
     if (!active) {
       document.getElementById('street-search-input').value = '';
@@ -357,20 +358,8 @@
   document.getElementById('btn-cancel').addEventListener('click', () => {
     setSelectionMode(false);
     resetSelection();
-    document.getElementById('trip-form').style.display = 'none';
     document.getElementById('status-message').style.display = 'none';
     document.getElementById('debug-section').style.display = 'none';
-  });
-
-  document.getElementById('btn-done').addEventListener('click', () => {
-    if (selectedIds.size === 0) {
-      alert('Please tap at least one street segment first.');
-      return;
-    }
-    setSelectionMode(false);
-    document.getElementById('btn-submit').disabled = false;
-    document.getElementById('trip-form').style.display = 'block';
-    document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
 
   document.getElementById('btn-undo').addEventListener('click', () => {
@@ -409,6 +398,10 @@
   });
 
   document.getElementById('btn-submit').addEventListener('click', () => {
+    if (selectedIds.size === 0) {
+      alert('Please tap at least one street segment first.');
+      return;
+    }
     const workerName = document.getElementById('worker-name').value.trim();
     const notes = document.getElementById('notes').value.trim();
     const segmentIds = Array.from(selectedIds);
@@ -425,7 +418,8 @@
         return r.json();
       })
       .then(() => {
-        document.getElementById('trip-form').style.display = 'none';
+        setSelectionMode(false);
+        document.getElementById('btn-submit').disabled = false;
         document.getElementById('debug-section').style.display = 'none';
         showStatus('Trip logged! Thank you for your work.', 'success');
         resetSelection();
