@@ -91,7 +91,11 @@
   <div class="nav-right">
     {% if user.is_authenticated %}
       <span>{{ user.username }}</span>
-      <a href="/admin/logout/?next=/manage/">Logout</a>
+      <form method="post" action="/admin/logout/" style="display:inline">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="/manage/">
+        <button type="submit" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;text-decoration:underline">Logout</button>
+      </form>
     {% endif %}
   </div>
 </nav>
