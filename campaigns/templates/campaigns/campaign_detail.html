@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ campaign.name }} — Leafletter</title>
+  <link rel="icon" href="{% static 'campaigns/leafletter-icon.png' %}" type="image/png">
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -205,7 +207,6 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-lasso/dist/leaflet-lasso.umd.min.js"></script>
-{% load static %}
 <script>
   window.CAMPAIGN_SLUG = "{{ campaign.slug }}";
   window.STREETS_URL = "{% url 'campaigns:streets_geojson' campaign.slug %}";
