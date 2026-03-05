@@ -70,8 +70,6 @@
           layerToId.set(layer, id);
           nameById.set(id, name);
 
-          layer.bindTooltip(name, { sticky: true });
-
           layer.on('click', () => {
             if (!selectionMode) return;
             if (selectedIds.has(id)) {
@@ -204,6 +202,14 @@
     }
     if (streetsLayer) {
       map.getContainer().style.cursor = active ? 'crosshair' : '';
+      streetsLayer.eachLayer(layer => {
+        if (active) {
+          const id = layerToId.get(layer);
+          layer.bindTooltip(nameById.get(id) || 'Unnamed street', { sticky: true });
+        } else {
+          layer.unbindTooltip();
+        }
+      });
     }
     if (active) {
       map.dragging.disable();
