@@ -55,27 +55,28 @@ def campaign_streets_geojson(request, slug):
 @require_GET
 def campaign_coverage_geojson(request, slug):
     """
-    Return GeoJSON of all street segments that have been covered by at least one trip.
-    Returns individual features (MySQL doesn't support spatial union aggregates).
+    Return GeoJSON of all street segments covered, tagged with trip metadata.
+    Each (trip, street) pair becomes a separate feature so the frontend can
+    color-code and toggle trips individually.
     """
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
 
-    # Streets referenced by any trip for this campaign
-    covered_streets = Street.objects.filter(
-        trip__campaign=campaign
-    ).distinct()
+    trips = Trip.objects.filter(campaign=campaign).prefetch_related('streets')
 
     features = []
-    for street in covered_streets:
-        features.append({
-            'type': 'Feature',
-            'id': street.pk,
-            'geometry': json.loads(street.geometry.geojson),
-            'properties': {
-                'osm_id': street.osm_id,
-                'name': street.name,
-            },
-        })
+    for trip in trips:
+        for street in trip.streets.all():
+            features.append({
+                'type': 'Feature',
+                'id': f'{trip.pk}_{street.pk}',
+                'geometry': json.loads(street.geometry.geojson),
+                'properties': {
+                    'trip_id': str(trip.pk),
+                    'worker_name': trip.worker_name,
+                    'recorded_at': trip.recorded_at.strftime('%Y-%m-%d'),
+                    'street_name': street.name,
+                },
+            })
 
     return JsonResponse({
         'type': 'FeatureCollection',

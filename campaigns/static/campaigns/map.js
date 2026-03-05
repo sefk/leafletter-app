@@ -15,15 +15,25 @@
   let isPointerDown = false;
   let selectionMode = false;
   let streetsLayer = null;
-  let coverageLayer = null;
   let coverageVisible = true;
   let lasso = null;
   let map = null;
 
+  // Per-trip coverage state
+  const tripLayers = new Map();   // trip_id → Leaflet layer group
+  const tripVisible = new Map();  // trip_id → boolean
+  const tripMeta = new Map();     // trip_id → {worker_name, recorded_at, color}
+
   // Style helpers
   const STYLE_DEFAULT = { color: '#888', weight: 2, opacity: 0.7 };
   const STYLE_SELECTED = { color: '#1a6b3c', weight: 5, opacity: 1 };
-  const STYLE_COVERAGE = { color: '#ff6f00', weight: 5, opacity: 0.8 };
+
+  // Distinct colors for individual trips
+  const TRIP_PALETTE = [
+    '#e41a1c', '#377eb8', '#ff7f00', '#984ea3',
+    '#4daf4a', '#a65628', '#f781bf', '#00bcd4',
+    '#795548', '#607d8b',
+  ];
 
   // ── Pointer tracking (for drag-to-select) ────────────────────────────────
   document.addEventListener('mousedown', () => { isPointerDown = true; });
@@ -157,17 +167,95 @@
     fetch(window.COVERAGE_URL)
       .then(r => r.json())
       .then(geojson => {
-        if (coverageLayer) {
-          map.removeLayer(coverageLayer);
-        }
-        coverageLayer = L.geoJSON(geojson, {
-          style: STYLE_COVERAGE,
+        // Remove existing trip layers
+        tripLayers.forEach(layer => map.removeLayer(layer));
+        tripLayers.clear();
+        tripVisible.clear();
+        tripMeta.clear();
+
+        // Group features by trip_id
+        const byTrip = new Map();
+        (geojson.features || []).forEach(f => {
+          const tid = f.properties.trip_id;
+          if (!byTrip.has(tid)) byTrip.set(tid, []);
+          byTrip.get(tid).push(f);
         });
-        if (coverageVisible) {
-          coverageLayer.addTo(map);
-        }
+
+        // Build ordered list of trips (order preserved from server = newest first)
+        let colorIdx = 0;
+        byTrip.forEach((features, tid) => {
+          const first = features[0].properties;
+          const color = TRIP_PALETTE[colorIdx % TRIP_PALETTE.length];
+          colorIdx++;
+          tripMeta.set(tid, {
+            worker_name: first.worker_name,
+            recorded_at: first.recorded_at,
+            color,
+          });
+          const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
+            style: { color, weight: 5, opacity: 0.85 },
+          });
+          tripLayers.set(tid, layer);
+          tripVisible.set(tid, true);
+          if (coverageVisible) layer.addTo(map);
+        });
+
+        renderTripLegend();
       })
       .catch(err => console.error('Failed to load coverage:', err));
+  }
+
+  function renderTripLegend() {
+    const legendEl = document.getElementById('trip-legend');
+    const itemsEl = document.getElementById('trip-legend-items');
+    if (!itemsEl) return;
+
+    itemsEl.innerHTML = '';
+
+    if (tripMeta.size === 0) {
+      legendEl.style.display = 'none';
+      return;
+    }
+
+    tripMeta.forEach((meta, tid) => {
+      const item = document.createElement('label');
+      item.className = 'trip-legend-item';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = true;
+      cb.addEventListener('change', () => {
+        const layer = tripLayers.get(tid);
+        if (!layer) return;
+        if (cb.checked) {
+          tripVisible.set(tid, true);
+          if (coverageVisible) layer.addTo(map);
+        } else {
+          tripVisible.set(tid, false);
+          map.removeLayer(layer);
+        }
+      });
+
+      const swatch = document.createElement('span');
+      swatch.className = 'trip-legend-swatch';
+      swatch.style.background = meta.color;
+
+      const labelText = document.createElement('span');
+      labelText.className = 'trip-legend-label';
+      labelText.textContent = meta.worker_name || 'Anonymous';
+
+      const metaSpan = document.createElement('span');
+      metaSpan.className = 'trip-legend-meta';
+      metaSpan.textContent = meta.recorded_at;
+
+      item.appendChild(cb);
+      item.appendChild(swatch);
+      item.appendChild(labelText);
+      item.appendChild(metaSpan);
+      itemsEl.appendChild(item);
+    });
+
+    legendEl.style.display = coverageVisible ? 'block' : 'none';
   }
 
   function setStreetsInteractive(active) {
@@ -415,13 +503,15 @@
     if (!coverageVisible) {
       coverageVisible = true;
       btn.textContent = 'Hide Coverage';
-      loadCoverage();
+      tripLayers.forEach((layer, tid) => {
+        if (tripVisible.get(tid)) layer.addTo(map);
+      });
+      document.getElementById('trip-legend').style.display = tripMeta.size > 0 ? 'block' : 'none';
     } else {
       coverageVisible = false;
       btn.textContent = 'Show Coverage';
-      if (coverageLayer) {
-        map.removeLayer(coverageLayer);
-      }
+      tripLayers.forEach(layer => map.removeLayer(layer));
+      document.getElementById('trip-legend').style.display = 'none';
     }
   });
 

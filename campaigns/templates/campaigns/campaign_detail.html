@@ -143,6 +143,36 @@
     }
     .sr-name { font-weight: 500; }
     .sr-sub { color: #777; font-size: 0.82rem; margin-left: 4px; }
+
+    #trip-legend {
+      display: none;
+      padding: 12px 16px;
+      background: #fff;
+      border-top: 1px solid #ddd;
+    }
+    #trip-legend h4 {
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 8px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .trip-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 0.875rem;
+    }
+    .trip-legend-swatch {
+      width: 20px;
+      height: 4px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .trip-legend-label { color: #333; }
+    .trip-legend-meta { color: #888; font-size: 0.8rem; margin-left: 2px; }
   </style>
 </head>
 <body>
@@ -178,6 +208,11 @@
   <button id="btn-lasso" class="btn btn-secondary" style="display:none;">Select Area</button>
   <span id="selection-count"></span>
   <button id="btn-toggle-coverage" class="btn btn-secondary">Hide Coverage</button>
+</div>
+
+<div id="trip-legend">
+  <h4>Trips</h4>
+  <div id="trip-legend-items"></div>
 </div>
 
 <div id="street-search-panel">
