@@ -325,6 +325,7 @@
     document.getElementById('btn-log-trip').style.display = active ? 'none' : '';
     document.getElementById('btn-done').style.display = active ? '' : 'none';
     document.getElementById('btn-cancel').style.display = active ? '' : 'none';
+    document.getElementById('trip-form').style.display = active ? 'block' : 'none';
     document.getElementById('street-search-panel').style.display = active ? 'block' : 'none';
     if (!active) {
       document.getElementById('street-search-input').value = '';
@@ -489,12 +490,14 @@
       lasso.enable();
       document.getElementById('btn-lasso').textContent = 'Drawing…';
     }
+    document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
     setSelectionMode(false);
     resetSelection();
-    document.getElementById('trip-form').style.display = 'none';
+    document.getElementById('worker-name').value = '';
+    document.getElementById('notes').value = '';
     document.getElementById('status-message').style.display = 'none';
     document.getElementById('debug-section').style.display = 'none';
   });
@@ -504,10 +507,36 @@
       alert('Please tap at least one street segment first.');
       return;
     }
-    setSelectionMode(false);
-    document.getElementById('btn-submit').disabled = false;
-    document.getElementById('trip-form').style.display = 'block';
-    document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
+    const workerName = document.getElementById('worker-name').value.trim();
+    const notes = document.getElementById('notes').value.trim();
+    const segmentIds = Array.from(selectedIds);
+
+    document.getElementById('btn-done').disabled = true;
+
+    fetch(window.TRIP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segment_ids: segmentIds, worker_name: workerName, notes }),
+    })
+      .then(r => {
+        if (!r.ok) return r.text().then(t => { throw new Error(t); });
+        return r.json();
+      })
+      .then(() => {
+        setSelectionMode(false);
+        document.getElementById('debug-section').style.display = 'none';
+        document.getElementById('worker-name').value = '';
+        document.getElementById('notes').value = '';
+        document.getElementById('btn-done').disabled = false;
+        showStatus('Trip logged! Thank you for your work.', 'success');
+        resetSelection();
+        if (coverageMode !== 'hidden') loadCoverage();
+        document.getElementById('status-message').scrollIntoView({ behavior: 'smooth' });
+      })
+      .catch(err => {
+        showStatus('Error submitting trip: ' + err.message, 'error');
+        document.getElementById('btn-done').disabled = false;
+      });
   });
 
   document.getElementById('btn-undo').addEventListener('click', () => {
@@ -537,36 +566,5 @@
     if (legendEl) legendEl.style.display = coverageMode === 'detail' && tripMeta.size > 0 ? 'block' : 'none';
   });
 
-  document.getElementById('btn-submit').addEventListener('click', () => {
-    const workerName = document.getElementById('worker-name').value.trim();
-    const notes = document.getElementById('notes').value.trim();
-    const segmentIds = Array.from(selectedIds);
-
-    document.getElementById('btn-submit').disabled = true;
-
-    fetch(window.TRIP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ segment_ids: segmentIds, worker_name: workerName, notes }),
-    })
-      .then(r => {
-        if (!r.ok) return r.text().then(t => { throw new Error(t); });
-        return r.json();
-      })
-      .then(() => {
-        document.getElementById('trip-form').style.display = 'none';
-        document.getElementById('debug-section').style.display = 'none';
-        showStatus('Trip logged! Thank you for your work.', 'success');
-        resetSelection();
-        // Reload coverage if visible
-        if (coverageMode !== 'hidden') loadCoverage();
-        // Scroll to message
-        document.getElementById('status-message').scrollIntoView({ behavior: 'smooth' });
-      })
-      .catch(err => {
-        showStatus('Error submitting trip: ' + err.message, 'error');
-        document.getElementById('btn-submit').disabled = false;
-      });
-  });
 
 })();
