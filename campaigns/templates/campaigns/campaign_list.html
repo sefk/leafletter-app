@@ -90,7 +90,7 @@
         <div class="meta">
           {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
           &nbsp;·&nbsp;
-          {% for city in campaign.cities %}{% if city.display_name %}{{ city.display_name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+          {% for city in campaign.cities %}{% if city.name %}{{ city.name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
         </div>
       </a>
       <a href="/manage/{{ campaign.slug }}/" class="gear-link" title="Manage campaign">⚙</a>
