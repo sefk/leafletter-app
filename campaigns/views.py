@@ -299,6 +299,7 @@ def manage_campaign_detail(request, slug):
         'pct': pct,
         'recent_trips': recent_trips,
         'city_fetch_jobs': city_fetch_jobs,
+        'bbox_json': json.dumps(campaign.bbox),
     })
 
 
@@ -378,6 +379,24 @@ def manage_city_refetch(request, slug, city_index):
         celery_task_id=result.id,
     )
     return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_campaign_update_bbox(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    try:
+        body = json.loads(request.body)
+        bbox = body['bbox']
+        if (not isinstance(bbox, list) or len(bbox) != 2 or
+                not all(isinstance(p, list) and len(p) == 2 and
+                        all(isinstance(v, (int, float)) for v in p) for p in bbox)):
+            raise ValueError('invalid bbox')
+    except (json.JSONDecodeError, KeyError, ValueError):
+        return HttpResponseBadRequest('Invalid bbox')
+    campaign.bbox = bbox
+    campaign.save(update_fields=['bbox'])
+    return JsonResponse({'status': 'ok'})
 
 
 @_login_required

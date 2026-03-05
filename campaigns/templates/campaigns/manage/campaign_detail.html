@@ -210,6 +210,153 @@
   </div>
 </div>
 
+<!-- Geographical Limit Editor -->
+{% if campaign.bbox %}
+<div class="card">
+  <div class="card-title">Geographical Limit</div>
+  <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+    The geographical limit set the initial view and pan limits on the public map.
+    Drag a new rectangle to restrict the visible area (e.g. to exclude distant unincorporated areas).
+  </p>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <button id="btn-edit-bbox" class="btn btn-secondary">Edit Geographical Limit</button>
+    <button id="btn-save-bbox" class="btn btn-primary" style="display:none;" disabled>Save Geographical Limit</button>
+    <button id="btn-cancel-bbox" class="btn btn-danger" style="display:none;">Cancel</button>
+    <span id="bbox-status" style="font-size:0.85rem; color:#666;"></span>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+  (function() {
+    var currentBbox = {{ bbox_json }};
+    var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}";
+    var updateUrl = "{% url 'manage_campaign_update_bbox' campaign.slug %}";
+    var csrfToken = "{{ csrf_token }}";
+
+    var map = L.map('bbox-map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
+    var bboxRect = L.rectangle(currentBbox, {
+      color: '#1a6b3c', weight: 2, fillOpacity: 0.05, dashArray: '6,4'
+    }).addTo(map);
+    map.fitBounds(currentBbox, { padding: [20, 20], animate: false });
+
+    {% if campaign.status == 'published' %}
+    fetch(streetsUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(geojson) {
+        if (geojson.features && geojson.features.length > 0) {
+          L.geoJSON(geojson, { style: { color: '#888', weight: 1.5, opacity: 0.6 } }).addTo(map);
+        }
+      })
+      .catch(function() {});
+    {% endif %}
+
+    var editMode = false;
+    var drawStart = null;
+    var drawRect = null;
+    var newBbox = null;
+
+    var btnEdit   = document.getElementById('btn-edit-bbox');
+    var btnSave   = document.getElementById('btn-save-bbox');
+    var btnCancel = document.getElementById('btn-cancel-bbox');
+    var statusEl  = document.getElementById('bbox-status');
+
+    function enterEditMode() {
+      editMode = true;
+      btnEdit.style.display = 'none';
+      btnSave.style.display = '';
+      btnCancel.style.display = '';
+      btnSave.disabled = true;
+      map.dragging.disable();
+      map.getContainer().style.cursor = 'crosshair';
+      statusEl.textContent = 'Click and drag on the map to draw the new geographical limit.';
+    }
+
+    function exitEditMode() {
+      editMode = false;
+      btnEdit.style.display = '';
+      btnSave.style.display = 'none';
+      btnCancel.style.display = 'none';
+      map.dragging.enable();
+      map.getContainer().style.cursor = '';
+      statusEl.textContent = '';
+      if (drawRect) { map.removeLayer(drawRect); drawRect = null; }
+      drawStart = null;
+      newBbox = null;
+    }
+
+    btnEdit.addEventListener('click', enterEditMode);
+
+    btnCancel.addEventListener('click', function() {
+      exitEditMode();
+      map.removeLayer(bboxRect);
+      bboxRect = L.rectangle(currentBbox, {
+        color: '#1a6b3c', weight: 2, fillOpacity: 0.05, dashArray: '6,4'
+      }).addTo(map);
+    });
+
+    btnSave.addEventListener('click', function() {
+      if (!newBbox) return;
+      btnSave.disabled = true;
+      statusEl.textContent = 'Saving\u2026';
+      fetch(updateUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ bbox: newBbox }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.status === 'ok') {
+            currentBbox = newBbox;
+            exitEditMode();
+            map.removeLayer(bboxRect);
+            bboxRect = L.rectangle(currentBbox, {
+              color: '#1a6b3c', weight: 2, fillOpacity: 0.05, dashArray: '6,4'
+            }).addTo(map);
+            statusEl.textContent = 'Saved!';
+            setTimeout(function() { statusEl.textContent = ''; }, 2000);
+          }
+        })
+        .catch(function() {
+          statusEl.textContent = 'Error saving. Please try again.';
+          btnSave.disabled = false;
+        });
+    });
+
+    map.on('mousedown', function(e) {
+      if (!editMode) return;
+      drawStart = e.latlng;
+      if (drawRect) map.removeLayer(drawRect);
+      drawRect = L.rectangle([drawStart, drawStart], {
+        color: '#e65100', weight: 2, fillOpacity: 0.1, dashArray: '4,3'
+      }).addTo(map);
+    });
+
+    map.on('mousemove', function(e) {
+      if (!editMode || !drawStart) return;
+      drawRect.setBounds([drawStart, e.latlng]);
+    });
+
+    map.on('mouseup', function(e) {
+      if (!editMode || !drawStart) return;
+      var end = e.latlng;
+      var sw = [Math.min(drawStart.lat, end.lat), Math.min(drawStart.lng, end.lng)];
+      var ne = [Math.max(drawStart.lat, end.lat), Math.max(drawStart.lng, end.lng)];
+      newBbox = [sw, ne];
+      drawStart = null;
+      btnSave.disabled = false;
+      statusEl.textContent = 'Drag again to redraw, or click Save Geographical Limit.';
+    });
+  })();
+  </script>
+</div>
+{% endif %}
+
 <!-- Recent Trips -->
 {% if recent_trips %}
 <div class="card">

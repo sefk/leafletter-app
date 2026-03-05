@@ -21,4 +21,5 @@ manage_urlpatterns = [
     path('<slug:slug>/delete/', views.manage_campaign_delete, name='manage_campaign_delete'),
     path('<slug:slug>/refetch/', views.manage_campaign_refetch, name='manage_campaign_refetch'),
     path('<slug:slug>/refetch-city/<int:city_index>/', views.manage_city_refetch, name='manage_city_refetch'),
+    path('<slug:slug>/update-bbox/', views.manage_campaign_update_bbox, name='manage_campaign_update_bbox'),
 ]
