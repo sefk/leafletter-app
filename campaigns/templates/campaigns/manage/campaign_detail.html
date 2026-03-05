@@ -357,29 +357,160 @@
 </div>
 {% endif %}
 
-<!-- Recent Trips -->
-{% if recent_trips %}
+<!-- Campaign Map (read-only) -->
+{% if campaign.map_status == 'ready' %}
 <div class="card">
-  <div class="card-title">Recent Trips</div>
-  <table style="margin:0;">
-    <thead>
-      <tr>
-        <th>Worker</th>
-        <th>Date</th>
-        <th>Blocks</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for trip in recent_trips %}
-      <tr>
-        <td>{{ trip.worker_name|default:"Anonymous" }}</td>
-        <td>{{ trip.recorded_at|date:"Y-m-d H:i" }}</td>
-        <td>{{ trip.streets.count }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+    Campaign Map
+    <select id="manage-coverage-mode" style="font-size:0.85rem; padding:4px 8px; border:1px solid #ccc; border-radius:4px; cursor:pointer;">
+      <option value="detail">Coverage detail</option>
+      <option value="summary">Coverage summary</option>
+      <option value="hidden">Hide coverage</option>
+    </select>
+  </div>
+  {% if not campaign.bbox %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  {% endif %}
+  <div id="manage-map" style="height:420px; border-radius:6px; margin-bottom:8px;"></div>
+  <div id="manage-trip-legend" style="display:none; margin-top:8px;">
+    <div style="font-size:0.8rem; color:#555; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Trips</div>
+    <div id="manage-trip-legend-items"></div>
+  </div>
+  {% if not campaign.bbox %}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  {% endif %}
+  <script>
+  (function() {
+    var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}";
+    var coverageUrl = "{% url 'campaigns:coverage_geojson' campaign.slug %}";
+    var bbox = {{ bbox_json }};
+
+    var TRIP_PALETTE = [
+      '#e41a1c', '#377eb8', '#ff7f00', '#984ea3',
+      '#4daf4a', '#a65628', '#f781bf', '#00bcd4',
+      '#795548', '#607d8b',
+    ];
+
+    var map = L.map('manage-map', { zoomControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
+    if (bbox) {
+      map.fitBounds(bbox, { padding: [20, 20], animate: false });
+    }
+
+    // Load streets
+    fetch(streetsUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(geojson) {
+        if (!geojson.features || geojson.features.length === 0) return;
+        L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
+        if (!bbox) map.fitBounds(L.geoJSON(geojson).getBounds(), { padding: [20, 20] });
+        loadCoverage();
+      })
+      .catch(function(err) { console.error('Failed to load streets:', err); });
+
+    var summaryLayer = null;
+    var tripLayers = {};
+    var tripMeta = {};
+    var coverageMode = 'detail';
+
+    function loadCoverage() {
+      fetch(coverageUrl)
+        .then(function(r) { return r.json(); })
+        .then(function(geojson) {
+          var allFeatures = geojson.features || [];
+
+          // Summary layer (deduplicated streets)
+          var seenStreets = {};
+          var summaryFeatures = [];
+          allFeatures.forEach(function(f) {
+            var streetPk = f.id.split('_')[1];
+            if (!seenStreets[streetPk]) {
+              seenStreets[streetPk] = true;
+              summaryFeatures.push(f);
+            }
+          });
+          summaryLayer = L.geoJSON({ type: 'FeatureCollection', features: summaryFeatures }, {
+            style: { color: '#ff6f00', weight: 5, opacity: 0.8 },
+          });
+
+          // Per-trip layers
+          var byTrip = {};
+          allFeatures.forEach(function(f) {
+            var tid = f.properties.trip_id;
+            if (!byTrip[tid]) byTrip[tid] = [];
+            byTrip[tid].push(f);
+          });
+
+          var colorIdx = 0;
+          Object.keys(byTrip).forEach(function(tid) {
+            var features = byTrip[tid];
+            var first = features[0].properties;
+            var color = TRIP_PALETTE[colorIdx % TRIP_PALETTE.length];
+            colorIdx++;
+            tripMeta[tid] = { worker_name: first.worker_name, recorded_at: first.recorded_at, color: color };
+            tripLayers[tid] = L.geoJSON({ type: 'FeatureCollection', features: features }, {
+              style: { color: color, weight: 5, opacity: 0.85 },
+            });
+          });
+
+          applyCoverageMode();
+          renderLegend();
+        })
+        .catch(function(err) { console.error('Failed to load coverage:', err); });
+    }
+
+    function applyCoverageMode() {
+      if (summaryLayer) map.removeLayer(summaryLayer);
+      Object.keys(tripLayers).forEach(function(tid) { map.removeLayer(tripLayers[tid]); });
+
+      if (coverageMode === 'summary') {
+        if (summaryLayer) summaryLayer.addTo(map);
+      } else if (coverageMode === 'detail') {
+        Object.keys(tripLayers).forEach(function(tid) { tripLayers[tid].addTo(map); });
+      }
+    }
+
+    function renderLegend() {
+      var legendEl = document.getElementById('manage-trip-legend');
+      var itemsEl = document.getElementById('manage-trip-legend-items');
+      itemsEl.innerHTML = '';
+      var tids = Object.keys(tripMeta);
+      if (tids.length === 0 || coverageMode !== 'detail') {
+        legendEl.style.display = 'none';
+        return;
+      }
+      tids.forEach(function(tid) {
+        var meta = tripMeta[tid];
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:0.875rem;';
+        var swatch = document.createElement('span');
+        swatch.style.cssText = 'width:20px; height:4px; border-radius:2px; flex-shrink:0; background:' + meta.color + ';';
+        var label = document.createElement('span');
+        label.style.color = '#333';
+        label.textContent = meta.worker_name || 'Anonymous';
+        var metaSpan = document.createElement('span');
+        metaSpan.style.cssText = 'color:#888; font-size:0.8rem; margin-left:2px;';
+        metaSpan.textContent = meta.recorded_at;
+        row.appendChild(swatch);
+        row.appendChild(label);
+        row.appendChild(metaSpan);
+        itemsEl.appendChild(row);
+      });
+      legendEl.style.display = 'block';
+    }
+
+    document.getElementById('manage-coverage-mode').addEventListener('change', function() {
+      coverageMode = this.value;
+      applyCoverageMode();
+      renderLegend();
+    });
+  })();
+  </script>
 </div>
 {% endif %}
+
 
 {% endblock %}
