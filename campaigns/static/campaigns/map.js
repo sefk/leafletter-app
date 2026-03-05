@@ -110,6 +110,9 @@
         },
       }).addTo(map);
 
+      // Disable pointer events on streets until selection mode is active
+      setStreetsInteractive(false);
+
       // Initialize lasso if plugin is loaded
       if (typeof L.lasso === 'function') {
         lasso = L.lasso(map, { intersect: true });
@@ -167,6 +170,13 @@
       .catch(err => console.error('Failed to load coverage:', err));
   }
 
+  function setStreetsInteractive(active) {
+    if (!streetsLayer) return;
+    streetsLayer.eachLayer(layer => {
+      if (layer._path) layer._path.style.pointerEvents = active ? '' : 'none';
+    });
+  }
+
   // ── UI helpers ────────────────────────────────────────────────────────────
   function updateSelectionCount() {
     const el = document.getElementById('selection-count');
@@ -202,6 +212,7 @@
     }
     if (streetsLayer) {
       map.getContainer().style.cursor = active ? 'crosshair' : '';
+      setStreetsInteractive(active);
       streetsLayer.eachLayer(layer => {
         if (active) {
           const id = layerToId.get(layer);
