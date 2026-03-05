@@ -61,7 +61,7 @@ def campaign_coverage_geojson(request, slug):
     """
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
 
-    trips = Trip.objects.filter(campaign=campaign).prefetch_related('streets')
+    trips = Trip.objects.filter(campaign=campaign, deleted=False).prefetch_related('streets')
 
     features = []
     for trip in trips:
@@ -285,10 +285,10 @@ def manage_campaign_create(request):
 def manage_campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     total_blocks = campaign.streets.count()
-    covered_blocks = Street.objects.filter(trip__campaign=campaign).distinct().count()
-    trip_count = campaign.trips.count()
+    covered_blocks = Street.objects.filter(trip__campaign=campaign, trip__deleted=False).distinct().count()
+    trip_count = campaign.trips.filter(deleted=False).count()
     pct = round(covered_blocks / total_blocks * 100) if total_blocks else 0
-    recent_trips = campaign.trips.prefetch_related('streets').all()[:10]
+    all_trips = campaign.trips.prefetch_related('streets').all()
     city_fetch_jobs = list(campaign.city_fetch_jobs.all())
     campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
     return render(request, 'campaigns/manage/campaign_detail.html', {
@@ -298,7 +298,7 @@ def manage_campaign_detail(request, slug):
         'covered_blocks': covered_blocks,
         'trip_count': trip_count,
         'pct': pct,
-        'recent_trips': recent_trips,
+        'all_trips': all_trips,
         'city_fetch_jobs': city_fetch_jobs,
         'bbox_json': json.dumps(campaign.bbox),
     })
@@ -398,6 +398,26 @@ def manage_campaign_update_bbox(request, slug):
     campaign.bbox = bbox
     campaign.save(update_fields=['bbox'])
     return JsonResponse({'status': 'ok'})
+
+
+@_login_required
+@require_POST
+def manage_trip_delete(request, slug, trip_id):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    trip = get_object_or_404(Trip, pk=trip_id, campaign=campaign)
+    trip.deleted = True
+    trip.save(update_fields=['deleted'])
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_trip_restore(request, slug, trip_id):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    trip = get_object_or_404(Trip, pk=trip_id, campaign=campaign)
+    trip.deleted = False
+    trip.save(update_fields=['deleted'])
+    return redirect('manage_campaign_detail', slug=slug)
 
 
 @_login_required

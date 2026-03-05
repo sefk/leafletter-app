@@ -384,6 +384,14 @@
     var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}";
     var coverageUrl = "{% url 'campaigns:coverage_geojson' campaign.slug %}";
     var bbox = {{ bbox_json }};
+    var csrfToken = "{{ csrf_token }}";
+
+    // Server-side trip data (all trips, including deleted)
+    var allTripData = [
+      {% for trip in all_trips %}
+      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'Y-m-d' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/" },
+      {% endfor %}
+    ];
 
     var TRIP_PALETTE = [
       '#e41a1c', '#377eb8', '#ff7f00', '#984ea3',
@@ -477,29 +485,51 @@
       var legendEl = document.getElementById('manage-trip-legend');
       var itemsEl = document.getElementById('manage-trip-legend-items');
       itemsEl.innerHTML = '';
-      var tids = Object.keys(tripMeta);
-      if (tids.length === 0 || coverageMode !== 'detail') {
+      if (allTripData.length === 0 || coverageMode !== 'detail') {
         legendEl.style.display = 'none';
         return;
       }
-      tids.forEach(function(tid) {
-        var meta = tripMeta[tid];
+      allTripData.forEach(function(trip) {
+        var meta = tripMeta[trip.id];  // defined for non-deleted trips
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:0.875rem;';
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:0.875rem;' + (trip.deleted ? 'opacity:0.45;' : '');
         var swatch = document.createElement('span');
-        swatch.style.cssText = 'width:20px; height:4px; border-radius:2px; flex-shrink:0; background:' + meta.color + ';';
+        var swatchColor = meta ? meta.color : '#aaa';
+        swatch.style.cssText = 'width:20px; height:4px; border-radius:2px; flex-shrink:0; background:' + swatchColor + ';';
         var label = document.createElement('span');
         label.style.color = '#333';
-        label.textContent = meta.worker_name || 'Anonymous';
+        label.textContent = trip.worker_name;
         var metaSpan = document.createElement('span');
         metaSpan.style.cssText = 'color:#888; font-size:0.8rem; margin-left:2px;';
-        metaSpan.textContent = meta.recorded_at;
+        metaSpan.textContent = trip.recorded_at;
+        var btn = document.createElement('button');
+        btn.style.cssText = 'margin-left:auto; padding:2px 8px; font-size:0.78rem; cursor:pointer; border-radius:4px; border:1px solid;';
+        if (trip.deleted) {
+          btn.textContent = 'Undo Delete';
+          btn.style.cssText += 'background:#f5f5f5; border-color:#bbb; color:#333;';
+          btn.addEventListener('click', function() { postTripAction(trip.restoreUrl); });
+        } else {
+          btn.textContent = 'Delete';
+          btn.style.cssText += 'background:#fff; border-color:#e57373; color:#c62828;';
+          btn.addEventListener('click', function() {
+            if (confirm('Delete this trip? You can undo this later.')) { postTripAction(trip.deleteUrl); }
+          });
+        }
         row.appendChild(swatch);
         row.appendChild(label);
         row.appendChild(metaSpan);
+        row.appendChild(btn);
         itemsEl.appendChild(row);
       });
       legendEl.style.display = 'block';
+    }
+
+    function postTripAction(url) {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        credentials: 'same-origin',
+      }).then(function() { location.reload(); });
     }
 
     document.getElementById('manage-coverage-mode').addEventListener('change', function() {
