@@ -372,6 +372,11 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   {% endif %}
   <div id="manage-map" style="height:420px; border-radius:6px; margin-bottom:8px;"></div>
+  <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
+  <div id="manage-map-loading" style="font-size:0.85rem; color:#666; padding:4px 0 8px;">
+    <span id="manage-map-loading-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; margin-right:6px; vertical-align:middle;"></span>
+    <span id="manage-map-loading-text">Loading streets… (1/2)</span>
+  </div>
   <div id="manage-trip-legend" style="display:none; margin-top:8px;">
     <div style="font-size:0.8rem; color:#555; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Trips</div>
     <div id="manage-trip-legend-items"></div>
@@ -408,16 +413,26 @@
       map.fitBounds(bbox, { padding: [20, 20], animate: false });
     }
 
+    var loadingEl = document.getElementById('manage-map-loading');
+    var loadingTextEl = document.getElementById('manage-map-loading-text');
+
     // Load streets
     fetch(streetsUrl)
       .then(function(r) { return r.json(); })
       .then(function(geojson) {
-        if (!geojson.features || geojson.features.length === 0) return;
+        if (!geojson.features || geojson.features.length === 0) {
+          if (loadingEl) loadingEl.style.display = 'none';
+          return;
+        }
         L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
         if (!bbox) map.fitBounds(L.geoJSON(geojson).getBounds(), { padding: [20, 20] });
+        if (loadingTextEl) loadingTextEl.textContent = 'Loading coverage… (2/2)';
         loadCoverage();
       })
-      .catch(function(err) { console.error('Failed to load streets:', err); });
+      .catch(function(err) {
+        console.error('Failed to load streets:', err);
+        if (loadingEl) loadingEl.style.display = 'none';
+      });
 
     var summaryLayer = null;
     var tripLayers = {};
@@ -466,8 +481,12 @@
 
           applyCoverageMode();
           renderLegend();
+          if (loadingEl) loadingEl.style.display = 'none';
         })
-        .catch(function(err) { console.error('Failed to load coverage:', err); });
+        .catch(function(err) {
+          console.error('Failed to load coverage:', err);
+          if (loadingEl) loadingEl.style.display = 'none';
+        });
     }
 
     function applyCoverageMode() {

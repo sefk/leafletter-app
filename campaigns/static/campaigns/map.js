@@ -62,12 +62,19 @@
     map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, true));
   }
 
+  // ── Loading state for "Log a Trip" button ────────────────────────────────
+  const btnLogTrip = document.getElementById('btn-log-trip');
+  btnLogTrip.disabled = true;
+  btnLogTrip.textContent = 'Loading streets… (1/2)';
+
   // ── Load streets ─────────────────────────────────────────────────────────
   fetch(window.STREETS_URL)
     .then(r => r.json())
     .then(geojson => {
       if (!geojson.features || geojson.features.length === 0) {
         map.setView([0, 0], 2);
+        btnLogTrip.disabled = false;
+        btnLogTrip.textContent = 'Log a Trip';
         return;
       }
 
@@ -159,9 +166,14 @@
       }
 
       // Load coverage by default
+      btnLogTrip.textContent = 'Loading coverage… (2/2)';
       loadCoverage();
     })
-    .catch(err => console.error('Failed to load streets:', err));
+    .catch(err => {
+      console.error('Failed to load streets:', err);
+      btnLogTrip.disabled = false;
+      btnLogTrip.textContent = 'Log a Trip';
+    });
 
   // ── Coverage layer ────────────────────────────────────────────────────────
   function loadCoverage() {
@@ -218,8 +230,14 @@
 
         applyCoverageMode();
         renderTripLegend();
+        btnLogTrip.disabled = false;
+        btnLogTrip.textContent = 'Log a Trip';
       })
-      .catch(err => console.error('Failed to load coverage:', err));
+      .catch(err => {
+        console.error('Failed to load coverage:', err);
+        btnLogTrip.disabled = false;
+        btnLogTrip.textContent = 'Log a Trip';
+      });
   }
 
   function applyCoverageMode() {
