@@ -15,7 +15,8 @@
   let isPointerDown = false;
   let selectionMode = false;
   let streetsLayer = null;
-  let coverageVisible = true;
+  let coverageMode = 'detail';   // 'detail' | 'summary' | 'hidden'
+  let summaryLayer = null;
   let lasso = null;
   let map = null;
 
@@ -167,21 +168,37 @@
     fetch(window.COVERAGE_URL)
       .then(r => r.json())
       .then(geojson => {
-        // Remove existing trip layers
+        // Remove existing layers
         tripLayers.forEach(layer => map.removeLayer(layer));
         tripLayers.clear();
         tripVisible.clear();
         tripMeta.clear();
+        if (summaryLayer) { map.removeLayer(summaryLayer); summaryLayer = null; }
 
-        // Group features by trip_id
+        const allFeatures = geojson.features || [];
+
+        // ── Build summary layer (deduplicated streets, single color) ──────
+        const seenStreets = new Set();
+        const summaryFeatures = [];
+        allFeatures.forEach(f => {
+          const streetPk = f.id.split('_')[1];
+          if (!seenStreets.has(streetPk)) {
+            seenStreets.add(streetPk);
+            summaryFeatures.push(f);
+          }
+        });
+        summaryLayer = L.geoJSON({ type: 'FeatureCollection', features: summaryFeatures }, {
+          style: { color: '#ff6f00', weight: 5, opacity: 0.8 },
+        });
+
+        // ── Build per-trip detail layers ──────────────────────────────────
         const byTrip = new Map();
-        (geojson.features || []).forEach(f => {
+        allFeatures.forEach(f => {
           const tid = f.properties.trip_id;
           if (!byTrip.has(tid)) byTrip.set(tid, []);
           byTrip.get(tid).push(f);
         });
 
-        // Build ordered list of trips (order preserved from server = newest first)
         let colorIdx = 0;
         byTrip.forEach((features, tid) => {
           const first = features[0].properties;
@@ -197,12 +214,27 @@
           });
           tripLayers.set(tid, layer);
           tripVisible.set(tid, true);
-          if (coverageVisible) layer.addTo(map);
         });
 
+        applyCoverageMode();
         renderTripLegend();
       })
       .catch(err => console.error('Failed to load coverage:', err));
+  }
+
+  function applyCoverageMode() {
+    // Remove all coverage layers first
+    if (summaryLayer) map.removeLayer(summaryLayer);
+    tripLayers.forEach(layer => map.removeLayer(layer));
+
+    if (coverageMode === 'summary') {
+      if (summaryLayer) summaryLayer.addTo(map);
+    } else if (coverageMode === 'detail') {
+      tripLayers.forEach((layer, tid) => {
+        if (tripVisible.get(tid)) layer.addTo(map);
+      });
+    }
+    // 'hidden' — nothing added
   }
 
   function renderTripLegend() {
@@ -229,7 +261,7 @@
         if (!layer) return;
         if (cb.checked) {
           tripVisible.set(tid, true);
-          if (coverageVisible) layer.addTo(map);
+          if (coverageMode === 'detail') layer.addTo(map);
         } else {
           tripVisible.set(tid, false);
           map.removeLayer(layer);
@@ -255,7 +287,7 @@
       itemsEl.appendChild(item);
     });
 
-    legendEl.style.display = coverageVisible ? 'block' : 'none';
+    legendEl.style.display = coverageMode === 'detail' ? 'block' : 'none';
   }
 
   function setStreetsInteractive(active) {
@@ -498,21 +530,11 @@
     }
   });
 
-  document.getElementById('btn-toggle-coverage').addEventListener('click', () => {
-    const btn = document.getElementById('btn-toggle-coverage');
-    if (!coverageVisible) {
-      coverageVisible = true;
-      btn.textContent = 'Hide Coverage';
-      tripLayers.forEach((layer, tid) => {
-        if (tripVisible.get(tid)) layer.addTo(map);
-      });
-      document.getElementById('trip-legend').style.display = tripMeta.size > 0 ? 'block' : 'none';
-    } else {
-      coverageVisible = false;
-      btn.textContent = 'Show Coverage';
-      tripLayers.forEach(layer => map.removeLayer(layer));
-      document.getElementById('trip-legend').style.display = 'none';
-    }
+  document.getElementById('coverage-mode').addEventListener('change', function () {
+    coverageMode = this.value;
+    applyCoverageMode();
+    const legendEl = document.getElementById('trip-legend');
+    if (legendEl) legendEl.style.display = coverageMode === 'detail' && tripMeta.size > 0 ? 'block' : 'none';
   });
 
   document.getElementById('btn-submit').addEventListener('click', () => {
@@ -537,7 +559,7 @@
         showStatus('Trip logged! Thank you for your work.', 'success');
         resetSelection();
         // Reload coverage if visible
-        if (coverageVisible) loadCoverage();
+        if (coverageMode !== 'hidden') loadCoverage();
         // Scroll to message
         document.getElementById('status-message').scrollIntoView({ behavior: 'smooth' });
       })
