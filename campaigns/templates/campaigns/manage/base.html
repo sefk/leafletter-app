@@ -20,6 +20,7 @@
     }
     .navbar a { color: #fff; text-decoration: none; font-weight: 600; }
     .navbar a:hover { text-decoration: underline; }
+    .navbar button:hover { text-decoration: underline; }
     .navbar .nav-right { font-size: 0.85rem; display: flex; gap: 16px; align-items: center; }
 
     .container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
@@ -89,11 +90,12 @@
 <nav class="navbar">
   <a href="/manage/" style="display:flex;align-items:center;gap:8px"><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="36" height="36">Leafletter</a>
   <div class="nav-right">
+    {% if user.is_authenticated %}<span>{{ user.username }}</span>{% endif %}
+    <a href="/">Home</a>
     {% if user.is_authenticated %}
-      <span>{{ user.username }}</span>
       <form method="post" action="/manage/logout/" style="display:inline">
         {% csrf_token %}
-        <button type="submit" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;text-decoration:underline">Logout</button>
+        <button type="submit" style="background:none;border:none;padding:0;color:#fff;font:inherit;cursor:pointer;font-weight:600;text-decoration:none;">Logout</button>
       </form>
     {% endif %}
   </div>

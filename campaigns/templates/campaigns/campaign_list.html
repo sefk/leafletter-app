@@ -27,7 +27,6 @@
       margin-bottom: 16px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       display: block;
-      position: relative;
       border-left: 4px solid #1a6b3c;
       transition: box-shadow 0.15s;
     }
@@ -41,19 +40,7 @@
     .campaign-card h2 { font-size: 1.1rem; color: #1a6b3c; margin-bottom: 6px; }
     .campaign-card .meta { font-size: 0.85rem; color: #666; }
 
-    .gear-link {
-      position: absolute;
-      top: 50%;
-      right: 16px;
-      transform: translateY(-50%);
-      color: #aaa;
-      text-decoration: none;
-      font-size: 1.6rem;
-      line-height: 1;
-    }
-    .gear-link:hover { color: #1a6b3c; }
-
-    .intro {
+.intro {
       background: #fff;
       border-radius: 8px;
       padding: 16px 20px;
@@ -100,7 +87,6 @@
           {% for city in campaign.cities %}{% if city.name %}{{ city.name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
         </div>
       </a>
-      <a href="/manage/{{ campaign.slug }}/" class="gear-link" title="Manage campaign">⚙</a>
     </div>
     {% endfor %}
   {% else %}
