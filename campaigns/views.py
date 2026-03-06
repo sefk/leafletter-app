@@ -4,14 +4,14 @@ import requests
 from django.contrib.auth.decorators import login_required
 from django.contrib.gis.geos import Polygon
 from django.db.models import Count
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm
 from .models import Campaign, CityFetchJob, Street, Trip
-from .tasks import fetch_city_osm_data, queue_city_fetches, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/admin/login/')
 
@@ -32,6 +32,10 @@ def campaign_detail(request, slug):
 @require_GET
 def campaign_streets_geojson(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
+
+    if campaign.streets_geojson and not request.GET.get('all'):
+        return HttpResponse(campaign.streets_geojson, content_type='application/json')
+
     streets = campaign.streets.all()
 
     if campaign.bbox and not request.GET.get('all'):
@@ -281,8 +285,10 @@ def manage_city_delete(request, slug, city_index):
     campaign = get_object_or_404(Campaign, slug=slug)
     Street.objects.filter(campaign=campaign, city_index=city_index).delete()
     CityFetchJob.objects.filter(campaign=campaign, city_index=city_index).update(status='pending', error='')
+    update = {'streets_geojson': ''}
     if not campaign.streets.exists():
-        Campaign.objects.filter(pk=campaign.pk).update(map_status='pending')
+        update['map_status'] = 'pending'
+    Campaign.objects.filter(pk=campaign.pk).update(**update)
     return redirect('manage_campaign_detail', slug=slug)
 
 
@@ -299,8 +305,8 @@ def manage_campaign_update_bbox(request, slug):
             raise ValueError('invalid bbox')
     except (json.JSONDecodeError, KeyError, ValueError):
         return HttpResponseBadRequest('Invalid bbox')
-    campaign.bbox = bbox
-    campaign.save(update_fields=['bbox'])
+    geojson = build_streets_geojson(campaign.pk, bbox=bbox)
+    Campaign.objects.filter(pk=campaign.pk).update(bbox=bbox, streets_geojson=geojson)
     return JsonResponse({'status': 'ok'})
 
 

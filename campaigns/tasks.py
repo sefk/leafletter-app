@@ -1,3 +1,4 @@
+import json
 import logging
 from collections import Counter
 
@@ -146,10 +147,37 @@ def split_way_at_intersections(way: dict, intersection_nodes: set) -> list[dict]
 
 # ── Per-city helpers ───────────────────────────────────────────────────────────
 
+def build_streets_geojson(campaign_id: int, bbox=None) -> str:
+    """
+    Serialize streets for a campaign to a GeoJSON FeatureCollection string.
+    If bbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]], only streets intersecting
+    that box are included.
+    """
+    from django.contrib.gis.geos import Polygon as GeosPoly
+    qs = Street.objects.filter(campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
+    if bbox:
+        sw, ne = bbox
+        bbox_poly = GeosPoly.from_bbox((sw[1], sw[0], ne[1], ne[0]))
+        bbox_poly.srid = 4326
+        qs = qs.filter(geometry__intersects=bbox_poly)
+    features = []
+    for street in qs:
+        features.append({
+            'type': 'Feature',
+            'id': street.pk,
+            'geometry': json.loads(street.geometry.geojson),
+            'properties': {
+                'osm_id': street.osm_id,
+                'name': street.name,
+            },
+        })
+    return json.dumps({'type': 'FeatureCollection', 'features': features})
+
+
 def _sync_campaign_map_status(campaign_id: int) -> None:
     """
     Recompute Campaign.map_status from all CityFetchJob records and save.
-    Also recalculates bbox when all cities are ready.
+    Also recalculates bbox and pre-renders streets_geojson when all cities are ready.
     """
     jobs = list(CityFetchJob.objects.filter(campaign_id=campaign_id))
     if not jobs:
@@ -185,6 +213,8 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
             max_lat = max(max_lat, ymax)
         if min_lon != float('inf'):
             updates['bbox'] = [[min_lat, min_lon], [max_lat, max_lon]]
+            # bbox = full extent of all streets, so no filtering needed
+            updates['streets_geojson'] = build_streets_geojson(campaign_id)
 
     Campaign.objects.filter(pk=campaign_id).update(**updates)
 
@@ -201,7 +231,7 @@ def queue_city_fetches(campaign_id: int, city_indices: list[int] | None = None) 
     if city_indices is None:
         city_indices = list(range(len(cities)))
 
-    Campaign.objects.filter(pk=campaign_id).update(map_status='generating', map_error='')
+    Campaign.objects.filter(pk=campaign_id).update(map_status='generating', map_error='', streets_geojson='')
 
     for idx in city_indices:
         city = cities[idx]
@@ -324,7 +354,7 @@ def fetch_osm_segments(self, campaign_id: int) -> None:
         logger.error("fetch_osm_segments: campaign %s not found", campaign_id)
         return
     Campaign.objects.filter(pk=campaign_id).update(
-        map_status='generating', map_error='', bbox=None,
+        map_status='generating', map_error='', bbox=None, streets_geojson='',
     )
     for idx in range(len(campaign.cities)):
         city = campaign.cities[idx]
