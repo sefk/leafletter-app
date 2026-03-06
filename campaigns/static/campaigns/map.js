@@ -406,7 +406,6 @@
     if (lasso) {
       lasso.enable();
     }
-    document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {

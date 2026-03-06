@@ -37,6 +37,21 @@
     .instructions li { margin: 0.2em 0; font-size: 0.9rem; color: #444; line-height: 1.5; }
 
     #map { height: 55vh; width: 100%; }
+    @media (pointer: coarse), (max-width: 768px) {
+      #map { height: 40vh; }
+    }
+
+    .mobile-map-instructions {
+      display: none;
+      padding: 8px 16px;
+      background: #f0f4ff;
+      border-bottom: 1px solid #ccd;
+      font-size: 0.85rem;
+      color: #555;
+    }
+    @media (pointer: coarse), (max-width: 768px) {
+      .mobile-map-instructions { display: block; }
+    }
 
     .toolbar {
       padding: 12px 16px;
@@ -149,8 +164,19 @@
 
 <div id="map"></div>
 
+<div class="mobile-map-instructions">
+  Draw loops to select streets. Two-finger drag to pan, pinch to zoom.
+</div>
+
 <div id="drawing-instructions" style="display:none; padding:8px 16px; background:#f0f4ff; border-bottom:1px solid #ccd; font-size:0.9rem; color:#333;">
   Draw a loop around streets to add to this trip. Add with as many "draws" as you want, and undo as needed.
+</div>
+
+<div class="trip-form" id="trip-form">
+  <label for="worker-name">Your Name (optional)</label>
+  <input type="text" id="worker-name" placeholder="e.g. Jane Smith">
+  <label for="notes">Notes (optional)</label>
+  <textarea id="notes" rows="3" placeholder="Any observations..."></textarea>
 </div>
 
 <div class="toolbar">
@@ -174,13 +200,6 @@
 <div id="debug-section" style="display:none; padding:12px 16px; background:#f5f5f5; border-top:1px solid #ddd;">
   <strong style="font-size:0.85rem;">Debug — selected segments:</strong>
   <div id="debug-panel" style="margin-top:6px;"></div>
-</div>
-
-<div class="trip-form" id="trip-form">
-  <label for="worker-name">Your Name (optional)</label>
-  <input type="text" id="worker-name" placeholder="e.g. Jane Smith">
-  <label for="notes">Notes (optional)</label>
-  <textarea id="notes" rows="3" placeholder="Any observations..."></textarea>
 </div>
 
 <div id="status-message"></div>
