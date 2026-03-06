@@ -111,7 +111,7 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-LOGIN_URL = '/admin/login/'
+LOGIN_URL = '/manage/login/'
 
 # Celery
 _mysql_user = os.environ.get('MYSQL_USER', 'leafletter')

@@ -11,6 +11,8 @@ urlpatterns = [
 ]
 
 manage_urlpatterns = [
+    path('login/', views.manage_login, name='manage_login'),
+    path('logout/', views.manage_logout, name='manage_logout'),
     path('', views.manage_campaign_list, name='manage_campaign_list'),
     path('new/', views.manage_campaign_create, name='manage_campaign_create'),
     path('city-search/', views.city_search, name='city_search'),

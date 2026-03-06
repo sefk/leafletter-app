@@ -1,6 +1,7 @@
 import json
 
 import requests
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.gis.geos import Polygon
 from django.db.models import Count
@@ -13,7 +14,27 @@ from .forms import CampaignForm
 from .models import Campaign, CityFetchJob, Street, Trip
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
-_login_required = login_required(login_url='/admin/login/')
+_login_required = login_required(login_url='/manage/login/')
+
+
+def manage_login(request):
+    if request.user.is_authenticated:
+        return redirect('/manage/')
+    next_url = request.POST.get('next', request.GET.get('next', '/manage/'))
+    login_error = False
+    if request.method == 'POST':
+        user = authenticate(request, username=request.POST.get('username'), password=request.POST.get('password'))
+        if user is not None:
+            login(request, user)
+            return redirect(next_url)
+        login_error = True
+    return render(request, 'campaigns/manage/login.html', {'next': next_url, 'login_error': login_error})
+
+
+@require_POST
+def manage_logout(request):
+    logout(request)
+    return redirect('/manage/login/')
 
 
 def public_campaign_list(request):
