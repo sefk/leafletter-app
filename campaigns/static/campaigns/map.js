@@ -81,7 +81,7 @@
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '© OpenStreetMap contributors',
+    attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
   }).addTo(map);
 
   if (window.BBOX) {

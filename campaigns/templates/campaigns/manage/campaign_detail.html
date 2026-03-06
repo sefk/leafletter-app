@@ -221,7 +221,7 @@
     var map = L.map('bbox-map');
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
     }).addTo(map);
 
     var bboxRect = L.rectangle(currentBbox, {
@@ -395,7 +395,7 @@
 
     var map = L.map('manage-map', { zoomControl: true });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '© OpenStreetMap contributors',
+      maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
     }).addTo(map);
 
     var loadingEl = document.getElementById('manage-map-loading');
