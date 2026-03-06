@@ -1,0 +1,110 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leafletter — About</title>
+  <link rel="icon" href="{% static 'campaigns/leafletter-icon.png' %}" type="image/png">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+
+    .header {
+      background: #1a6b3c;
+      color: #fff;
+      padding: 20px 24px;
+    }
+    .header h1 { font-size: 1.5rem; }
+    .header p { font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }
+    .header p a { color: #fff; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    .header p a:hover { opacity: 0.8; }
+
+    .content {
+      max-width: 700px;
+      margin: 32px auto;
+      padding: 0 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 28px 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      font-size: 0.95rem;
+      color: #444;
+      line-height: 1.6;
+    }
+
+    .icon-wrap {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .card h2 { font-size: 1.2rem; color: #1a6b3c; margin-bottom: 8px; margin-top: 20px; }
+    .card h2:first-of-type { margin-top: 0; }
+    .card p { margin-bottom: 12px; }
+    .card a { color: #1a6b3c; }
+    .card ul { margin: 8px 0 12px 20px; }
+    .card ul li { margin-bottom: 4px; }
+
+    .back { margin-bottom: 16px; font-size: 0.9rem; }
+    .back a { color: #1a6b3c; text-decoration: none; }
+    .back a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="44" height="44" style="vertical-align:middle;margin-right:8px;margin-bottom:2px">Leafletter</h1>
+  <p><a href="/">&#8592; Back to campaigns</a></p>
+</div>
+
+<div class="content">
+  <div class="card">
+    <div class="icon-wrap">
+      <img src="{% static 'campaigns/leafletter-icon-medium.png' %}" alt="Leafletter icon" style="max-width:200px;">
+    </div>
+
+    <h2>About Leafletter</h2>
+    <p>
+      Leafletter helps track where leaflets have been distributed by feet-on-the-street.
+      Volunteers log their routes; organizers see coverage on a map in real time.
+    </p>
+
+    <h2>Author</h2>
+    <p>
+      Written by <a href="https://sef.kloninger.com/">Sef Kloninger</a>.
+      Visit that page for more information and contact details.
+    </p>
+
+    <h2>Maps</h2>
+    <p>
+      Maps are provided by <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a>
+      contributors, under the <a href="https://opendatacommons.org/licenses/odbl/" target="_blank" rel="noopener">Open Database License</a>.
+    </p>
+
+    <h2>License</h2>
+    <p>
+      Leafletter is open source, licensed for non-commercial use under the
+      <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial License 1.0.0</a>.
+      See the <code>LICENSE</code> file in the repository for full terms.
+    </p>
+
+    <h2>No Warranty</h2>
+    <p>
+      This software is provided as-is, without warranty of any kind.
+      Use at your own risk.
+    </p>
+
+    <h2>Source Code</h2>
+    <p>
+      The code is available on GitHub:
+      <a href="https://github.com/sefk/leafletter-app" target="_blank" rel="noopener">github.com/sefk/leafletter-app</a>.
+      Pull requests welcome!
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

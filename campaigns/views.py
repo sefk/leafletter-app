@@ -42,6 +42,10 @@ def public_campaign_list(request):
     return render(request, 'campaigns/campaign_list.html', {'campaigns': campaigns})
 
 
+def about(request):
+    return render(request, 'campaigns/about.html')
+
+
 def campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
     return render(request, 'campaigns/campaign_detail.html', {
