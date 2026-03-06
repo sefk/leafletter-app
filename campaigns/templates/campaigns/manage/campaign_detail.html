@@ -46,7 +46,11 @@
 
 <!-- Status Panel -->
 <div class="card">
-  <div class="card-title">
+  <div class="card-title">Street Management</div>
+  <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+    Streets are fetched from OpenStreetMap and put over the map tiles. Streets are split up into very small "blocks", sometimes much more granular than normal blocks. There are limits to the number of blocks in a campaign.
+  </p>
+  <div style="margin-bottom:12px;">
     Status:
     <span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span>
     &nbsp;
@@ -76,10 +80,11 @@
       <table style="margin:0 0 16px; width:100%;">
         <thead>
           <tr>
-            <th style="width:40%;">City</th>
-            <th style="width:18%;">Status</th>
+            <th style="width:38%;">City</th>
+            <th style="width:16%;">Status</th>
+            <th style="width:10%; text-align:right;">Blocks</th>
             <th>Error</th>
-            <th style="width:60px;"></th>
+            <th style="width:110px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -87,46 +92,40 @@
           <tr>
             <td style="font-size:0.9rem;">{{ job.city_name }}</td>
             <td><span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span></td>
+            <td style="text-align:right; font-size:0.9rem;">{{ job.block_count }}</td>
             <td style="font-size:0.85rem; color:#c62828;">
               {% if job.error %}{{ job.error }}{% endif %}
             </td>
             <td>
-              {% if job.status == 'ready' or job.status == 'error' %}
-              <form method="post" action="/manage/{{ campaign.slug }}/refetch-city/{{ job.city_index }}/" style="margin:0;">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
-                        title="Re-fetch this city">↺</button>
-              </form>
-              {% endif %}
+              <div style="display:flex; gap:4px;">
+                {% if job.status == 'ready' or job.status == 'error' %}
+                <form method="post" action="/manage/{{ campaign.slug }}/refetch-city/{{ job.city_index }}/" style="margin:0;">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
+                          title="Re-fetch this city">↺</button>
+                </form>
+                <form method="post" action="/manage/{{ campaign.slug }}/delete-city/{{ job.city_index }}/" style="margin:0;"
+                      onsubmit="return confirm('Delete all blocks for {{ job.city_name|escapejs }}? This cannot be undone.');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-danger" style="padding:3px 10px; font-size:0.8rem;"
+                          title="Delete blocks for this city">✕</button>
+                </form>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% endfor %}
         </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" style="font-size:0.85rem; color:#666; padding-top:6px;">Total</td>
+            <td style="text-align:right; font-weight:600; padding-top:6px;">{{ total_blocks }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
       </table>
 
-      {% if campaign.map_status == 'ready' %}
-        <div style="margin-bottom:16px;">
-          <div class="stat">
-            <div class="stat-value">{{ covered_blocks }}</div>
-            <div class="stat-label">blocks covered</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">{{ total_blocks }}</div>
-            <div class="stat-label">total blocks</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">{{ pct }}%</div>
-            <div class="stat-label">complete</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">{{ trip_count }}</div>
-            <div class="stat-label">trips logged</div>
-          </div>
-        </div>
-        <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
-      {% endif %}
-
-      <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline; margin-left:8px;">
+      <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
         {% csrf_token %}
         <button type="submit" class="btn btn-secondary">Re-fetch All Streets</button>
       </form>
@@ -158,24 +157,11 @@
       {% elif campaign.map_status == 'ready' %}
         <div style="margin-bottom:16px;">
           <div class="stat">
-            <div class="stat-value">{{ covered_blocks }}</div>
-            <div class="stat-label">blocks covered</div>
-          </div>
-          <div class="stat">
             <div class="stat-value">{{ total_blocks }}</div>
             <div class="stat-label">total blocks</div>
           </div>
-          <div class="stat">
-            <div class="stat-value">{{ pct }}%</div>
-            <div class="stat-label">complete</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">{{ trip_count }}</div>
-            <div class="stat-label">trips logged</div>
-          </div>
         </div>
-        <a href="/c/{{ campaign.slug }}/" class="btn btn-secondary" target="_blank">View Worker Map</a>
-        <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline; margin-left:8px;">
+        <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
           {% csrf_token %}
           <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
         </form>
@@ -201,13 +187,7 @@
 
   {% endif %}
 
-  <div class="action-row" style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
-    <form method="post" action="/manage/{{ campaign.slug }}/delete/"
-          onsubmit="return confirm('Soft-delete this campaign?');">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-danger">Delete Campaign</button>
-    </form>
-  </div>
+
 </div>
 
 <!-- Geographical Limit Editor -->
@@ -656,5 +636,15 @@
 </div>
 {% endif %}
 
+<div class="card">
+  <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+    <form method="post" action="/manage/{{ campaign.slug }}/delete/"
+          onsubmit="return confirm('Soft-delete this campaign?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Delete Campaign</button>
+    </form>
+    <span style="font-size:0.85rem; color:#c62828;">This cannot be undone.</span>
+  </div>
+</div>
 
 {% endblock %}
