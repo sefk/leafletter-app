@@ -1,10 +1,11 @@
 import json
+from datetime import date
 
 import requests
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.gis.geos import Polygon
-from django.db.models import Count
+from django.db.models import Count, F, Q
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
@@ -38,8 +39,16 @@ def manage_logout(request):
 
 
 def public_campaign_list(request):
-    campaigns = Campaign.objects.filter(status='published').order_by('start_date')
-    return render(request, 'campaigns/campaign_list.html', {'campaigns': campaigns})
+    today = date.today()
+    published = Campaign.objects.filter(status='published')
+    current = published.filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=today)
+    ).order_by(F('end_date').asc(nulls_last=True))
+    prior = published.filter(end_date__lt=today).order_by('-end_date')
+    return render(request, 'campaigns/campaign_list.html', {
+        'current_campaigns': current,
+        'prior_campaigns': prior,
+    })
 
 
 def about(request):

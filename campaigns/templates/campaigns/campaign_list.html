@@ -61,6 +61,20 @@
     .header p a:hover { opacity: 0.8; }
 
     .empty { text-align: center; color: #888; margin-top: 60px; font-size: 1rem; }
+
+    .section-heading {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #888;
+      margin: 28px 0 12px;
+    }
+    .prior .campaign-card {
+      border-left-color: #aaa;
+      opacity: 0.75;
+    }
+    .prior .campaign-card h2 { color: #555; }
   </style>
 </head>
 <body>
@@ -76,8 +90,8 @@
 </div>
 
 <div class="content">
-  {% if campaigns %}
-    {% for campaign in campaigns %}
+  {% if current_campaigns %}
+    {% for campaign in current_campaigns %}
     <div class="campaign-card">
       <a href="/c/{{ campaign.slug }}/" class="campaign-link">
         <h2>{{ campaign.name }}</h2>
@@ -91,6 +105,24 @@
     {% endfor %}
   {% else %}
     <p class="empty">No active campaigns right now. Check back soon.</p>
+  {% endif %}
+
+  {% if prior_campaigns %}
+  <div class="prior">
+    <p class="section-heading">Prior campaigns</p>
+    {% for campaign in prior_campaigns %}
+    <div class="campaign-card">
+      <a href="/c/{{ campaign.slug }}/" class="campaign-link">
+        <h2>{{ campaign.name }}</h2>
+        <div class="meta">
+          {{ campaign.start_date }} – {{ campaign.end_date }}
+          &nbsp;·&nbsp;
+          {% for city in campaign.cities %}{% if city.name %}{{ city.name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
   {% endif %}
 </div>
 
