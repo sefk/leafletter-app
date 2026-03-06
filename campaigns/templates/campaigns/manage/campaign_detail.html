@@ -27,16 +27,25 @@
         </ul>
       </td>
     </tr>
-    {% if campaign.status == 'published' %}
     <tr>
       <th>Public URL</th>
       <td>
+        {% if campaign.status == 'published' %}
         <div style="padding:8px 12px; background:#f1f8e9; border:1px solid #c5e1a5; border-radius:6px; display:inline-block;">
           <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#1a6b3c; word-break:break-all;">{{ campaign_url }}</a>
         </div>
+        {% else %}
+        <div style="padding:8px 12px; background:#fce4ec; border:1px solid #f48fb1; border-radius:6px; display:inline-block;">
+          <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#880e4f; word-break:break-all;">{{ campaign_url }}</a>
+          <div style="font-size:0.8rem; color:#880e4f; margin-top:4px;">Unpublished! Can be edited but not publicly visible yet.</div>
+        </div>
+        <form method="post" action="/manage/{{ campaign.slug }}/publish/" style="display:inline-block; margin-top:8px;">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-primary">Publish Campaign</button>
+        </form>
+        {% endif %}
       </td>
     </tr>
-    {% endif %}
     <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
     {% if campaign.instructions %}
     <tr><th style="vertical-align:top;">Instructions</th><td class="instructions">{{ campaign.instructions|safe }}</td></tr>
@@ -54,140 +63,127 @@
     Streets are fetched from OpenStreetMap and put over the map tiles. Streets are split up into very small "blocks", sometimes much more granular than normal blocks. There are limits to the number of blocks in a campaign.
   </p>
   <div style="margin-bottom:12px;">
-    Status:
-    <span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span>
-    &nbsp;
+    Map status:
     <span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
   </div>
 
-  {% if campaign.status == 'draft' %}
-    <p style="color:#666; margin-bottom:12px;">This campaign is a draft. Publish it to make it visible to volunteers and begin the street import.</p>
-    <form method="post" action="/manage/{{ campaign.slug }}/publish/">
+  {% if city_fetch_jobs %}
+    <!-- Per-city fetch status table -->
+    {% if campaign.map_status == 'generating' or campaign.map_status == 'pending' %}
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
+        <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
+      </div>
+      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+      <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
+    {% endif %}
+
+    <table style="margin:0 0 16px; width:100%;">
+      <thead>
+        <tr>
+          <th style="width:38%;">City</th>
+          <th style="width:16%;">Status</th>
+          <th style="width:10%; text-align:right;">Blocks</th>
+          <th>Error</th>
+          <th style="width:110px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in city_fetch_jobs %}
+        <tr>
+          <td style="font-size:0.9rem;">{{ job.city_name }}</td>
+          <td><span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span></td>
+          <td style="text-align:right; font-size:0.9rem;">{{ job.block_count }}</td>
+          <td style="font-size:0.85rem; color:#c62828;">
+            {% if job.error %}{{ job.error }}{% endif %}
+          </td>
+          <td>
+            <div style="display:flex; gap:4px;">
+              {% if job.status == 'ready' or job.status == 'error' %}
+              <form method="post" action="/manage/{{ campaign.slug }}/refetch-city/{{ job.city_index }}/" style="margin:0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
+                        title="Re-fetch this city">↺</button>
+              </form>
+              <form method="post" action="/manage/{{ campaign.slug }}/delete-city/{{ job.city_index }}/" style="margin:0;"
+                    onsubmit="return confirm('Delete all blocks for {{ job.city_name|escapejs }}? This cannot be undone.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger" style="padding:3px 10px; font-size:0.8rem;"
+                        title="Delete blocks for this city">✕</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" style="font-size:0.85rem; color:#666; padding-top:6px;">Total</td>
+          <td style="text-align:right; font-weight:600; padding-top:6px;">{{ total_blocks }}</td>
+          <td colspan="2"></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
       {% csrf_token %}
-      <button type="submit" class="btn btn-primary">Publish Campaign</button>
+      <button type="submit" class="btn btn-secondary">Re-fetch All Streets</button>
     </form>
 
-  {% elif campaign.status == 'published' %}
-
-    {% if city_fetch_jobs %}
-      <!-- Per-city fetch status table -->
-      {% if campaign.map_status == 'generating' or campaign.map_status == 'pending' %}
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
-          <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
-        </div>
-        <script>setTimeout(function(){ location.reload(); }, 5000);</script>
-        <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
-      {% endif %}
-
-      <table style="margin:0 0 16px; width:100%;">
-        <thead>
-          <tr>
-            <th style="width:38%;">City</th>
-            <th style="width:16%;">Status</th>
-            <th style="width:10%; text-align:right;">Blocks</th>
-            <th>Error</th>
-            <th style="width:110px;"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for job in city_fetch_jobs %}
-          <tr>
-            <td style="font-size:0.9rem;">{{ job.city_name }}</td>
-            <td><span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span></td>
-            <td style="text-align:right; font-size:0.9rem;">{{ job.block_count }}</td>
-            <td style="font-size:0.85rem; color:#c62828;">
-              {% if job.error %}{{ job.error }}{% endif %}
-            </td>
-            <td>
-              <div style="display:flex; gap:4px;">
-                {% if job.status == 'ready' or job.status == 'error' %}
-                <form method="post" action="/manage/{{ campaign.slug }}/refetch-city/{{ job.city_index }}/" style="margin:0;">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
-                          title="Re-fetch this city">↺</button>
-                </form>
-                <form method="post" action="/manage/{{ campaign.slug }}/delete-city/{{ job.city_index }}/" style="margin:0;"
-                      onsubmit="return confirm('Delete all blocks for {{ job.city_name|escapejs }}? This cannot be undone.');">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-danger" style="padding:3px 10px; font-size:0.8rem;"
-                          title="Delete blocks for this city">✕</button>
-                </form>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="2" style="font-size:0.85rem; color:#666; padding-top:6px;">Total</td>
-            <td style="text-align:right; font-weight:600; padding-top:6px;">{{ total_blocks }}</td>
-            <td colspan="2"></td>
-          </tr>
-        </tfoot>
+  {% else %}
+    <!-- Legacy: no city fetch jobs yet (pre-migration campaigns) -->
+    {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
+        <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
+      </div>
+      <table style="margin:0 0 4px;">
+        <tr>
+          <th style="width:140px;">Stage</th>
+          <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
+        </tr>
+        <tr>
+          <th>Streets so far</th>
+          <td>{{ total_blocks }}</td>
+        </tr>
+        <tr>
+          <th>Last activity</th>
+          <td>{{ campaign.updated_at|timesince }} ago</td>
+        </tr>
       </table>
+      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+      <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
 
+    {% elif campaign.map_status == 'ready' %}
+      <div style="margin-bottom:16px;">
+        <div class="stat">
+          <div class="stat-value">{{ total_blocks }}</div>
+          <div class="stat-label">total blocks</div>
+        </div>
+      </div>
       <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
         {% csrf_token %}
-        <button type="submit" class="btn btn-secondary">Re-fetch All Streets</button>
+        <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
       </form>
 
-    {% else %}
-      <!-- Legacy: no city fetch jobs yet (pre-migration campaigns) -->
-      {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
-          <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
-        </div>
-        <table style="margin:0 0 4px;">
-          <tr>
-            <th style="width:140px;">Stage</th>
-            <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
-          </tr>
-          <tr>
-            <th>Streets so far</th>
-            <td>{{ total_blocks }}</td>
-          </tr>
-          <tr>
-            <th>Last activity</th>
-            <td>{{ campaign.updated_at|timesince }} ago</td>
-          </tr>
-        </table>
-        <script>setTimeout(function(){ location.reload(); }, 5000);</script>
-        <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
-
-      {% elif campaign.map_status == 'ready' %}
-        <div style="margin-bottom:16px;">
-          <div class="stat">
-            <div class="stat-value">{{ total_blocks }}</div>
-            <div class="stat-label">total blocks</div>
-          </div>
-        </div>
-        <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
+    {% elif campaign.map_status == 'error' %}
+      <p style="color:#c62828; margin-bottom:8px;">
+        <strong>Street import failed:</strong>
+        {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
+      </p>
+      <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+        If the error is about a city name (not found or ambiguous), edit the campaign to fix the
+        city, then re-fetch. Otherwise you can re-fetch directly to retry.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
+        <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
           {% csrf_token %}
           <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
         </form>
-
-      {% elif campaign.map_status == 'error' %}
-        <p style="color:#c62828; margin-bottom:8px;">
-          <strong>Street import failed:</strong>
-          {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
-        </p>
-        <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-          If the error is about a city name (not found or ambiguous), edit the campaign to fix the
-          city, then re-fetch. Otherwise you can re-fetch directly to retry.
-        </p>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
-          <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
-          </form>
-        </div>
-      {% endif %}
+      </div>
     {% endif %}
-
   {% endif %}
 
 
@@ -216,7 +212,7 @@
   (function() {
     var currentBbox = {{ bbox_json }};
     var currentGeoLimit = {{ geo_limit_json|safe }};  // GeoJSON polygon or null
-    var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}?all=1";
+    var streetsUrl = "{% url 'manage_streets_geojson' campaign.slug %}?all=1";
     var updateUrl = "{% url 'manage_campaign_update_geo_limit' campaign.slug %}";
     var csrfToken = "{{ csrf_token }}";
 
@@ -240,7 +236,6 @@
       map.fitBounds(currentBbox, { padding: [20, 20], animate: false });
     }
 
-    {% if campaign.status == 'published' %}
     fetch(streetsUrl)
       .then(function(r) { return r.json(); })
       .then(function(geojson) {
@@ -249,7 +244,6 @@
         }
       })
       .catch(function() {});
-    {% endif %}
 
     var drawnItems = new L.FeatureGroup().addTo(map);
     var drawControl = new L.Control.Draw({
@@ -367,8 +361,8 @@
   {% endif %}
   <script>
   (function() {
-    var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}";
-    var coverageUrl = "{% url 'campaigns:coverage_geojson' campaign.slug %}";
+    var streetsUrl = "{% url 'manage_streets_geojson' campaign.slug %}";
+    var coverageUrl = "{% url 'manage_coverage_geojson' campaign.slug %}";
     var bbox = {{ bbox_json }};
     var csrfToken = "{{ csrf_token }}";
 

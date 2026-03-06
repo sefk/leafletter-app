@@ -210,6 +210,7 @@ def manage_campaign_create(request):
             campaign = form.save(commit=False)
             campaign.status = 'draft'
             campaign.save()
+            queue_city_fetches(campaign.pk)
             return redirect('manage_campaign_detail', slug=campaign.slug)
     else:
         form = CampaignForm()
@@ -248,7 +249,7 @@ def manage_campaign_edit(request, slug):
         if form.is_valid():
             old_cities = campaign.cities
             updated = form.save()
-            if updated.status == 'published' and updated.cities != old_cities:
+            if updated.cities != old_cities:
                 new_indices = _incremental_city_indices(old_cities, updated.cities)
                 if new_indices is None:
                     # Cities were removed or changed — full refetch
@@ -329,6 +330,71 @@ def manage_city_delete(request, slug, city_index):
         update['map_status'] = 'pending'
     Campaign.objects.filter(pk=campaign.pk).update(**update)
     return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_GET
+def manage_campaign_streets_geojson(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+
+    if campaign.streets_geojson and not request.GET.get('all'):
+        return HttpResponse(campaign.streets_geojson, content_type='application/json')
+
+    streets = campaign.streets.all()
+
+    if not request.GET.get('all'):
+        if campaign.geo_limit:
+            streets = streets.filter(geometry__intersects=campaign.geo_limit)
+        elif campaign.bbox:
+            sw, ne = campaign.bbox
+            bbox_poly = Polygon.from_bbox((sw[1], sw[0], ne[1], ne[0]))
+            bbox_poly.srid = 4326
+            streets = streets.filter(geometry__intersects=bbox_poly)
+
+    features = []
+    for street in streets:
+        features.append({
+            'type': 'Feature',
+            'id': street.pk,
+            'geometry': json.loads(street.geometry.geojson),
+            'properties': {
+                'osm_id': street.osm_id,
+                'name': street.name,
+            },
+        })
+
+    return JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+    })
+
+
+@_login_required
+@require_GET
+def manage_campaign_coverage_geojson(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+
+    trips = Trip.objects.filter(campaign=campaign, deleted=False).prefetch_related('streets')
+
+    features = []
+    for trip in trips:
+        for street in trip.streets.all():
+            features.append({
+                'type': 'Feature',
+                'id': f'{trip.pk}_{street.pk}',
+                'geometry': json.loads(street.geometry.geojson),
+                'properties': {
+                    'trip_id': str(trip.pk),
+                    'worker_name': trip.worker_name,
+                    'recorded_at': trip.recorded_at.strftime('%Y-%m-%d'),
+                    'street_name': street.name,
+                },
+            })
+
+    return JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+    })
 
 
 @_login_required
