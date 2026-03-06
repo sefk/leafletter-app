@@ -65,8 +65,11 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #fafafa; }
 
-    .instructions ul, .instructions ol { padding-left: 1.5em; margin: 0.5em 0; }
-    .instructions li { margin: 0.2em 0; }
+    .instructions { overflow-wrap: break-word; word-break: break-word; max-width: 0; width: 100%; }
+    .instructions p { margin: 0; padding: 0; line-height: 1.42; font-size: 0.9rem; color: #444; }
+    .instructions p:empty { min-height: 1.42em; }
+    .instructions ul, .instructions ol { padding-left: 1.5em; margin: 0; }
+    .instructions li { margin: 0; line-height: 1.42; }
 
     .messages { margin-bottom: 16px; }
     .messages li { list-style: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; }
