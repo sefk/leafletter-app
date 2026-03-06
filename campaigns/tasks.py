@@ -147,15 +147,17 @@ def split_way_at_intersections(way: dict, intersection_nodes: set) -> list[dict]
 
 # ── Per-city helpers ───────────────────────────────────────────────────────────
 
-def build_streets_geojson(campaign_id: int, bbox=None) -> str:
+def build_streets_geojson(campaign_id: int, bbox=None, geo_limit=None) -> str:
     """
     Serialize streets for a campaign to a GeoJSON FeatureCollection string.
-    If bbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]], only streets intersecting
-    that box are included.
+    If geo_limit (a GEOS Polygon) is provided, only streets intersecting it are included.
+    Otherwise, if bbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]], filter by that rectangle.
     """
     from django.contrib.gis.geos import Polygon as GeosPoly
     qs = Street.objects.filter(campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
-    if bbox:
+    if geo_limit is not None:
+        qs = qs.filter(geometry__intersects=geo_limit)
+    elif bbox:
         sw, ne = bbox
         bbox_poly = GeosPoly.from_bbox((sw[1], sw[0], ne[1], ne[0]))
         bbox_poly.srid = 4326
@@ -203,18 +205,24 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
             )
     elif new_status == 'ready':
         updates['map_error'] = ''
-        min_lon = min_lat = float('inf')
-        max_lon = max_lat = float('-inf')
-        for street in Street.objects.filter(campaign_id=campaign_id).only('geometry'):
-            xmin, ymin, xmax, ymax = street.geometry.extent
-            min_lon = min(min_lon, xmin)
-            min_lat = min(min_lat, ymin)
-            max_lon = max(max_lon, xmax)
-            max_lat = max(max_lat, ymax)
-        if min_lon != float('inf'):
-            updates['bbox'] = [[min_lat, min_lon], [max_lat, max_lon]]
-            # bbox = full extent of all streets, so no filtering needed
-            updates['streets_geojson'] = build_streets_geojson(campaign_id)
+        campaign = Campaign.objects.only('geo_limit').get(pk=campaign_id)
+        if campaign.geo_limit:
+            # Preserve manager-drawn boundary; derive bbox from its extent
+            xmin, ymin, xmax, ymax = campaign.geo_limit.extent
+            updates['bbox'] = [[ymin, xmin], [ymax, xmax]]
+            updates['streets_geojson'] = build_streets_geojson(campaign_id, geo_limit=campaign.geo_limit)
+        else:
+            min_lon = min_lat = float('inf')
+            max_lon = max_lat = float('-inf')
+            for street in Street.objects.filter(campaign_id=campaign_id).only('geometry'):
+                xmin, ymin, xmax, ymax = street.geometry.extent
+                min_lon = min(min_lon, xmin)
+                min_lat = min(min_lat, ymin)
+                max_lon = max(max_lon, xmax)
+                max_lat = max(max_lat, ymax)
+            if min_lon != float('inf'):
+                updates['bbox'] = [[min_lat, min_lon], [max_lat, max_lon]]
+                updates['streets_geojson'] = build_streets_geojson(campaign_id)
 
     Campaign.objects.filter(pk=campaign_id).update(**updates)
 

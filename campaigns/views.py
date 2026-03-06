@@ -72,11 +72,14 @@ def campaign_streets_geojson(request, slug):
 
     streets = campaign.streets.all()
 
-    if campaign.bbox and not request.GET.get('all'):
-        sw, ne = campaign.bbox  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
-        bbox_poly = Polygon.from_bbox((sw[1], sw[0], ne[1], ne[0]))  # (xmin, ymin, xmax, ymax)
-        bbox_poly.srid = 4326
-        streets = streets.filter(geometry__intersects=bbox_poly)
+    if not request.GET.get('all'):
+        if campaign.geo_limit:
+            streets = streets.filter(geometry__intersects=campaign.geo_limit)
+        elif campaign.bbox:
+            sw, ne = campaign.bbox  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
+            bbox_poly = Polygon.from_bbox((sw[1], sw[0], ne[1], ne[0]))  # (xmin, ymin, xmax, ymax)
+            bbox_poly.srid = 4326
+            streets = streets.filter(geometry__intersects=bbox_poly)
 
     features = []
     for street in streets:
@@ -225,6 +228,7 @@ def manage_campaign_detail(request, slug):
     for job in city_fetch_jobs:
         job.block_count = blocks_per_city.get(job.city_index, 0)
     campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
+    geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
     return render(request, 'campaigns/manage/campaign_detail.html', {
         'campaign': campaign,
         'campaign_url': campaign_url,
@@ -232,6 +236,7 @@ def manage_campaign_detail(request, slug):
         'all_trips': all_trips,
         'city_fetch_jobs': city_fetch_jobs,
         'bbox_json': json.dumps(campaign.bbox),
+        'geo_limit_json': geo_limit_json,
     })
 
 
@@ -328,20 +333,23 @@ def manage_city_delete(request, slug, city_index):
 
 @_login_required
 @require_POST
-def manage_campaign_update_bbox(request, slug):
+def manage_campaign_update_geo_limit(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     try:
         body = json.loads(request.body)
-        bbox = body['bbox']
-        if (not isinstance(bbox, list) or len(bbox) != 2 or
-                not all(isinstance(p, list) and len(p) == 2 and
-                        all(isinstance(v, (int, float)) for v in p) for p in bbox)):
-            raise ValueError('invalid bbox')
-    except (json.JSONDecodeError, KeyError, ValueError):
-        return HttpResponseBadRequest('Invalid bbox')
-    geojson = build_streets_geojson(campaign.pk, bbox=bbox)
-    Campaign.objects.filter(pk=campaign.pk).update(bbox=bbox, streets_geojson=geojson)
-    return JsonResponse({'status': 'ok'})
+        coords = body['coordinates']  # GeoJSON polygon coordinate array
+        geo_limit = Polygon(coords[0], srid=4326)
+        if not geo_limit.valid:
+            raise ValueError('invalid polygon')
+    except (json.JSONDecodeError, KeyError, ValueError, Exception):
+        return HttpResponseBadRequest('Invalid polygon')
+    xmin, ymin, xmax, ymax = geo_limit.extent
+    bbox = [[ymin, xmin], [ymax, xmax]]
+    geojson = build_streets_geojson(campaign.pk, geo_limit=geo_limit)
+    Campaign.objects.filter(pk=campaign.pk).update(
+        geo_limit=geo_limit, bbox=bbox, streets_geojson=geojson,
+    )
+    return JsonResponse({'status': 'ok', 'bbox': bbox})
 
 
 @_login_required
