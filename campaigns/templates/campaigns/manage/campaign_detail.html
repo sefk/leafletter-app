@@ -394,7 +394,7 @@
     // Server-side trip data (all trips, including deleted)
     var allTripData = [
       {% for trip in all_trips %}
-      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'Y-m-d' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/" },
+      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", notes: "{{ trip.notes|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'Y-m-d' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/", editUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/edit/" },
       {% endfor %}
     ];
 
@@ -510,8 +510,11 @@
       }
       allTripData.forEach(function(trip) {
         var meta = tripMeta[trip.id];  // defined for non-deleted trips
+        var wrapper = document.createElement('div');
+        wrapper.style.cssText = 'margin-bottom:6px;' + (trip.deleted ? 'opacity:0.45;' : '');
+
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:0.875rem;' + (trip.deleted ? 'opacity:0.45;' : '');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:0.875rem;';
         var swatch = document.createElement('span');
         var swatchColor = meta ? meta.color : '#aaa';
         swatch.style.cssText = 'width:20px; height:4px; border-radius:2px; flex-shrink:0; background:' + swatchColor + ';';
@@ -521,24 +524,74 @@
         var metaSpan = document.createElement('span');
         metaSpan.style.cssText = 'color:#888; font-size:0.8rem; margin-left:2px;';
         metaSpan.textContent = trip.recorded_at;
-        var btn = document.createElement('button');
-        btn.style.cssText = 'margin-left:auto; padding:2px 8px; font-size:0.78rem; cursor:pointer; border-radius:4px; border:1px solid;';
+
+        var btnGroup = document.createElement('span');
+        btnGroup.style.cssText = 'margin-left:auto; display:flex; gap:4px;';
+
+        var editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.style.cssText = 'padding:2px 8px; font-size:0.78rem; cursor:pointer; border-radius:4px; border:1px solid #ccc; background:#fff; color:#333;';
+
+        var actionBtn = document.createElement('button');
+        actionBtn.style.cssText = 'padding:2px 8px; font-size:0.78rem; cursor:pointer; border-radius:4px; border:1px solid;';
         if (trip.deleted) {
-          btn.textContent = 'Undo Delete';
-          btn.style.cssText += 'background:#f5f5f5; border-color:#bbb; color:#333;';
-          btn.addEventListener('click', function() { postTripAction(trip.restoreUrl); });
+          actionBtn.textContent = 'Undo Delete';
+          actionBtn.style.cssText += 'background:#f5f5f5; border-color:#bbb; color:#333;';
+          actionBtn.addEventListener('click', function() { postTripAction(trip.restoreUrl); });
         } else {
-          btn.textContent = 'Delete';
-          btn.style.cssText += 'background:#fff; border-color:#e57373; color:#c62828;';
-          btn.addEventListener('click', function() {
+          actionBtn.textContent = 'Delete';
+          actionBtn.style.cssText += 'background:#fff; border-color:#e57373; color:#c62828;';
+          actionBtn.addEventListener('click', function() {
             if (confirm('Delete this trip? You can undo this later.')) { postTripAction(trip.deleteUrl); }
           });
         }
+
+        // Inline edit form (hidden by default)
+        var editForm = document.createElement('div');
+        editForm.style.cssText = 'display:none; margin-top:6px; padding:8px 10px; background:#f9f9f9; border:1px solid #ddd; border-radius:6px;';
+        editForm.innerHTML =
+          '<div style="display:flex; flex-direction:column; gap:6px;">' +
+          '<label style="font-size:0.8rem; color:#555;">Name' +
+          '<input type="text" class="edit-name" value="' + trip.worker_name.replace(/"/g, '&quot;') + '" style="width:100%; margin-top:2px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:0.85rem; box-sizing:border-box;">' +
+          '</label>' +
+          '<label style="font-size:0.8rem; color:#555;">Notes' +
+          '<textarea class="edit-notes" rows="2" style="width:100%; margin-top:2px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:0.85rem; resize:vertical; box-sizing:border-box;">' + trip.notes.replace(/</g, '&lt;') + '</textarea>' +
+          '</label>' +
+          '<div style="display:flex; gap:6px;">' +
+          '<button class="save-btn" style="padding:3px 10px; font-size:0.8rem; cursor:pointer; border-radius:4px; border:1px solid #1a6b3c; background:#1a6b3c; color:#fff;">Save</button>' +
+          '<button class="cancel-btn" style="padding:3px 10px; font-size:0.8rem; cursor:pointer; border-radius:4px; border:1px solid #ccc; background:#fff; color:#333;">Cancel</button>' +
+          '</div>' +
+          '</div>';
+
+        editBtn.addEventListener('click', function() {
+          editForm.style.display = editForm.style.display === 'none' ? '' : 'none';
+        });
+        editForm.querySelector('.cancel-btn').addEventListener('click', function() {
+          editForm.style.display = 'none';
+        });
+        editForm.querySelector('.save-btn').addEventListener('click', function() {
+          var newName = editForm.querySelector('.edit-name').value;
+          var newNotes = editForm.querySelector('.edit-notes').value;
+          var formData = new FormData();
+          formData.append('worker_name', newName);
+          formData.append('notes', newNotes);
+          fetch(trip.editUrl, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            credentials: 'same-origin',
+            body: formData,
+          }).then(function() { location.reload(); });
+        });
+
+        btnGroup.appendChild(editBtn);
+        btnGroup.appendChild(actionBtn);
         row.appendChild(swatch);
         row.appendChild(label);
         row.appendChild(metaSpan);
-        row.appendChild(btn);
-        itemsEl.appendChild(row);
+        row.appendChild(btnGroup);
+        wrapper.appendChild(row);
+        wrapper.appendChild(editForm);
+        itemsEl.appendChild(wrapper);
       });
       legendEl.style.display = 'block';
     }

@@ -308,6 +308,17 @@ def manage_trip_restore(request, slug, trip_id):
 
 
 @_login_required
+@require_POST
+def manage_trip_edit(request, slug, trip_id):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    trip = get_object_or_404(Trip, pk=trip_id, campaign=campaign)
+    trip.worker_name = request.POST.get('worker_name', trip.worker_name).strip()
+    trip.notes = request.POST.get('notes', trip.notes).strip()
+    trip.save(update_fields=['worker_name', 'notes'])
+    return JsonResponse({'status': 'ok'})
+
+
+@_login_required
 @require_GET
 def city_search(request):
     q = request.GET.get('q', '').strip()
