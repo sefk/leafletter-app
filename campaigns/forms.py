@@ -27,6 +27,12 @@ class CampaignForm(forms.ModelForm):
         if self.instance and self.instance.pk and self.instance.cities:
             self.initial['cities_json'] = json.dumps(self.instance.cities)
 
+    def clean_instructions(self):
+        html = self.cleaned_data.get('instructions', '')
+        # Quill inserts &nbsp; between words, which prevents CSS word-wrapping.
+        # Replace non-breaking spaces with regular spaces.
+        return html.replace('&nbsp;', ' ').replace('\u00a0', ' ')
+
     def clean_cities_json(self):
         raw = self.cleaned_data.get('cities_json', '')
         try:
