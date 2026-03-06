@@ -286,8 +286,9 @@
 
     btnSave.addEventListener('click', function() {
       if (!newBbox) return;
+      if (!confirm('Saving the geographical limit may take several minutes depending on the size of the area. Please be patient and do not close the page. Continue?')) return;
       btnSave.disabled = true;
-      statusEl.textContent = 'Saving\u2026';
+      statusEl.textContent = 'Saving\u2026 (this may take a few minutes)';
       fetch(updateUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
