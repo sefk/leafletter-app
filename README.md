@@ -5,7 +5,8 @@ A web app for coordinating volunteer leafletting campaigns.
 ## Current State
 
 ### What's built
-Not quite an MVP yet, but getting there.
+
+This is basically at MVP or Beta stage.
 
 Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap streets to select them, and submit a trip. Campaign managers use Django Admin to create campaigns, publish them (triggering a background OSM street import), and monitor coverage.
 
@@ -29,18 +30,9 @@ Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap stre
 - **Soft delete** on Campaign — sets `status='deleted'`, never removes rows
 - **Cities are editable on published campaigns** — editing triggers a fresh OSM fetch and resets `map_status` to pending
 - **Task trigger in `save_model` and `response_change`** — publishing via the status dropdown, the Publish button, or the bulk action all queue an OSM fetch
-- **79 tests** covering models, all views, the Overpass task, and admin behaviour
-
-**Known gaps -- [TODO.md](TODO.md)**
+- **155 tests** covering models, all views, the Overpass task, and admin behaviour
 
 ---
-
-## Stack
-
-- Django 5+ with GeoDjango (spatial fields)
-- MySQL 8.0+ with spatial support
-- Celery with MySQL broker (OSM background fetch)
-- Leaflet.js (frontend map)
 
 ## System Requirements
 
@@ -138,6 +130,7 @@ honcho start
 
 ## Usage
 
+- `/` — Public landing page listing active campaigns
 - `/manage/` — Campaign manager UI
   - Create a Campaign, fill in `cities` as a JSON list: `["Palo Alto", "Menlo Park"]`
   - Use the **Publish** button to publish and trigger OSM street import
@@ -188,7 +181,7 @@ watchmedo auto-restart --directory=. --pattern='*.py' --recursive -- \
 
 | URL | Description |
 |-----|-------------|
-| `/` | Redirects to `/manage/` |
+| `/` | Public campaign landing page |
 | `/manage/` | Campaign manager UI |
 | `/admin/` | Django Admin |
 | `/c/<slug>/` | Worker campaign map |
