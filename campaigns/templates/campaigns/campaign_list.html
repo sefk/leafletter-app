@@ -75,6 +75,20 @@
       opacity: 0.75;
     }
     .prior .campaign-card h2 { color: #555; }
+
+    .beta-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff8e1;
+      border-top: 3px solid #f9a825;
+      padding: 12px 24px;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #5d4037;
+    }
+    .beta-banner a { color: #1a6b3c; }
   </style>
 </head>
 <body>
@@ -124,6 +138,13 @@
     {% endfor %}
   </div>
   {% endif %}
+</div>
+
+
+<div class="beta-banner">
+  <strong>Beta:</strong> This app is in beta.
+  If you have feedback or concerns, please <a href="https://github.com/sefk/leafletter-app/issues/">file a bug</a>
+  or <a href="/about/">contact the owner</a>.
 </div>
 
 </body>
