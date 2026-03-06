@@ -406,6 +406,7 @@
     if (lasso) {
       lasso.enable();
     }
+    document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
