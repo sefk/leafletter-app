@@ -65,6 +65,14 @@
     }
     .intro a { color: #1a6b3c; }
 
+    .header p a {
+      color: #fff;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .header p a:hover { opacity: 0.8; }
+
     .empty { text-align: center; color: #888; margin-top: 60px; font-size: 1rem; }
   </style>
 </head>
@@ -72,16 +80,15 @@
 
 <div class="header">
   <h1><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="44" height="44" style="vertical-align:middle;margin-right:8px;margin-bottom:2px">Leafletter</h1>
-  <p>Active leafletting campaigns — click one to view the map and log your trip</p>
+  <p>Track where leaflets have been distributed by feet-on-the-street.
+  Click on one of the campaigns below to browse existing coverage or log
+  your own leaflet drop.
+  To edit or set up a new campaign <a href="/manage/">go here</a> (login
+  required).
+  </p>
 </div>
 
 <div class="content">
-  <div class="intro">
-    Leafletter is an app for logging where leaflets have been distributed in a neighborhood.
-    Click on one of the campaigns below to browse coverage or log your work.
-    Or you can use the <a href="/manage/">manage page</a> to create new campaigns or change existing ones (login required).
-  </div>
-
   {% if campaigns %}
     {% for campaign in campaigns %}
     <div class="campaign-card">
