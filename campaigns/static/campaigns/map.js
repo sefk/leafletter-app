@@ -360,6 +360,8 @@
       }
     }
     document.getElementById('drawing-instructions').style.display = active ? '' : 'none';
+    const mobileInstructions = document.querySelector('.mobile-map-instructions');
+    if (mobileInstructions) mobileInstructions.style.display = active ? 'none' : '';
     updateUndoButton();
   }
 
