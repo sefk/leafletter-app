@@ -150,14 +150,9 @@
           if (selectionMode) {
             setTimeout(() => {
               lasso.enable();
-              document.getElementById('btn-lasso').textContent = 'Drawing…';
             }, 0);
           }
         });
-        // Show btn-lasso if already in selection mode (race condition guard)
-        if (selectionMode) {
-          document.getElementById('btn-lasso').style.display = '';
-        }
       }
 
       // Fit map to streets bounds only if no server-provided bbox
@@ -344,11 +339,6 @@
     document.getElementById('btn-done').style.display = active ? '' : 'none';
     document.getElementById('btn-cancel').style.display = active ? '' : 'none';
     document.getElementById('trip-form').style.display = active ? 'block' : 'none';
-    document.getElementById('street-search-panel').style.display = active ? 'block' : 'none';
-    if (!active) {
-      document.getElementById('street-search-input').value = '';
-      document.getElementById('street-search-results').style.display = 'none';
-    }
     if (streetsLayer) {
       map.getContainer().style.cursor = active ? 'crosshair' : '';
       setStreetsInteractive(active);
@@ -367,12 +357,9 @@
       map.dragging.enable();
       if (lasso) {
         lasso.disable();
-        document.getElementById('btn-lasso').textContent = 'Select Area';
       }
     }
-    if (lasso) {
-      document.getElementById('btn-lasso').style.display = active ? '' : 'none';
-    }
+    document.getElementById('drawing-instructions').style.display = active ? '' : 'none';
     updateUndoButton();
   }
 
@@ -408,94 +395,6 @@
     el.style.display = 'block';
   }
 
-  // ── Street address search ─────────────────────────────────────────────────
-  (function () {
-    const searchInput = document.getElementById('street-search-input');
-    const searchResults = document.getElementById('street-search-results');
-    let searchTimer = null;
-
-    searchInput.addEventListener('input', () => {
-      clearTimeout(searchTimer);
-      const q = searchInput.value.trim();
-      if (q.length < 2) {
-        hideResults();
-        return;
-      }
-      searchTimer = setTimeout(() => runSearch(q), 300);
-    });
-
-    searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        hideResults();
-        searchInput.blur();
-      }
-    });
-
-    // Close dropdown when clicking outside
-    document.addEventListener('click', e => {
-      if (!document.getElementById('street-search-wrap').contains(e.target)) {
-        hideResults();
-      }
-    });
-
-    function hideResults() {
-      searchResults.style.display = 'none';
-      searchResults.innerHTML = '';
-    }
-
-    function runSearch(q) {
-      const url = window.STREET_SEARCH_URL + '?q=' + encodeURIComponent(q);
-      fetch(url)
-        .then(r => r.json())
-        .then(data => showResults(data.results || []))
-        .catch(() => hideResults());
-    }
-
-    function showResults(results) {
-      searchResults.innerHTML = '';
-      if (results.length === 0) {
-        searchResults.innerHTML = '<div class="sr-none">No matching streets found</div>';
-        searchResults.style.display = 'block';
-        return;
-      }
-      results.forEach(result => {
-        const item = document.createElement('div');
-        item.className = 'sr-item';
-        if (result.subtitle) {
-          item.innerHTML = `<span class="sr-name">${result.name}</span> <span class="sr-sub">${result.subtitle}</span>`;
-        } else {
-          item.textContent = result.name;
-        }
-        item.addEventListener('click', () => selectSearchResult(result));
-        searchResults.appendChild(item);
-      });
-      searchResults.style.display = 'block';
-    }
-
-    function selectSearchResult(result) {
-      hideResults();
-      searchInput.value = '';
-
-      const id = result.id;
-      const layer = layerById.get(id);
-
-      if (!layer) return;  // Street not loaded yet (shouldn't happen)
-
-      // Add to selection (same as a click, skip if already selected)
-      if (!selectedIds.has(id)) {
-        selectedIds.add(id);
-        selectionStack.push(id);
-        layer.setStyle(STYLE_SELECTED);
-        updateSelectionCount();
-        updateUndoButton();
-      }
-
-      // Fit map to the selected block so user can confirm it's correct
-      const bbox = result.bbox;  // [[sw_lat, sw_lon], [ne_lat, ne_lon]]
-      map.fitBounds(bbox, { padding: [40, 40], maxZoom: 18, animate: true });
-    }
-  }());
-
   // ── Buttons ───────────────────────────────────────────────────────────────
   document.getElementById('btn-log-trip').addEventListener('click', () => {
     setSelectionMode(true);
@@ -506,7 +405,6 @@
     }
     if (lasso) {
       lasso.enable();
-      document.getElementById('btn-lasso').textContent = 'Drawing…';
     }
     document.getElementById('trip-form').scrollIntoView({ behavior: 'smooth' });
   });
@@ -568,13 +466,6 @@
     });
     updateSelectionCount();
     updateUndoButton();
-  });
-
-  document.getElementById('btn-lasso').addEventListener('click', () => {
-    if (lasso) {
-      lasso.enable();
-      document.getElementById('btn-lasso').textContent = 'Drawing…';
-    }
   });
 
   document.getElementById('coverage-mode').addEventListener('change', function () {

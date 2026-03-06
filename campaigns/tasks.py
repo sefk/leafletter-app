@@ -94,99 +94,6 @@ out geom;
     return ways
 
 
-def query_address_nodes(city) -> list[dict]:
-    """
-    Query Overpass for OSM address nodes (addr:housenumber + addr:street) within a city.
-    Returns a list of dicts: {street, housenumber, lat, lon}.
-    """
-    if isinstance(city, dict) and city.get('osm_type') == 'relation' and 'osm_id' in city:
-        area_id = 3600000000 + city['osm_id']
-        query = f"""
-[out:json][timeout:30];
-area({area_id})->.searchArea;
-node["addr:housenumber"]["addr:street"](area.searchArea);
-out body;
-"""
-    else:
-        city_name = city if isinstance(city, str) else city.get('name', str(city))
-        query = f"""
-[out:json][timeout:30];
-area[name="{city_name}"]->.searchArea;
-node["addr:housenumber"]["addr:street"](area.searchArea);
-out body;
-"""
-    try:
-        resp = requests.post(OVERPASS_URL, data={'data': query}, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as exc:
-        logger.warning("Address node query failed (skipping address ranges): %s", exc)
-        return []
-
-    nodes = []
-    for element in data.get('elements', []):
-        tags = element.get('tags', {})
-        raw_num = tags.get('addr:housenumber', '')
-        street = tags.get('addr:street', '').lower().strip()
-        try:
-            housenumber = int(raw_num.split('-')[0].strip())  # handle "100-102" → 100
-        except (ValueError, AttributeError):
-            continue
-        nodes.append({
-            'street': street,
-            'housenumber': housenumber,
-            'lat': element['lat'],
-            'lon': element['lon'],
-        })
-    return nodes
-
-
-def assign_address_ranges(campaign_id: int, address_nodes: list[dict]) -> None:
-    """
-    For each Street segment in the campaign, find address nodes with a matching
-    street name within ~60 m and set addr_from/addr_to to the min/max house numbers.
-    """
-    if not address_nodes:
-        return
-
-    # Build lookup: street_name_lower → list of address nodes
-    by_street: dict[str, list[dict]] = {}
-    for node in address_nodes:
-        by_street.setdefault(node['street'], []).append(node)
-
-    # Rough degree-to-metre factor: 1 deg lat ≈ 111 km; 60 m ≈ 0.00054 deg
-    THRESHOLD_SQ = 0.00054 ** 2
-
-    streets = Street.objects.filter(campaign_id=campaign_id).exclude(name='')
-
-    updates = []
-    for street in streets:
-        candidates = by_street.get(street.name.lower().strip(), [])
-        if not candidates:
-            continue
-
-        # Midpoint of segment
-        coords = street.geometry.coords
-        mid = coords[len(coords) // 2]
-        mid_lon, mid_lat = mid[0], mid[1]
-
-        addr_nums = []
-        for node in candidates:
-            dlat = node['lat'] - mid_lat
-            dlon = (node['lon'] - mid_lon) * 0.7  # rough cos(lat) correction
-            if dlat * dlat + dlon * dlon <= THRESHOLD_SQ:
-                addr_nums.append(node['housenumber'])
-
-        if addr_nums:
-            street.addr_from = min(addr_nums)
-            street.addr_to = max(addr_nums)
-            updates.append(street)
-
-    if updates:
-        Street.objects.bulk_update(updates, ['addr_from', 'addr_to'])
-        logger.info("Assigned address ranges to %d segments", len(updates))
-
-
 def find_intersection_nodes(ways: list[dict]) -> set:
     """
     Return the set of OSM node IDs that appear in two or more ways.
@@ -363,10 +270,6 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
         logger.info("fetch_city_osm_data: imported %d blocks for %s", block_count, city_label)
         if block_count == 0:
             raise ValueError(f'City "{city_label}" was found but no streets were imported')
-
-        address_nodes = query_address_nodes(city)
-        logger.info("fetch_city_osm_data: fetched %d address nodes for %s", len(address_nodes), city_label)
-        assign_address_ranges(campaign_id, address_nodes)
 
         CityFetchJob.objects.update_or_create(
             campaign=campaign,
