@@ -22,6 +22,7 @@
     .header { display: flex; justify-content: space-between; align-items: center; }
     .header-text h1 { font-size: 1.4rem; }
     .header-text .meta { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+    .header-icons { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
     .header-gear { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 1.6rem; line-height: 1; flex-shrink: 0; }
     .header-gear:hover { color: #fff; }
 
@@ -148,7 +149,10 @@
       {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
     </div>
   </div>
-  <a href="/manage/{{ campaign.slug }}/" class="header-gear" title="Manage campaign">⚙</a>
+  <div class="header-icons">
+    <a href="/" class="header-gear" title="Home">⌂</a>
+    <a href="/manage/{{ campaign.slug }}/" class="header-gear" title="Manage campaign">⚙</a>
+  </div>
 </div>
 
 <div class="campaign-info">
