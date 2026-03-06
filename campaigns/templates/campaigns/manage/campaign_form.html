@@ -17,7 +17,7 @@
       </div>
     {% endif %}
 
-    {# Hidden fields #}
+    {# Hidden fields — cities_json submitted here; UI is in the Street Coverage card below #}
     {{ form.cities_json }}
     {{ form.instructions }}
 
@@ -108,39 +108,43 @@
       {% endif %}
     </div>
 
-    {# City Picker #}
-    <div style="margin-bottom:16px;">
-      <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:8px;">
-        Cities *
-      </label>
-
-      <!-- Selected cities list -->
-      <ul id="city-list" style="list-style:none; margin:0 0 12px 0; padding:0;"></ul>
-
-      {% if form.cities_json.errors %}
-        <div style="font-size:0.82rem; color:#c62828; margin-bottom:8px;">{{ form.cities_json.errors }}</div>
-      {% endif %}
-
-      <!-- Search row -->
-      <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <input type="text" id="city-search-input" placeholder="Search for a city…"
-               style="flex:1; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
-        <button type="button" id="city-search-btn" class="btn btn-secondary">Search</button>
-      </div>
-
-      <!-- Results dropdown -->
-      <div id="city-results" style="display:none; border:1px solid #ccc; border-radius:4px; background:#fff; max-height:200px; overflow-y:auto;"></div>
-    </div>
-
-    <div style="display:flex; gap:10px; margin-top:8px;">
-      <button type="submit" class="btn btn-primary">Save</button>
-      {% if campaign %}
-        <a href="/manage/{{ campaign.slug }}/" class="btn btn-secondary">Cancel</a>
-      {% else %}
-        <a href="/manage/" class="btn btn-secondary">Cancel</a>
-      {% endif %}
-    </div>
+    {# City Picker moved to its own card below #}
   </form>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <h2 style="font-size:1.1rem; font-weight:700; color:#222; margin:0 0 8px 0;">Street Coverage</h2>
+  <p style="font-size:0.85rem; color:#666; margin:0 0 16px 0;">
+    Choose the set of cities that you want this campaign to cover. Many cities have surprising
+    boundaries that are not part of the city proper, so often it's easier to specify a whole
+    county to get all the streets for an area.
+  </p>
+
+  <!-- Selected cities list -->
+  <ul id="city-list" style="list-style:none; margin:0 0 12px 0; padding:0;"></ul>
+
+  {% if form.cities_json.errors %}
+    <div style="font-size:0.82rem; color:#c62828; margin-bottom:8px;">{{ form.cities_json.errors }}</div>
+  {% endif %}
+
+  <!-- Search row -->
+  <div style="display:flex; gap:8px; margin-bottom:8px;">
+    <input type="text" id="city-search-input" placeholder="Search for a city…"
+           style="flex:1; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    <button type="button" id="city-search-btn" class="btn btn-secondary">Search</button>
+  </div>
+
+  <!-- Results dropdown -->
+  <div id="city-results" style="display:none; border:1px solid #ccc; border-radius:4px; background:#fff; max-height:200px; overflow-y:auto;"></div>
+</div>
+
+<div style="display:flex; gap:10px; margin-top:16px;">
+  <button type="submit" form="campaign-form" class="btn btn-primary">Save</button>
+  {% if campaign %}
+    <a href="/manage/{{ campaign.slug }}/" class="btn btn-secondary">Cancel</a>
+  {% else %}
+    <a href="/manage/" class="btn btn-secondary">Cancel</a>
+  {% endif %}
 </div>
 
 <style>
