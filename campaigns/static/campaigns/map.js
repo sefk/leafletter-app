@@ -36,6 +36,33 @@
     '#795548', '#607d8b',
   ];
 
+  // ── Progress-tracked JSON fetch ───────────────────────────────────────────
+  function fetchJSON(url, onProgress) {
+    return fetch(url).then(r => {
+      const total = parseInt(r.headers.get('Content-Length'), 10);
+      if (!total || !r.body) return r.json();
+      let loaded = 0;
+      const chunks = [];
+      const reader = r.body.getReader();
+      onProgress(0);
+      function pump() {
+        return reader.read().then(({ done, value }) => {
+          if (done) {
+            const all = new Uint8Array(loaded);
+            let pos = 0;
+            for (const chunk of chunks) { all.set(chunk, pos); pos += chunk.length; }
+            return JSON.parse(new TextDecoder().decode(all));
+          }
+          chunks.push(value);
+          loaded += value.length;
+          onProgress(Math.min(99, Math.round(loaded / total * 100)));
+          return pump();
+        });
+      }
+      return pump();
+    });
+  }
+
   // ── Pointer tracking (for drag-to-select) ────────────────────────────────
   document.addEventListener('mousedown', () => { isPointerDown = true; });
   document.addEventListener('mouseup', () => { isPointerDown = false; });
@@ -65,11 +92,10 @@
   // ── Loading state for "Log a Trip" button ────────────────────────────────
   const btnLogTrip = document.getElementById('btn-log-trip');
   btnLogTrip.disabled = true;
-  btnLogTrip.textContent = 'Loading streets… (1/2)';
+  btnLogTrip.textContent = 'Loading streets… 0%';
 
   // ── Load streets ─────────────────────────────────────────────────────────
-  fetch(window.STREETS_URL)
-    .then(r => r.json())
+  fetchJSON(window.STREETS_URL, pct => { btnLogTrip.textContent = `Loading streets… ${pct}%`; })
     .then(geojson => {
       if (!geojson.features || geojson.features.length === 0) {
         map.setView([0, 0], 2);
@@ -161,7 +187,7 @@
       }
 
       // Load coverage by default
-      btnLogTrip.textContent = 'Loading coverage… (2/2)';
+      btnLogTrip.textContent = 'Loading coverage… 0%';
       loadCoverage();
     })
     .catch(err => {
@@ -172,8 +198,7 @@
 
   // ── Coverage layer ────────────────────────────────────────────────────────
   function loadCoverage() {
-    fetch(window.COVERAGE_URL)
-      .then(r => r.json())
+    fetchJSON(window.COVERAGE_URL, pct => { btnLogTrip.textContent = `Loading coverage… ${pct}%`; })
       .then(geojson => {
         // Remove existing layers
         tripLayers.forEach(layer => map.removeLayer(layer));

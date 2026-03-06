@@ -2,6 +2,7 @@ import json
 
 import requests
 from django.contrib.auth.decorators import login_required
+from django.contrib.gis.geos import Polygon
 from django.db.models import Count
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
@@ -32,6 +33,12 @@ def campaign_detail(request, slug):
 def campaign_streets_geojson(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
     streets = campaign.streets.all()
+
+    if campaign.bbox and not request.GET.get('all'):
+        sw, ne = campaign.bbox  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
+        bbox_poly = Polygon.from_bbox((sw[1], sw[0], ne[1], ne[0]))  # (xmin, ymin, xmax, ymax)
+        bbox_poly.srid = 4326
+        streets = streets.filter(geometry__intersects=bbox_poly)
 
     features = []
     for street in streets:

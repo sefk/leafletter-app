@@ -215,8 +215,9 @@
 <div class="card">
   <div class="card-title">Geographical Limit</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    The geographical limit set the initial view and pan limits on the public map.
-    Drag a new rectangle to restrict the visible area (e.g. to exclude distant unincorporated areas).
+    This pane shows all streets fetched for this campaign, so it is very slow.
+    The Geographical Limit box affects what is shown to workers. Draw a smaller box to best describe the campaign's limits.
+    A smaller limit will also perform better.
   </p>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
@@ -230,7 +231,7 @@
   <script>
   (function() {
     var currentBbox = {{ bbox_json }};
-    var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}";
+    var streetsUrl = "{% url 'campaigns:streets_geojson' campaign.slug %}?all=1";
     var updateUrl = "{% url 'manage_campaign_update_bbox' campaign.slug %}";
     var csrfToken = "{{ csrf_token }}";
 
@@ -320,6 +321,7 @@
             }).addTo(map);
             statusEl.textContent = 'Saved!';
             setTimeout(function() { statusEl.textContent = ''; }, 2000);
+            if (window.reloadManageMap) window.reloadManageMap(newBbox);
           }
         })
         .catch(function() {
@@ -368,14 +370,18 @@
       <option value="hidden">Hide coverage</option>
     </select>
   </div>
-  {% if not campaign.bbox %}
+  {% if campaign.bbox %}
+  <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+    This view matches the "Geographical Limit" selected above and matches what is shown to workers.
+  </p>
+  {% else %}
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   {% endif %}
   <div id="manage-map" style="height:420px; border-radius:6px; margin-bottom:8px;"></div>
   <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
   <div id="manage-map-loading" style="font-size:0.85rem; color:#666; padding:4px 0 8px;">
     <span id="manage-map-loading-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; margin-right:6px; vertical-align:middle;"></span>
-    <span id="manage-map-loading-text">Loading streets… (1/2)</span>
+    <span id="manage-map-loading-text">Loading streets… 0%</span>
   </div>
   <div id="manage-trip-legend" style="display:none; margin-top:8px;">
     <div style="font-size:0.8rem; color:#555; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Trips</div>
@@ -409,39 +415,73 @@
       maxZoom: 19, attribution: '© OpenStreetMap contributors',
     }).addTo(map);
 
-    if (bbox) {
-      map.fitBounds(bbox, { padding: [20, 20], animate: false });
-    }
-
     var loadingEl = document.getElementById('manage-map-loading');
     var loadingTextEl = document.getElementById('manage-map-loading-text');
 
-    // Load streets
-    fetch(streetsUrl)
-      .then(function(r) { return r.json(); })
-      .then(function(geojson) {
-        if (!geojson.features || geojson.features.length === 0) {
-          if (loadingEl) loadingEl.style.display = 'none';
-          return;
+    function fetchJSON(url, onProgress) {
+      return fetch(url).then(function(r) {
+        var total = parseInt(r.headers.get('Content-Length'), 10);
+        if (!total || !r.body) return r.json();
+        var loaded = 0;
+        var chunks = [];
+        var reader = r.body.getReader();
+        onProgress(0);
+        function pump() {
+          return reader.read().then(function(result) {
+            if (result.done) {
+              var all = new Uint8Array(loaded);
+              var pos = 0;
+              chunks.forEach(function(chunk) { all.set(chunk, pos); pos += chunk.length; });
+              return JSON.parse(new TextDecoder().decode(all));
+            }
+            chunks.push(result.value);
+            loaded += result.value.length;
+            onProgress(Math.min(99, Math.round(loaded / total * 100)));
+            return pump();
+          });
         }
-        L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
-        if (!bbox) map.fitBounds(L.geoJSON(geojson).getBounds(), { padding: [20, 20] });
-        if (loadingTextEl) loadingTextEl.textContent = 'Loading coverage… (2/2)';
-        loadCoverage();
-      })
-      .catch(function(err) {
-        console.error('Failed to load streets:', err);
-        if (loadingEl) loadingEl.style.display = 'none';
+        return pump();
       });
+    }
 
+    var currentStreetsLayer = null;
     var summaryLayer = null;
     var tripLayers = {};
     var tripMeta = {};
     var coverageMode = 'detail';
 
+    function loadMap(newBbox) {
+      bbox = newBbox;
+      if (currentStreetsLayer) { map.removeLayer(currentStreetsLayer); currentStreetsLayer = null; }
+      if (summaryLayer) { map.removeLayer(summaryLayer); summaryLayer = null; }
+      Object.keys(tripLayers).forEach(function(tid) { map.removeLayer(tripLayers[tid]); });
+      tripLayers = {};
+      tripMeta = {};
+      if (bbox) map.fitBounds(bbox, { padding: [20, 20], animate: false });
+      if (loadingEl) loadingEl.style.display = '';
+      if (loadingTextEl) loadingTextEl.textContent = 'Loading streets… 0%';
+
+      fetchJSON(streetsUrl, function(pct) { if (loadingTextEl) loadingTextEl.textContent = 'Loading streets… ' + pct + '%'; })
+        .then(function(geojson) {
+          if (!geojson.features || geojson.features.length === 0) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            return;
+          }
+          currentStreetsLayer = L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
+          if (!bbox) map.fitBounds(currentStreetsLayer.getBounds(), { padding: [20, 20] });
+          if (loadingTextEl) loadingTextEl.textContent = 'Loading coverage… 0%';
+          loadCoverage();
+        })
+        .catch(function(err) {
+          console.error('Failed to load streets:', err);
+          if (loadingEl) loadingEl.style.display = 'none';
+        });
+    }
+
+    window.reloadManageMap = loadMap;
+
     function loadCoverage() {
-      fetch(coverageUrl)
-        .then(function(r) { return r.json(); })
+      fetchJSON(coverageUrl, function(pct) { if (loadingTextEl) loadingTextEl.textContent = 'Loading coverage… ' + pct + '%'; })
         .then(function(geojson) {
           var allFeatures = geojson.features || [];
 
@@ -609,6 +649,8 @@
       applyCoverageMode();
       renderLegend();
     });
+
+    loadMap(bbox);
   })();
   </script>
 </div>
