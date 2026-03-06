@@ -170,7 +170,12 @@
               layer.setStyle(STYLE_SELECTED);
             }
           });
-          if (batch.length > 0) selectionStack.push(batch);
+          if (batch.length > 0) {
+            selectionStack.push(batch);
+            document.getElementById('lasso-warning').style.display = 'none';
+          } else {
+            document.getElementById('lasso-warning').style.display = 'block';
+          }
           updateSelectionCount();
           updateUndoButton();
           if (selectionMode) {
@@ -385,6 +390,7 @@
       }
     }
     document.getElementById('drawing-instructions').style.display = active ? '' : 'none';
+    if (!active) document.getElementById('lasso-warning').style.display = 'none';
     const mobileInstructions = document.querySelector('.mobile-map-instructions');
     if (mobileInstructions) mobileInstructions.style.display = active ? 'none' : '';
     updateUndoButton();

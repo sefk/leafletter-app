@@ -105,6 +105,15 @@
       margin-bottom: 10px;
     }
 
+    #lasso-warning {
+      display: none;
+      padding: 10px 16px;
+      background: #fff8e1;
+      border-top: 1px solid #ffe082;
+      font-size: 0.875rem;
+      color: #5d4037;
+    }
+
     #status-message {
       padding: 16px 20px;
       font-size: 0.9rem;
@@ -181,6 +190,10 @@
 
 <div id="drawing-instructions" style="display:none; padding:8px 16px; background:#f0f4ff; border-bottom:1px solid #ccd; font-size:0.9rem; color:#333;">
   Draw a loop around streets to add to this trip. Add with as many "draws" as you want, and undo as needed.
+</div>
+
+<div id="lasso-warning">
+  Warning: the drawing did not pick up any streets. Consider drawing a larger loop. If your loop is outside the area with street coverage, it's likely not part of this campaign. Contact the Campaign Manager if you think that is in error.
 </div>
 
 <div class="trip-form" id="trip-form">
