@@ -13,7 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm
 from .models import Campaign, CityFetchJob, Street, Trip
-from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
 
@@ -172,26 +172,57 @@ def log_trip(request, slug):
 
 # ── Manager UI helpers ────────────────────────────────────────────────────────
 
-def _incremental_city_indices(old_cities: list, new_cities: list) -> list[int] | None:
+def _city_key(c):
+    if isinstance(c, dict) and 'osm_id' in c:
+        return ('id', c['osm_id'])
+    return ('name', c if isinstance(c, str) else c.get('name', ''))
+
+
+def _apply_city_list_changes(old_cities: list, campaign) -> None:
     """
-    Return a list of indices in new_cities that are not in old_cities.
-    Returns None if a full refetch is needed (any old city was removed or changed).
-    Returns [] if the city list content is unchanged (e.g. only metadata tweaked).
-    Comparison is by osm_id for dict cities, or by name for string cities.
+    Reconcile city list changes without unnecessary refetches.
+    - Removed cities: delete their streets and fetch jobs
+    - Kept cities whose index shifted: renumber city_index on streets and jobs
+    - New cities: queue fetches only for those
     """
-    def city_key(c):
-        if isinstance(c, dict) and 'osm_id' in c:
-            return ('id', c['osm_id'])
-        return ('name', c if isinstance(c, str) else c.get('name', ''))
+    new_cities = campaign.cities
+    old_key_to_idx = {_city_key(c): i for i, c in enumerate(old_cities)}
+    new_key_to_idx = {_city_key(c): i for i, c in enumerate(new_cities)}
 
-    old_keys = {city_key(c) for c in old_cities}
-    new_keys_indexed = [(city_key(c), i) for i, c in enumerate(new_cities)]
-    new_key_set = {k for k, _ in new_keys_indexed}
+    old_key_set = set(old_key_to_idx)
+    new_key_set = set(new_key_to_idx)
+    removed_keys = old_key_set - new_key_set
+    added_keys = new_key_set - old_key_set
+    kept_keys = old_key_set & new_key_set
 
-    if not old_keys.issubset(new_key_set):
-        return None  # an old city was removed or changed → full refetch
+    for key in removed_keys:
+        old_idx = old_key_to_idx[key]
+        Street.objects.filter(campaign=campaign, city_index=old_idx).delete()
+        CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx).delete()
 
-    return [i for k, i in new_keys_indexed if k not in old_keys]
+    # Renumber kept cities whose index shifted; use a temp offset to avoid
+    # unique-constraint conflicts during the two-phase rename.
+    moves = [(old_key_to_idx[k], new_key_to_idx[k]) for k in kept_keys
+             if old_key_to_idx[k] != new_key_to_idx[k]]
+    if moves:
+        TEMP_OFFSET = 10000
+        for old_idx, _ in moves:
+            Street.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
+            CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
+        for old_idx, new_idx in moves:
+            Street.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
+            CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
+
+    if added_keys:
+        new_indices = sorted(new_key_to_idx[k] for k in added_keys)
+        queue_city_fetches(campaign.pk, city_indices=new_indices)
+    elif removed_keys:
+        # Cities removed but none added; invalidate cached GeoJSON and sync status.
+        Campaign.objects.filter(pk=campaign.pk).update(streets_geojson='')
+        if not new_cities:
+            Campaign.objects.filter(pk=campaign.pk).update(map_status='pending', map_error='')
+        else:
+            _sync_campaign_map_status(campaign.pk)
 
 
 # ── Manager UI views ──────────────────────────────────────────────────────────
@@ -257,14 +288,7 @@ def manage_campaign_edit(request, slug):
             old_cities = campaign.cities
             updated = form.save()
             if updated.cities != old_cities:
-                new_indices = _incremental_city_indices(old_cities, updated.cities)
-                if new_indices is None:
-                    # Cities were removed or changed — full refetch
-                    queue_city_fetches(updated.pk)
-                elif new_indices:
-                    # Only new cities added — fetch just those
-                    queue_city_fetches(updated.pk, city_indices=new_indices)
-                # else: no meaningful city changes, no fetch needed
+                _apply_city_list_changes(old_cities, updated)
             return redirect('manage_campaign_detail', slug=updated.slug)
     else:
         form = CampaignForm(instance=campaign)

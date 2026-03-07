@@ -18,9 +18,10 @@ from django.db import IntegrityError
 from django.test import Client, RequestFactory, TestCase
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
-from .models import Campaign, Street, Trip
+from .models import Campaign, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
                     lookup_city, queue_city_fetches, query_overpass, split_way_at_intersections)
+from .views import _apply_city_list_changes
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
 
@@ -1500,3 +1501,141 @@ class CitySearchViewTest(TestCase):
         resp = self.client.get('/manage/city-search/?q=Anywhere')
         self.assertEqual(resp.status_code, 500)
         self.assertIn('error', resp.json())
+
+
+# ── _apply_city_list_changes tests ───────────────────────────────────────────
+
+def _make_city(name, osm_id):
+    return {'name': name, 'osm_id': osm_id, 'osm_type': 'relation', 'display_name': name}
+
+
+def _make_fetch_job(campaign, city_index, city_name, status='ready'):
+    return CityFetchJob.objects.create(
+        campaign=campaign, city_index=city_index, city_name=city_name, status=status,
+    )
+
+
+class ApplyCityListChangesTest(TestCase):
+
+    def _make_campaign_with_cities(self, cities):
+        campaign = Campaign.objects.create(
+            name='Test', slug=f'test-{id(cities)}', cities=cities, map_status='ready',
+        )
+        return campaign
+
+    def _make_street(self, campaign, osm_id, city_index):
+        return Street.objects.create(
+            campaign=campaign, osm_id=osm_id, name='St', geometry=GEOM,
+            block_index=0, city_index=city_index,
+        )
+
+    def test_removing_middle_city_deletes_its_streets(self):
+        cities = [_make_city('A', 1), _make_city('B', 2), _make_city('C', 3)]
+        campaign = self._make_campaign_with_cities(cities)
+        street_a = self._make_street(campaign, 101, 0)
+        street_b = self._make_street(campaign, 102, 1)
+        street_c = self._make_street(campaign, 103, 2)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+        _make_fetch_job(campaign, 2, 'C')
+
+        new_cities = [_make_city('A', 1), _make_city('C', 3)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(cities, campaign)
+
+        self.assertTrue(Street.objects.filter(pk=street_a.pk).exists())
+        self.assertFalse(Street.objects.filter(pk=street_b.pk).exists())
+        self.assertTrue(Street.objects.filter(pk=street_c.pk).exists())
+
+    def test_removing_middle_city_deletes_its_fetch_job(self):
+        cities = [_make_city('A', 1), _make_city('B', 2), _make_city('C', 3)]
+        campaign = self._make_campaign_with_cities(cities)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+        _make_fetch_job(campaign, 2, 'C')
+
+        new_cities = [_make_city('A', 1), _make_city('C', 3)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(cities, campaign)
+
+        self.assertFalse(CityFetchJob.objects.filter(campaign=campaign, city_index=1, city_name='B').exists())
+
+    def test_remaining_cities_get_renumbered(self):
+        cities = [_make_city('A', 1), _make_city('B', 2), _make_city('C', 3)]
+        campaign = self._make_campaign_with_cities(cities)
+        self._make_street(campaign, 101, 0)
+        self._make_street(campaign, 102, 1)
+        self._make_street(campaign, 103, 2)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+        _make_fetch_job(campaign, 2, 'C')
+
+        new_cities = [_make_city('A', 1), _make_city('C', 3)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(cities, campaign)
+
+        # C moves from index 2 to index 1
+        self.assertTrue(Street.objects.filter(campaign=campaign, city_index=1, osm_id=103).exists())
+        self.assertTrue(CityFetchJob.objects.filter(campaign=campaign, city_index=1, city_name='C').exists())
+        # Old index 2 should be gone
+        self.assertFalse(Street.objects.filter(campaign=campaign, city_index=2).exists())
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_removing_city_does_not_trigger_refetch(self, mock_queue):
+        cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign = self._make_campaign_with_cities(cities)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+
+        new_cities = [_make_city('A', 1)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(cities, campaign)
+
+        mock_queue.assert_not_called()
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_adding_city_only_fetches_new_city(self, mock_queue):
+        cities = [_make_city('A', 1)]
+        campaign = self._make_campaign_with_cities(cities)
+        _make_fetch_job(campaign, 0, 'A')
+
+        new_cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(cities, campaign)
+
+        mock_queue.assert_called_once_with(campaign.pk, city_indices=[1])
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_remove_and_add_fetches_only_new_city(self, mock_queue):
+        cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign = self._make_campaign_with_cities(cities)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+        self._make_street(campaign, 101, 0)
+        self._make_street(campaign, 102, 1)
+
+        # Remove B, add C
+        new_cities = [_make_city('A', 1), _make_city('C', 3)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(cities, campaign)
+
+        # B's street should be deleted
+        self.assertFalse(Street.objects.filter(campaign=campaign, osm_id=102).exists())
+        # Only C (new index 1) should be queued
+        mock_queue.assert_called_once_with(campaign.pk, city_indices=[1])
+
+    def test_no_changes_makes_no_modifications(self):
+        cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign = self._make_campaign_with_cities(cities)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+
+        _apply_city_list_changes(cities, campaign)
+
+        self.assertEqual(CityFetchJob.objects.filter(campaign=campaign).count(), 2)
