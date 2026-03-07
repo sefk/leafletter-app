@@ -14,6 +14,7 @@ class Campaign(models.Model):
         ('pending', 'Pending'),
         ('generating', 'Generating'),
         ('ready', 'Ready'),
+        ('warning', 'Warning'),
         ('error', 'Error'),
     ]
 

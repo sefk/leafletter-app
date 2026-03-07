@@ -188,8 +188,10 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
     statuses = [j.status for j in jobs]
     if any(s in ('generating', 'pending') for s in statuses):
         new_status = 'generating'
-    elif any(s == 'error' for s in statuses):
+    elif all(s == 'error' for s in statuses):
         new_status = 'error'
+    elif any(s == 'error' for s in statuses):
+        new_status = 'warning'
     else:
         new_status = 'ready'
 
@@ -203,8 +205,14 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
             updates['map_error'] = '; '.join(
                 f"{j.city_name}: {j.error}" for j in error_jobs
             )
-    elif new_status == 'ready':
+    elif new_status == 'warning':
+        error_jobs = [j for j in jobs if j.status == 'error']
+        updates['map_error'] = '; '.join(
+            f"{j.city_name}: {j.error}" for j in error_jobs
+        )
+    if new_status == 'ready':
         updates['map_error'] = ''
+    if new_status in ('ready', 'warning'):
         campaign = Campaign.objects.only('geo_limit').get(pk=campaign_id)
         if campaign.geo_limit:
             # Preserve manager-drawn boundary; derive bbox from its extent

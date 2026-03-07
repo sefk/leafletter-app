@@ -155,7 +155,12 @@
       <script>setTimeout(function(){ location.reload(); }, 5000);</script>
       <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
 
-    {% elif campaign.map_status == 'ready' %}
+    {% elif campaign.map_status == 'ready' or campaign.map_status == 'warning' %}
+      {% if campaign.map_status == 'warning' %}
+      <p style="color:#e65100; margin-bottom:8px;">
+        <strong>Some cities could not be fetched:</strong> {{ campaign.map_error }}
+      </p>
+      {% endif %}
       <div style="margin-bottom:16px;">
         <div class="stat">
           <div class="stat-value">{{ total_blocks }}</div>
@@ -329,7 +334,7 @@
 {% endif %}
 
 <!-- Campaign Map (read-only) -->
-{% if campaign.map_status == 'ready' %}
+{% if campaign.map_status == 'ready' or campaign.map_status == 'warning' %}
 <div class="card">
   <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
     Campaign Map
