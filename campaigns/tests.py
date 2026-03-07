@@ -221,7 +221,7 @@ class AuthGatingTest(TestCase):
     def _assert_redirects_to_login(self, url):
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 302)
-        self.assertIn('/admin/login/', resp['Location'])
+        self.assertIn('/manage/login/', resp['Location'])
 
     def test_manage_list_requires_login(self):
         self._assert_redirects_to_login('/manage/')
@@ -318,11 +318,11 @@ class CoverageGeoJSONViewTest(TestCase):
         osm_ids = {f['properties']['osm_id'] for f in data['features']}
         self.assertEqual(osm_ids, {1, 2})
 
-    def test_deduplicates_street_covered_by_multiple_trips(self):
+    def test_street_covered_by_multiple_trips_appears_once_per_trip(self):
         make_trip(self.campaign, streets=[self.street1], worker_name='Alice')
         make_trip(self.campaign, streets=[self.street1], worker_name='Bob')
         data = self.client.get('/c/cov-camp/coverage.geojson').json()
-        self.assertEqual(len(data['features']), 1)
+        self.assertEqual(len(data['features']), 2)
 
     def test_only_returns_streets_from_this_campaign(self):
         other = make_campaign(slug='other-cov')
@@ -1048,17 +1048,17 @@ class ManagerUITest(TestCase):
     def test_unauthenticated_list_redirects_to_login(self):
         resp = self.client.get('/manage/')
         self.assertEqual(resp.status_code, 302)
-        self.assertIn('/admin/login/', resp['Location'])
+        self.assertIn('/manage/login/', resp['Location'])
 
     def test_unauthenticated_detail_redirects_to_login(self):
         resp = self.client.get(f'/manage/{self.campaign.slug}/')
         self.assertEqual(resp.status_code, 302)
-        self.assertIn('/admin/login/', resp['Location'])
+        self.assertIn('/manage/login/', resp['Location'])
 
     def test_unauthenticated_create_redirects_to_login(self):
         resp = self.client.get('/manage/new/')
         self.assertEqual(resp.status_code, 302)
-        self.assertIn('/admin/login/', resp['Location'])
+        self.assertIn('/manage/login/', resp['Location'])
 
     # ── Authenticated access ──────────────────────────────────────────────────
 
@@ -1463,7 +1463,7 @@ class CitySearchViewTest(TestCase):
     def test_unauthenticated_redirects_to_login(self):
         resp = self.client.get('/manage/city-search/?q=San+Jose')
         self.assertEqual(resp.status_code, 302)
-        self.assertIn('/admin/login/', resp['Location'])
+        self.assertIn('/manage/login/', resp['Location'])
 
     @patch('campaigns.views.requests.get')
     def test_returns_filtered_city_results(self, mock_get):

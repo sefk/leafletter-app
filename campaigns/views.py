@@ -129,6 +129,7 @@ def campaign_coverage_geojson(request, slug):
                     'worker_name': trip.worker_name,
                     'recorded_at': trip.recorded_at.strftime('%Y-%m-%d'),
                     'street_name': street.name,
+                    'osm_id': street.osm_id,
                 },
             })
 
@@ -419,6 +420,7 @@ def manage_campaign_coverage_geojson(request, slug):
                     'worker_name': trip.worker_name,
                     'recorded_at': trip.recorded_at.strftime('%Y-%m-%d'),
                     'street_name': street.name,
+                    'osm_id': street.osm_id,
                 },
             })
 
