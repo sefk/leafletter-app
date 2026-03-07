@@ -265,7 +265,7 @@ def queue_city_fetches(campaign_id: int, city_indices: list[int] | None = None) 
 
 # ── Main per-city Celery task ──────────────────────────────────────────────────
 
-@shared_task(bind=True, max_retries=5)
+@shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
 def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
     try:
         campaign = Campaign.objects.get(pk=campaign_id)
