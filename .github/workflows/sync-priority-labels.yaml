@@ -28,15 +28,13 @@ jobs:
               priority = 'P2';
             }
             
-            // Project number - update this to your actual project number
-            const projectNumber = 1;
             const owner = context.repo.owner;
             
-            // Get the project ID using GraphQL
+            // Get the project ID using GraphQL - query the viewer's projects
             const projectQuery = `
               query {
-                user(login: "${owner}") {
-                  projectV2(number: ${projectNumber}) {
+                viewer {
+                  projectV2(number: 1) {
                     id
                     fields(first: 20) {
                       nodes {
@@ -52,10 +50,10 @@ jobs:
             `;
             
             const projectResult = await github.graphql(projectQuery);
-            const project = projectResult.user.projectV2;
+            const project = projectResult.viewer.projectV2;
             
             if (!project) {
-              core.setFailed(`Could not find project ${projectNumber}`);
+              core.setFailed('Could not find project 1');
               return;
             }
             
@@ -69,8 +67,8 @@ jobs:
             // Get the field options to find the correct option ID
             const fieldQuery = `
               query {
-                user(login: "${owner}") {
-                  projectV2(number: ${projectNumber}) {
+                viewer {
+                  projectV2(number: 1) {
                     field(name: "Priority") {
                       ... on ProjectV2SingleSelectField {
                         options {
@@ -85,7 +83,7 @@ jobs:
             `;
             
             const fieldResult = await github.graphql(fieldQuery);
-            const field = fieldResult.user.projectV2.field;
+            const field = fieldResult.viewer.projectV2.field;
             
             let optionId = null;
             if (priority) {
@@ -101,17 +99,23 @@ jobs:
             // Get the item ID in the project
             const itemQuery = `
               query {
-                user(login: "${owner}") {
-                  projectV2(number: ${projectNumber}) {
-                    items(first: 100, filter: {type: ISSUE}) {
+                viewer {
+                  projectV2(number: 1) {
+                    items(first: 100) {
                       nodes {
                         id
                         content {
                           ... on Issue {
                             number
+                            repository {
+                              nameWithOwner
+                            }
                           }
                           ... on PullRequest {
                             number
+                            repository {
+                              nameWithOwner
+                            }
                           }
                         }
                       }
@@ -122,8 +126,9 @@ jobs:
             `;
             
             const itemResult = await github.graphql(itemQuery);
-            const projectItem = itemResult.user.projectV2.items.nodes.find(
-              item => item.content.number === issue.number
+            const projectItem = itemResult.viewer.projectV2.items.nodes.find(
+              item => item.content.number === issue.number && 
+                       item.content.repository.nameWithOwner === context.repo.owner + '/' + context.repo.repo
             );
             
             if (!projectItem) {
