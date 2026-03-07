@@ -9,6 +9,8 @@ on:
 jobs:
   sync-priority:
     runs-on: ubuntu-latest
+    permissions:
+      projects: write
     steps:
       - name: Sync priority label to project field
         uses: actions/github-script@v7
@@ -32,10 +34,10 @@ jobs:
 
             const owner = context.repo.owner;
 
-            // Get the project ID using GraphQL - query the viewer's projects
+            // Get the project ID using GraphQL - query by owner login
             const projectQuery = `
               query {
-                viewer {
+                user(login: "sefk") {
                   projectV2(number: 1) {
                     id
                     fields(first: 20) {
@@ -52,7 +54,7 @@ jobs:
             `;
 
             const projectResult = await github.graphql(projectQuery);
-            const project = projectResult.viewer.projectV2;
+            const project = projectResult.user.projectV2;
 
             if (!project) {
               core.setFailed('Could not find project 1');
@@ -69,7 +71,7 @@ jobs:
             // Get the field options to find the correct option ID
             const fieldQuery = `
               query {
-                viewer {
+                user(login: "sefk") {
                   projectV2(number: 1) {
                     field(name: "Priority") {
                       ... on ProjectV2SingleSelectField {
@@ -83,9 +85,9 @@ jobs:
                 }
               }
             `;
-            
+
             const fieldResult = await github.graphql(fieldQuery);
-            const field = fieldResult.viewer.projectV2.field;
+            const field = fieldResult.user.projectV2.field;
             
             let optionId = null;
             if (priority) {
@@ -101,7 +103,7 @@ jobs:
             // Get the item ID in the project
             const itemQuery = `
               query {
-                viewer {
+                user(login: "sefk") {
                   projectV2(number: 1) {
                     items(first: 100) {
                       nodes {
@@ -126,9 +128,9 @@ jobs:
                 }
               }
             `;
-            
+
             const itemResult = await github.graphql(itemQuery);
-            const projectItem = itemResult.viewer.projectV2.items.nodes.find(
+            const projectItem = itemResult.user.projectV2.items.nodes.find(
               item => item.content.number === issue.number && 
                        item.content.repository.nameWithOwner === context.repo.owner + '/' + context.repo.repo
             );
