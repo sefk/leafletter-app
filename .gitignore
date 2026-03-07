@@ -19,4 +19,4 @@ dump.rdb
 *.swp
 
 # Claude
-.claude/
+.claude/settings.local.json
