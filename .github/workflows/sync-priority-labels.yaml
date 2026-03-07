@@ -17,7 +17,7 @@ jobs:
           script: |
             const issue = context.payload.issue || context.payload.pull_request;
             const labels = issue.labels.map(l => l.name);
-            
+
             // Determine priority from labels
             let priority = null;
             if (labels.includes('P0')) {
@@ -26,10 +26,12 @@ jobs:
               priority = 'P1';
             } else if (labels.includes('P2')) {
               priority = 'P2';
+            } else if (labels.includes('P3')) {
+              priority = 'P3';
             }
-            
+
             const owner = context.repo.owner;
-            
+
             // Get the project ID using GraphQL - query the viewer's projects
             const projectQuery = `
               query {
@@ -48,22 +50,22 @@ jobs:
                 }
               }
             `;
-            
+
             const projectResult = await github.graphql(projectQuery);
             const project = projectResult.viewer.projectV2;
-            
+
             if (!project) {
               core.setFailed('Could not find project 1');
               return;
             }
-            
+
             // Find the Priority field
             const priorityField = project.fields.nodes.find(f => f.name === 'Priority');
             if (!priorityField) {
               core.setFailed('Could not find Priority field in project');
               return;
             }
-            
+
             // Get the field options to find the correct option ID
             const fieldQuery = `
               query {
@@ -152,7 +154,7 @@ jobs:
                   }
                 }
               `;
-              
+
               await github.graphql(updateQuery);
               core.info(`Updated priority to ${priority} for issue #${issue.number}`);
             } else {
@@ -170,7 +172,7 @@ jobs:
                   }
                 }
               `;
-              
+
               await github.graphql(clearQuery);
               core.info(`Cleared priority for issue #${issue.number}`);
             }
