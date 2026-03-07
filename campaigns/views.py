@@ -29,7 +29,14 @@ def manage_login(request):
             login(request, user)
             return redirect(next_url)
         login_error = True
-    return render(request, 'campaigns/manage/login.html', {'next': next_url, 'login_error': login_error})
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    admin_emails = list(User.objects.filter(is_superuser=True).values_list('email', flat=True))
+    return render(request, 'campaigns/manage/login.html', {
+        'next': next_url,
+        'login_error': login_error,
+        'admin_emails': admin_emails,
+    })
 
 
 @require_POST
