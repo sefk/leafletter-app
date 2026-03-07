@@ -320,7 +320,7 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
             requests.exceptions.HTTPError) as exc:
         is_server_error = (
             not isinstance(exc, requests.exceptions.HTTPError)
-            or (exc.response is not None and exc.response.status_code >= 500)
+            or (exc.response is not None and (exc.response.status_code >= 500 or exc.response.status_code == 429))
         )
         if is_server_error and self.request.retries < self.max_retries:
             countdown = min(60 * 2 ** self.request.retries, 600)
