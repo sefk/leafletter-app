@@ -1,0 +1,53 @@
+name: Debug Projects
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List available projects
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Try to get user projects
+            try {
+              const userProjects = await github.graphql(`
+                query {
+                  viewer {
+                    projectsV2(first: 10) {
+                      nodes {
+                        id
+                        number
+                        title
+                      }
+                    }
+                  }
+                }
+              `);
+              console.log('User Projects:', JSON.stringify(userProjects, null, 2));
+            } catch (e) {
+              console.log('Error getting user projects:', e.message);
+            }
+            
+            // Try to get repo projects
+            try {
+              const repoProjects = await github.graphql(`
+                query {
+                  repository(owner: "sefk", name: "leafletter-app") {
+                    projectsV2(first: 10) {
+                      nodes {
+                        id
+                        number
+                        title
+                      }
+                    }
+                  }
+                }
+              `);
+              console.log('Repo Projects:', JSON.stringify(repoProjects, null, 2));
+            } catch (e) {
+              console.log('Error getting repo projects:', e.message);
+            }
