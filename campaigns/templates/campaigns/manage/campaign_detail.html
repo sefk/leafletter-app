@@ -57,28 +57,28 @@
 </div>
 
 <!-- Status Panel -->
-<div class="card">
+<style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
+<div class="card"
+     data-fetch-status-url="{% url 'manage_campaign_fetch_status' campaign.slug %}"
+     data-initial-map-status="{{ campaign.map_status }}">
   <div class="card-title">Street Management</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
     Streets are fetched from OpenStreetMap and put over the map tiles. Streets are split up into very small "blocks", sometimes much more granular than normal blocks. There are limits to the number of blocks in a campaign.
   </p>
   <div style="margin-bottom:12px;">
     Map status:
-    <span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
+    <span id="sm-map-status-badge" class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
+  </div>
+
+  <!-- In-progress indicator — shown while a fetch is running, hidden when done -->
+  <div id="sm-inflight-banner" style="display:{% if campaign.map_status == 'generating' or campaign.map_status == 'pending' %}flex{% else %}none{% endif %}; align-items:center; gap:10px; margin-bottom:12px;">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
+    <span style="color:#666;">Street import in progress — status updates automatically.</span>
   </div>
 
   {% if city_fetch_jobs %}
     <!-- Per-city fetch status table -->
-    {% if campaign.map_status == 'generating' or campaign.map_status == 'pending' %}
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
-        <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
-      </div>
-      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
-      <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
-    {% endif %}
-
-    <table style="margin:0 0 16px; width:100%;">
+    <table id="sm-city-table" style="margin:0 0 16px; width:100%;">
       <thead>
         <tr>
           <th style="width:38%;">City</th>
@@ -88,28 +88,28 @@
           <th style="width:110px;"></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="sm-city-tbody">
         {% for job in city_fetch_jobs %}
-        <tr>
+        <tr id="sm-city-row-{{ job.city_index }}">
           <td style="font-size:0.9rem;">{{ job.city_name }}</td>
           <td><span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span></td>
-          <td style="text-align:right; font-size:0.9rem;">{{ job.block_count }}</td>
-          <td style="font-size:0.85rem; color:#c62828;">
+          <td style="text-align:right; font-size:0.9rem;" class="sm-block-count">{{ job.block_count }}</td>
+          <td style="font-size:0.85rem; color:#c62828;" class="sm-error">
             {% if job.error %}{{ job.error }}{% endif %}
           </td>
-          <td>
+          <td class="sm-actions">
             <div style="display:flex; gap:4px;">
               {% if job.status == 'ready' or job.status == 'error' %}
               <form method="post" action="/manage/{{ campaign.slug }}/refetch-city/{{ job.city_index }}/" style="margin:0;">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
-                        title="Re-fetch this city">↺</button>
+                        title="Re-fetch this city">&#x21BA;</button>
               </form>
               <form method="post" action="/manage/{{ campaign.slug }}/delete-city/{{ job.city_index }}/" style="margin:0;"
                     onsubmit="return confirm('Delete all blocks for {{ job.city_name|escapejs }}? This cannot be undone.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-danger" style="padding:3px 10px; font-size:0.8rem;"
-                        title="Delete blocks for this city">✕</button>
+                        title="Delete blocks for this city">&#x2715;</button>
               </form>
               {% endif %}
             </div>
@@ -120,7 +120,7 @@
       <tfoot>
         <tr>
           <td colspan="2" style="font-size:0.85rem; color:#666; padding-top:6px;">Total</td>
-          <td style="text-align:right; font-weight:600; padding-top:6px;">{{ total_blocks }}</td>
+          <td id="sm-total-blocks" style="text-align:right; font-weight:600; padding-top:6px;">{{ total_blocks }}</td>
           <td colspan="2"></td>
         </tr>
       </tfoot>
@@ -133,29 +133,7 @@
 
   {% else %}
     <!-- Legacy: no city fetch jobs yet (pre-migration campaigns) -->
-    {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
-        <span style="color:#666;">Street import in progress — this page refreshes automatically every 5 seconds.</span>
-      </div>
-      <table style="margin:0 0 4px;">
-        <tr>
-          <th style="width:140px;">Stage</th>
-          <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
-        </tr>
-        <tr>
-          <th>Streets so far</th>
-          <td>{{ total_blocks }}</td>
-        </tr>
-        <tr>
-          <th>Last activity</th>
-          <td>{{ campaign.updated_at|timesince }} ago</td>
-        </tr>
-      </table>
-      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
-      <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
-
-    {% elif campaign.map_status == 'ready' or campaign.map_status == 'warning' %}
+    {% if campaign.map_status == 'ready' or campaign.map_status == 'warning' %}
       {% if campaign.map_status == 'warning' %}
       <p style="color:#e65100; margin-bottom:8px;">
         <strong>Some cities could not be fetched:</strong> {{ campaign.map_error }}
@@ -163,7 +141,7 @@
       {% endif %}
       <div style="margin-bottom:16px;">
         <div class="stat">
-          <div class="stat-value">{{ total_blocks }}</div>
+          <div class="stat-value" id="sm-total-blocks">{{ total_blocks }}</div>
           <div class="stat-label">total blocks</div>
         </div>
       </div>
@@ -191,8 +169,104 @@
     {% endif %}
   {% endif %}
 
-
 </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var card = document.querySelector('[data-fetch-status-url]');
+  if (!card) return;
+
+  var fetchStatusUrl = card.dataset.fetchStatusUrl;
+  var initialStatus  = card.dataset.initialMapStatus;
+
+  // Terminal states — no polling needed.
+  var TERMINAL = { 'ready': true, 'warning': true, 'error': true };
+  if (TERMINAL[initialStatus]) return;
+
+  var banner      = document.getElementById('sm-inflight-banner');
+  var statusBadge = document.getElementById('sm-map-status-badge');
+  var totalEl     = document.getElementById('sm-total-blocks');
+  var tbody       = document.getElementById('sm-city-tbody');
+  var csrfToken   = '{{ csrf_token }}';
+  var campaignSlug = '{{ campaign.slug }}';
+
+  // Badge CSS class: badge-<status>
+  function setStatusBadge(status, display) {
+    statusBadge.className = 'badge badge-' + status;
+    statusBadge.textContent = display;
+  }
+
+  // Build the action-button HTML for a city row, mirroring the Django template logic.
+  function actionHtml(job) {
+    if (job.status !== 'ready' && job.status !== 'error') return '';
+    // We embed a hidden CSRF input inside each form so they work without a page reload.
+    return '<div style="display:flex; gap:4px;">' +
+      '<form method="post" action="/manage/' + campaignSlug + '/refetch-city/' + job.city_index + '/" style="margin:0;">' +
+      '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+      '<button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;" title="Re-fetch this city">&#x21BA;</button>' +
+      '</form>' +
+      '<form method="post" action="/manage/' + campaignSlug + '/delete-city/' + job.city_index + '/" style="margin:0;"' +
+      ' onsubmit="return confirm(\'Delete all blocks for this city? This cannot be undone.\')">' +
+      '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+      '<button type="submit" class="btn btn-danger" style="padding:3px 10px; font-size:0.8rem;" title="Delete blocks for this city">&#x2715;</button>' +
+      '</form>' +
+      '</div>';
+  }
+
+  function updateRow(job) {
+    var row = document.getElementById('sm-city-row-' + job.city_index);
+    if (!row) return;
+    var badgeEl = row.querySelector('td:nth-child(2) .badge');
+    if (badgeEl) {
+      badgeEl.className = 'badge badge-' + job.status;
+      badgeEl.textContent = job.status_display;
+    }
+    var blockEl = row.querySelector('.sm-block-count');
+    if (blockEl) blockEl.textContent = job.block_count;
+    var errEl = row.querySelector('.sm-error');
+    if (errEl) errEl.textContent = job.error || '';
+    var actEl = row.querySelector('.sm-actions');
+    if (actEl) actEl.innerHTML = actionHtml(job);
+  }
+
+  var pollTimer = null;
+
+  function poll() {
+    fetch(fetchStatusUrl, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        // Update map-level badge.
+        setStatusBadge(data.map_status, data.map_status_display);
+
+        // Update total block count.
+        if (totalEl) totalEl.textContent = data.total_blocks;
+
+        // Update per-city rows.
+        if (tbody && data.city_fetch_jobs) {
+          data.city_fetch_jobs.forEach(updateRow);
+        }
+
+        if (TERMINAL[data.map_status]) {
+          // Import finished — hide the spinner banner and stop polling.
+          if (banner) banner.style.display = 'none';
+          clearTimeout(pollTimer);
+        } else {
+          // Still running — schedule the next poll.
+          pollTimer = setTimeout(poll, 5000);
+        }
+      })
+      .catch(function () {
+        // Network error — back off and try again.
+        pollTimer = setTimeout(poll, 10000);
+      });
+  }
+
+  // Start polling immediately.
+  pollTimer = setTimeout(poll, 5000);
+})();
+</script>
 
 <!-- Geographical Limit Editor -->
 {% if campaign.bbox %}

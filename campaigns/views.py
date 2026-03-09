@@ -281,6 +281,37 @@ def manage_campaign_detail(request, slug):
 
 
 @_login_required
+@require_GET
+def manage_campaign_fetch_status(request, slug):
+    """
+    Lightweight JSON endpoint polled by the manage detail page while a street
+    import is in progress.  Returns the campaign-level map_status plus the
+    per-city job table so the page can update in-place without a full reload.
+    """
+    campaign = get_object_or_404(Campaign, slug=slug)
+    city_fetch_jobs = list(campaign.city_fetch_jobs.all())
+    blocks_per_city = dict(
+        campaign.streets.values('city_index').annotate(c=Count('id')).values_list('city_index', 'c')
+    )
+    jobs_data = []
+    for job in city_fetch_jobs:
+        jobs_data.append({
+            'city_index': job.city_index,
+            'city_name': job.city_name,
+            'status': job.status,
+            'status_display': job.get_status_display(),
+            'block_count': blocks_per_city.get(job.city_index, 0),
+            'error': job.error or '',
+        })
+    return JsonResponse({
+        'map_status': campaign.map_status,
+        'map_status_display': campaign.get_map_status_display(),
+        'total_blocks': campaign.streets.count(),
+        'city_fetch_jobs': jobs_data,
+    })
+
+
+@_login_required
 def manage_campaign_edit(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     if request.method == 'POST':

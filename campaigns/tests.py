@@ -1639,3 +1639,149 @@ class ApplyCityListChangesTest(TestCase):
         _apply_city_list_changes(cities, campaign)
 
         self.assertEqual(CityFetchJob.objects.filter(campaign=campaign).count(), 2)
+
+
+# ── Fetch-status endpoint tests ───────────────────────────────────────────────
+
+class FetchStatusEndpointTest(TestCase):
+    """Tests for the manage_campaign_fetch_status JSON polling endpoint."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='manager', password='pw')
+        self.campaign = make_campaign(
+            slug='fetch-status-camp',
+            status='draft',
+            map_status='generating',
+        )
+
+    def _login(self):
+        self.client.login(username='manager', password='pw')
+
+    def _url(self):
+        return f'/manage/{self.campaign.slug}/fetch-status/'
+
+    # ── Auth guard ────────────────────────────────────────────────────────────
+
+    def test_anonymous_redirects_to_login(self):
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+
+    # ── Basic response shape ──────────────────────────────────────────────────
+
+    def test_returns_200_json_for_authenticated_user(self):
+        self._login()
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'application/json')
+
+    def test_response_contains_required_top_level_keys(self):
+        self._login()
+        data = self.client.get(self._url()).json()
+        for key in ('map_status', 'map_status_display', 'total_blocks', 'city_fetch_jobs'):
+            self.assertIn(key, data)
+
+    def test_map_status_matches_campaign(self):
+        self._login()
+        data = self.client.get(self._url()).json()
+        self.assertEqual(data['map_status'], 'generating')
+
+    # ── Per-city job data ─────────────────────────────────────────────────────
+
+    def test_city_fetch_jobs_empty_when_no_jobs(self):
+        self._login()
+        data = self.client.get(self._url()).json()
+        self.assertEqual(data['city_fetch_jobs'], [])
+
+    def test_city_fetch_jobs_includes_each_job(self):
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Springfield',
+            status='generating',
+        )
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=1,
+            city_name='Shelbyville',
+            status='pending',
+        )
+        self._login()
+        data = self.client.get(self._url()).json()
+        self.assertEqual(len(data['city_fetch_jobs']), 2)
+        names = {j['city_name'] for j in data['city_fetch_jobs']}
+        self.assertEqual(names, {'Springfield', 'Shelbyville'})
+
+    def test_city_job_contains_required_fields(self):
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Springfield',
+            status='ready',
+        )
+        self._login()
+        job = self.client.get(self._url()).json()['city_fetch_jobs'][0]
+        for key in ('city_index', 'city_name', 'status', 'status_display', 'block_count', 'error'):
+            self.assertIn(key, job, f'Missing key: {key}')
+
+    def test_block_count_reflects_streets(self):
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Springfield',
+            status='ready',
+        )
+        # Create 3 streets tagged to city_index=0.
+        for i in range(3):
+            Street.objects.create(
+                campaign=self.campaign,
+                osm_id=1000 + i,
+                name=f'Street {i}',
+                geometry=GEOM,
+                block_index=i,
+                city_index=0,
+            )
+        self._login()
+        data = self.client.get(self._url()).json()
+        self.assertEqual(data['total_blocks'], 3)
+        job = data['city_fetch_jobs'][0]
+        self.assertEqual(job['block_count'], 3)
+
+    def test_error_field_present_when_job_has_error(self):
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Errorville',
+            status='error',
+            error='City not found in Nominatim',
+        )
+        self._login()
+        job = self.client.get(self._url()).json()['city_fetch_jobs'][0]
+        self.assertEqual(job['error'], 'City not found in Nominatim')
+
+    def test_error_field_empty_string_when_no_error(self):
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Happytown',
+            status='ready',
+            error='',
+        )
+        self._login()
+        job = self.client.get(self._url()).json()['city_fetch_jobs'][0]
+        self.assertEqual(job['error'], '')
+
+    # ── Terminal states ───────────────────────────────────────────────────────
+
+    def test_map_status_ready_returned_correctly(self):
+        self.campaign.map_status = 'ready'
+        self.campaign.save(update_fields=['map_status'])
+        self._login()
+        data = self.client.get(self._url()).json()
+        self.assertEqual(data['map_status'], 'ready')
+
+    def test_404_for_unknown_campaign(self):
+        self._login()
+        resp = self.client.get('/manage/no-such-campaign/fetch-status/')
+        self.assertEqual(resp.status_code, 404)
