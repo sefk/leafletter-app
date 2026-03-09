@@ -1,0 +1,10 @@
+{
+  "allowedBashCommands": [
+    "railway status",
+    "railway logs",
+    "railway variables",
+    "railway environment",
+    "railway service",
+    "railway run"
+  ]
+}
