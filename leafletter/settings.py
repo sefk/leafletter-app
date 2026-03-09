@@ -20,7 +20,10 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Set CSRF_TRUSTED_ORIGINS to a comma-separated list of trusted origins, e.g.
 # "https://web-production-b863b.up.railway.app,https://yourdomain.com"
-_csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', 'https://leafletter.app')
+# Default includes both the Railway subdomain and custom domain so this works
+# without needing a Railway env var override.
+_csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS',
+    'https://web-production-b863b.up.railway.app,https://leafletter.app')
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(',') if o.strip()]
 
 INSTALLED_APPS = [
