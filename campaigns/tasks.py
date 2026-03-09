@@ -15,6 +15,12 @@ NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 NOMINATIM_HEADERS = {'User-Agent': 'Leafletter/1.0 (github.com/sefk/leafletter-app)'}
 CITY_TYPES = {'city', 'town', 'village', 'municipality', 'borough'}
 
+# Overpass server-side timeout (embedded in query) and HTTP client timeout.
+# Large cities like Fresno can exceed 60s of server processing time, causing
+# silent empty-result failures. See GitHub issue #70.
+OVERPASS_SERVER_TIMEOUT = 180  # seconds, embedded as [timeout:N] in query
+OVERPASS_HTTP_TIMEOUT = 240    # seconds, passed to requests.post(timeout=)
+
 # Highway types to include (exclude footways, paths, etc.)
 HIGHWAY_INCLUDE = {
     'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
@@ -55,7 +61,7 @@ def query_overpass(city) -> list[dict]:
         area_id = 3600000000 + city['osm_id']
         city_label = city.get('name', str(city['osm_id']))
         query = f"""
-[out:json][timeout:60];
+[out:json][timeout:{OVERPASS_SERVER_TIMEOUT}];
 area({area_id})->.searchArea;
 way["highway"](area.searchArea);
 out geom;
@@ -64,18 +70,28 @@ out geom;
         city_name = city if isinstance(city, str) else city.get('name', str(city))
         city_label = city_name
         query = f"""
-[out:json][timeout:60];
+[out:json][timeout:{OVERPASS_SERVER_TIMEOUT}];
 area[name="{city_name}"]->.searchArea;
 way["highway"](area.searchArea);
 out geom;
 """
+    logger.info(
+        "Overpass query starting for city %s (server_timeout=%ds, http_timeout=%ds)",
+        city_label, OVERPASS_SERVER_TIMEOUT, OVERPASS_HTTP_TIMEOUT,
+    )
     try:
-        resp = requests.post(OVERPASS_URL, data={'data': query}, timeout=90)
+        resp = requests.post(OVERPASS_URL, data={'data': query}, timeout=OVERPASS_HTTP_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
         logger.error("Overpass query failed for city %s: %s", city_label, exc)
         raise
+
+    response_bytes = len(resp.content)
+    logger.info(
+        "Overpass query complete for city %s: %d elements, response size %.1f KB",
+        city_label, len(data.get('elements', [])), response_bytes / 1024,
+    )
 
     ways = []
     for element in data.get('elements', []):

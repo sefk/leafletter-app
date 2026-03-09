@@ -1448,6 +1448,36 @@ class QueryOverpassDictCityTest(TestCase):
         call_data = mock_post.call_args[1]['data']['data']
         self.assertIn('area[name="Palo Alto"]', call_data)
 
+    @patch('campaigns.tasks.requests.post')
+    def test_query_uses_overpass_server_timeout_constant(self, mock_post):
+        """The query must embed OVERPASS_SERVER_TIMEOUT, not a hard-coded value."""
+        from campaigns.tasks import OVERPASS_SERVER_TIMEOUT
+        mock_post.return_value = _make_overpass_response()
+        query_overpass('Palo Alto')
+        call_data = mock_post.call_args[1]['data']['data']
+        self.assertIn(f'[timeout:{OVERPASS_SERVER_TIMEOUT}]', call_data)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_http_request_uses_overpass_http_timeout_constant(self, mock_post):
+        """requests.post must be called with OVERPASS_HTTP_TIMEOUT."""
+        from campaigns.tasks import OVERPASS_HTTP_TIMEOUT
+        mock_post.return_value = _make_overpass_response()
+        query_overpass('Palo Alto')
+        call_kwargs = mock_post.call_args[1]
+        self.assertEqual(call_kwargs['timeout'], OVERPASS_HTTP_TIMEOUT)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_server_timeout_is_at_least_180(self, mock_post):
+        """Server-side timeout must be large enough to handle big cities (issue #70)."""
+        from campaigns.tasks import OVERPASS_SERVER_TIMEOUT
+        self.assertGreaterEqual(OVERPASS_SERVER_TIMEOUT, 180)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_http_timeout_is_at_least_240(self, mock_post):
+        """HTTP client timeout must exceed the server-side timeout by a safe margin."""
+        from campaigns.tasks import OVERPASS_HTTP_TIMEOUT
+        self.assertGreaterEqual(OVERPASS_HTTP_TIMEOUT, 240)
+
 
 # ── Manager UI tests: city_search view ───────────────────────────────────────
 
