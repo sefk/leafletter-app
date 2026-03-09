@@ -6,7 +6,10 @@ Run with:
 """
 import json
 import uuid
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
+
+from django.core import mail
 
 import requests
 
@@ -16,11 +19,13 @@ from django.contrib.gis.geos import LineString
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.db import IntegrityError
 from django.test import Client, RequestFactory, TestCase
+from django.utils import timezone
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
 from .models import Campaign, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
-                    lookup_city, queue_city_fetches, query_overpass, split_way_at_intersections)
+                    lookup_city, queue_city_fetches, query_overpass, split_way_at_intersections,
+                    watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES)
 from .views import _apply_city_list_changes
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
@@ -1815,3 +1820,210 @@ class FetchStatusEndpointTest(TestCase):
         self._login()
         resp = self.client.get('/manage/no-such-campaign/fetch-status/')
         self.assertEqual(resp.status_code, 404)
+
+
+# ── Watchdog tests ─────────────────────────────────────────────────────────────
+
+class WatchdogStuckJobsTest(TestCase):
+    """Tests for watchdog_stuck_jobs periodic task (issue #69)."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='watchdog-test', cities=['Springfield', 'Shelbyville'])
+        # A superuser with an email address, so watchdog notification tests work
+        # without any override_settings — the task queries the DB for recipients.
+        self.superuser = User.objects.create_superuser(
+            username='admin',
+            email='admin@example.com',
+            password='secret',
+        )
+
+    def _make_stuck_job(self, city_index=0, city_name='Springfield', minutes_old=None):
+        """Create a CityFetchJob in 'generating' status with an old updated_at."""
+        if minutes_old is None:
+            minutes_old = STUCK_JOB_THRESHOLD_MINUTES + 10
+        job = CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=city_index,
+            city_name=city_name,
+            status='generating',
+        )
+        # Backdating updated_at requires a direct DB update (auto_now ignores assignments).
+        old_time = timezone.now() - timedelta(minutes=minutes_old)
+        CityFetchJob.objects.filter(pk=job.pk).update(updated_at=old_time)
+        return job
+
+    # ── Detection ─────────────────────────────────────────────────────────────
+
+    def test_returns_zero_when_no_stuck_jobs(self):
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['found'], 0)
+        self.assertEqual(result['marked_error'], [])
+
+    def test_detects_single_stuck_job(self):
+        job = self._make_stuck_job()
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['found'], 1)
+        self.assertIn(job.pk, result['marked_error'])
+
+    def test_detects_multiple_stuck_jobs(self):
+        job0 = self._make_stuck_job(city_index=0, city_name='Springfield')
+        job1 = self._make_stuck_job(city_index=1, city_name='Shelbyville')
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['found'], 2)
+        self.assertIn(job0.pk, result['marked_error'])
+        self.assertIn(job1.pk, result['marked_error'])
+
+    # ── Threshold boundary ────────────────────────────────────────────────────
+
+    def test_recent_generating_job_not_flagged(self):
+        """A job that just started (5 min ago) should not be touched."""
+        CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Springfield',
+            status='generating',
+        )
+        # updated_at is auto_now — it's only seconds old, well within threshold.
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['found'], 0)
+
+    def test_job_just_over_threshold_is_flagged(self):
+        """A job updated exactly threshold+1 minutes ago should be caught."""
+        job = self._make_stuck_job(minutes_old=STUCK_JOB_THRESHOLD_MINUTES + 1)
+        result = watchdog_stuck_jobs()
+        self.assertIn(job.pk, result['marked_error'])
+
+    # ── Status transition ─────────────────────────────────────────────────────
+
+    def test_stuck_job_marked_as_error(self):
+        job = self._make_stuck_job()
+        watchdog_stuck_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'error')
+
+    def test_stuck_job_error_message_set(self):
+        job = self._make_stuck_job()
+        watchdog_stuck_jobs()
+        job.refresh_from_db()
+        self.assertIn('watchdog', job.error)
+        self.assertTrue(len(job.error) > 0)
+
+    def test_non_generating_jobs_not_touched(self):
+        """Jobs in ready/error/pending should never be flagged."""
+        for idx, status in enumerate(['ready', 'error', 'pending']):
+            job = CityFetchJob.objects.create(
+                campaign=self.campaign,
+                city_index=idx,
+                city_name=f'City{idx}',
+                status=status,
+            )
+            old_time = timezone.now() - timedelta(minutes=STUCK_JOB_THRESHOLD_MINUTES + 60)
+            CityFetchJob.objects.filter(pk=job.pk).update(updated_at=old_time)
+
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['found'], 0)
+
+    # ── Campaign map_status sync ──────────────────────────────────────────────
+
+    def test_campaign_map_status_updated_after_watchdog(self):
+        """
+        When the only generating job is marked error by the watchdog,
+        campaign.map_status should transition out of 'generating'.
+        """
+        self.campaign.map_status = 'generating'
+        self.campaign.save(update_fields=['map_status'])
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.campaign.refresh_from_db()
+        # With one job now in 'error', map_status should be 'error' (not 'generating').
+        self.assertNotEqual(self.campaign.map_status, 'generating')
+
+    # ── Email notification ────────────────────────────────────────────────────
+    # The watchdog emails active superusers (queried from the DB at runtime).
+    # setUp already creates self.superuser with email='admin@example.com'.
+
+    def test_no_email_sent_when_no_stuck_jobs(self):
+        """Watchdog must not send email when everything is clean."""
+        watchdog_stuck_jobs()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_no_email_sent_when_no_superuser_has_email(self):
+        """Watchdog should skip notification silently if no superuser has an email."""
+        self.superuser.email = ''
+        self.superuser.save(update_fields=['email'])
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_email_sent_when_stuck_job_found(self):
+        """At least one email should be sent when a stuck job is detected."""
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_single_email_for_multiple_stuck_jobs(self):
+        """All stuck jobs should be batched into one email, not one per job."""
+        self._make_stuck_job(city_index=0, city_name='Springfield')
+        self._make_stuck_job(city_index=1, city_name='Shelbyville')
+        watchdog_stuck_jobs()
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_email_recipient_is_superuser(self):
+        """Email should be addressed to the superuser's email."""
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertIn('admin@example.com', mail.outbox[0].to)
+
+    def test_email_sent_to_all_superusers(self):
+        """When multiple superusers exist, all receive the notification."""
+        User.objects.create_superuser(
+            username='admin2', email='admin2@example.com', password='secret',
+        )
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        recipients = mail.outbox[0].to
+        self.assertIn('admin@example.com', recipients)
+        self.assertIn('admin2@example.com', recipients)
+
+    def test_inactive_superuser_excluded(self):
+        """An inactive superuser should not receive the notification."""
+        self.superuser.is_active = False
+        self.superuser.save(update_fields=['is_active'])
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        # No active superusers with email remain, so no email should be sent.
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_email_subject_contains_count(self):
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertIn('1', mail.outbox[0].subject)
+
+    def test_email_subject_contains_watchdog(self):
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertIn('Watchdog', mail.outbox[0].subject)
+
+    def test_email_body_contains_city_name(self):
+        self._make_stuck_job(city_name='Springfield')
+        watchdog_stuck_jobs()
+        self.assertIn('Springfield', mail.outbox[0].body)
+
+    def test_email_body_contains_campaign_slug(self):
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertIn(self.campaign.slug, mail.outbox[0].body)
+
+    def test_email_body_contains_threshold(self):
+        self._make_stuck_job()
+        watchdog_stuck_jobs()
+        self.assertIn(str(STUCK_JOB_THRESHOLD_MINUTES), mail.outbox[0].body)
+
+    def test_email_body_lists_all_stuck_jobs(self):
+        """When two jobs are stuck, both city names should appear in the email body."""
+        self._make_stuck_job(city_index=0, city_name='Springfield')
+        self._make_stuck_job(city_index=1, city_name='Shelbyville')
+        watchdog_stuck_jobs()
+        body = mail.outbox[0].body
+        self.assertIn('Springfield', body)
+        self.assertIn('Shelbyville', body)

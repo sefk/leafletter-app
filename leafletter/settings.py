@@ -116,6 +116,27 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = '/manage/login/'
 
+# ── Email ──────────────────────────────────────────────────────────────────────
+# Watchdog notification emails are sent to all active superusers (queried at
+# runtime), so no ADMINS list is needed here.
+
+# Email backend: defaults to Django's standard smtp backend so that Django's
+# test runner can substitute locmem (it only does so when the backend is smtp).
+# In local dev you can set EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+# in your .env to avoid needing a real mail server.
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend',
+)
+
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
+SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
+
 # Celery
 _mysql_user = os.environ.get('MYSQL_USER', 'leafletter')
 _mysql_password = os.environ.get('MYSQL_PASSWORD', 'leafletter')
@@ -126,3 +147,12 @@ CELERY_BROKER_URL = f'sqla+mysql://{_mysql_user}:{_mysql_password}@{_mysql_host}
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
+
+from celery.schedules import crontab  # noqa: E402
+CELERY_BEAT_SCHEDULE = {
+    'watchdog-stuck-cityfetchjobs': {
+        'task': 'campaigns.tasks.watchdog_stuck_jobs',
+        # Run every 15 minutes; detects jobs stuck in 'generating' for >30 min.
+        'schedule': crontab(minute='*/15'),
+    },
+}

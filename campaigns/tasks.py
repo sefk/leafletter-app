@@ -1,10 +1,14 @@
 import json
 import logging
 from collections import Counter
+from datetime import timedelta
 
 import requests
 from celery import shared_task
+from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import LineString
+from django.core.mail import send_mail
+from django.utils import timezone
 
 from .models import Campaign, CityFetchJob, Street
 
@@ -370,6 +374,113 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
 
     finally:
         _sync_campaign_map_status(campaign_id)
+
+
+# ── Watchdog: detect and recover stuck CityFetchJob records ───────────────────
+
+STUCK_JOB_THRESHOLD_MINUTES = 30
+
+
+@shared_task
+def watchdog_stuck_jobs() -> dict:
+    """
+    Periodic task that finds CityFetchJob records stuck in 'generating' status
+    for longer than STUCK_JOB_THRESHOLD_MINUTES and marks them as 'error'.
+
+    Run every 15 minutes via Celery beat (configured in CELERY_BEAT_SCHEDULE).
+
+    Returns a summary dict: {'found': N, 'marked_error': [list of job PKs]}.
+    """
+    cutoff = timezone.now() - timedelta(minutes=STUCK_JOB_THRESHOLD_MINUTES)
+    stuck_jobs = CityFetchJob.objects.filter(
+        status='generating',
+        updated_at__lt=cutoff,
+    ).select_related('campaign')
+
+    error_msg = (
+        f'Job stuck in generating status for more than '
+        f'{STUCK_JOB_THRESHOLD_MINUTES} minutes; marked as error by watchdog'
+    )
+
+    marked = []
+    job_details = []  # collected for the admin email body
+    for job in stuck_jobs:
+        logger.warning(
+            'watchdog_stuck_jobs: job pk=%d campaign=%s city=%s stuck since %s — marking error',
+            job.pk, job.campaign_id, job.city_name, job.updated_at.isoformat(),
+        )
+        CityFetchJob.objects.filter(pk=job.pk).update(
+            status='error',
+            error=error_msg,
+        )
+        _sync_campaign_map_status(job.campaign_id)
+        marked.append(job.pk)
+        job_details.append({
+            'pk': job.pk,
+            'city_name': job.city_name,
+            'campaign_id': job.campaign_id,
+            'campaign_slug': job.campaign.slug,
+            'stuck_since': job.updated_at.isoformat(),
+        })
+
+    if marked:
+        logger.warning(
+            'watchdog_stuck_jobs: marked %d stuck job(s) as error: pks=%s',
+            len(marked), marked,
+        )
+        _send_watchdog_admin_email(job_details)
+    else:
+        logger.info('watchdog_stuck_jobs: no stuck jobs found')
+
+    return {'found': len(marked), 'marked_error': marked}
+
+
+def _send_watchdog_admin_email(job_details: list[dict]) -> None:
+    """
+    Send a single batched email to all active superusers summarising the jobs
+    the watchdog just marked as error.  Uses send_mail() addressed to every
+    User with is_superuser=True, is_active=True, and a non-empty email address.
+    Failures are logged but not re-raised — a broken email backend must not
+    abort the watchdog task itself.
+    """
+    User = get_user_model()
+    recipients = list(
+        User.objects.filter(is_superuser=True, is_active=True)
+        .exclude(email='')
+        .values_list('email', flat=True)
+    )
+    if not recipients:
+        logger.warning('watchdog_stuck_jobs: no superuser email addresses found; skipping notification')
+        return
+
+    n = len(job_details)
+    subject = f'Watchdog: {n} stuck CityFetchJob{"s" if n != 1 else ""} marked as error'
+
+    lines = [
+        f'{n} CityFetchJob record{"s were" if n != 1 else " was"} found stuck in '
+        f'"generating" status for more than {STUCK_JOB_THRESHOLD_MINUTES} minutes '
+        f'and {"have" if n != 1 else "has"} been marked as "error".',
+        '',
+        'Affected jobs:',
+    ]
+    for d in job_details:
+        lines.append(
+            f'  - Job pk={d["pk"]}  city="{d["city_name"]}"'
+            f'  campaign slug="{d["campaign_slug"]}" (id={d["campaign_id"]})'
+            f'  stuck since {d["stuck_since"]}'
+        )
+    lines += [
+        '',
+        f'Threshold: {STUCK_JOB_THRESHOLD_MINUTES} minutes',
+        'No action is required if the underlying Celery worker has already recovered.',
+        'If the problem persists, check the worker logs and Overpass API availability.',
+    ]
+    message = '\n'.join(lines)
+
+    try:
+        send_mail(subject, message, from_email=None, recipient_list=recipients, fail_silently=False)
+    except Exception as exc:
+        logger.error('watchdog_stuck_jobs: failed to send admin email: %s', exc)
 
 
 # ── Backward-compat wrapper ────────────────────────────────────────────────────
