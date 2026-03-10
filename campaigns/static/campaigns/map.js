@@ -92,15 +92,28 @@
   // ── Loading state for "Log a Trip" button ────────────────────────────────
   const btnLogTrip = document.getElementById('btn-log-trip');
   btnLogTrip.disabled = true;
-  btnLogTrip.textContent = 'Loading streets… 0%';
+
+  function setLoadingStatus(msg) {
+    const el = document.getElementById('loading-status');
+    if (!el) return;
+    if (msg) {
+      el.textContent = msg;
+      el.style.display = 'block';
+    } else {
+      el.textContent = '';
+      el.style.display = 'none';
+    }
+  }
+
+  setLoadingStatus('Loading streets… 0%');
 
   // ── Load streets ─────────────────────────────────────────────────────────
-  fetchJSON(window.STREETS_URL, pct => { btnLogTrip.textContent = `Loading streets… ${pct}%`; })
+  fetchJSON(window.STREETS_URL, pct => { setLoadingStatus(`Loading streets… ${pct}%`); })
     .then(geojson => {
       if (!geojson.features || geojson.features.length === 0) {
         map.setView([0, 0], 2);
         btnLogTrip.disabled = false;
-        btnLogTrip.textContent = 'Log a Trip';
+        setLoadingStatus(null);
         return;
       }
 
@@ -192,18 +205,18 @@
       }
 
       // Load coverage by default
-      btnLogTrip.textContent = 'Loading coverage… 0%';
+      setLoadingStatus('Loading coverage… 0%');
       loadCoverage();
     })
     .catch(err => {
       console.error('Failed to load streets:', err);
       btnLogTrip.disabled = false;
-      btnLogTrip.textContent = 'Log a Trip';
+      setLoadingStatus(null);
     });
 
   // ── Coverage layer ────────────────────────────────────────────────────────
   function loadCoverage() {
-    fetchJSON(window.COVERAGE_URL, pct => { btnLogTrip.textContent = `Loading coverage… ${pct}%`; })
+    fetchJSON(window.COVERAGE_URL, pct => { setLoadingStatus(`Loading coverage… ${pct}%`); })
       .then(geojson => {
         // Remove existing layers
         tripLayers.forEach(layer => map.removeLayer(layer));
@@ -262,12 +275,12 @@
         applyCoverageMode();
         renderTripLegend();
         btnLogTrip.disabled = false;
-        btnLogTrip.textContent = 'Log a Trip';
+        setLoadingStatus(null);
       })
       .catch(err => {
         console.error('Failed to load coverage:', err);
         btnLogTrip.disabled = false;
-        btnLogTrip.textContent = 'Log a Trip';
+        setLoadingStatus(null);
       });
   }
 
