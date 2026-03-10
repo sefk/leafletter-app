@@ -1,0 +1,58 @@
+
+                         ┌───────────────────────────────┐
+                         │                               │
+                         │        List of Cities         │◀─────────────────────────────────────────
+                         │                               │                                         │
+                         └───────────────────────────────┘                                         │
+                                         │                                                         │
+                                         │                                                         │
+                                         │            Streets fetched from OSM by                  │
+                                         │            worker via celery, in                        │
+                                         │            parallel if possible                         │
+                                         │                                                         │
+                                         │                                                         │
+                                         ▼                                                         │
+                         ┌───────────────────────────────┐                                         │
+                         │                               │                                         │
+                         │        Streets Fetched        │                                         │
+                         │                               │                                         │
+                         └───────────────────────────────┘                                         │
+                                         │                                                         │
+                                         │                                                         │
+                                         │                                                         │
+                                         │             Manager defines edges of                    │
+                                         │             campaign via leaflet polygon                │
+                                         │             tool                                        │
+                                         │                                                         │
+                                         │                                                         │
+                                         ▼                                                         │
+                         ┌───────────────────────────────┐                                         │
+                         │                               │                                         │
+                   ──────▶       Geographic Limits       │                                         │
+                   │     │                               │                                         │
+                   │     └───────────────────────────────┘                                         │
+                   │                     │                                                         │
+                   │                     │               NEW BACKEND TASK: Streets                 │
+                   │                     │               within geo limits of campaign             │  Edit list of cities
+  Edit Geo Limits  │                     │               are rendered into single                  │
+                   │                     │               field by worker via celery                │
+                   │                     │                                                         │
+                   │                     │                                                         │
+                   │                     ▼                                                         │
+                   │     ┌───────────────────────────────┐                                         │
+                   │     │                               │                                         │
+                   │─────│       NEW "READY" STATE       │─────────────────────────────────────────│
+                         │                               │
+                         └───────────────────────────────┘
+                                         │
+                                         │
+                                         │
+                                         │               Published button
+                                         │
+                                         │
+                                         ▼
+                         ┌───────────────────────────────┐
+                         │                               │
+                         │           Published           │
+                         │                               │
+                         └───────────────────────────────┘

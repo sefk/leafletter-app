@@ -22,8 +22,15 @@ When a city street fetch is in progress, use AJAX polling instead of `location.r
 - Per-city rows have stable `id="sm-city-row-<city_index>"` for surgical DOM updates
 - CSRF injected into dynamically-built action forms via hidden input in the `actionHtml()` helper
 
+## MAP_STATUS flow (as of issue #78)
+
+- `pending` → `generating` (city fetches running) → `rendering` (GeoJSON building async) → `ready` or `warning`
+- `rendering` is a non-terminal state; polling continues automatically on the frontend
+- `render_campaign_geojson(campaign_id, final_status)` is the Celery task that builds GeoJSON; final_status is 'ready' or 'warning'
+- `_sync_campaign_map_status` computes bbox synchronously, sets status to 'rendering', dispatches `render_campaign_geojson.delay()`
+- `manage_campaign_update_geo_limit` returns `{'status': 'rendering', 'bbox': ...}` — not 'ok'
+
 ## Known Issues / Technical Debt
 
 - `fetch_city_osm_data` missing `acks_late=True` (issue #68)
-- No stuck-job watchdog for CityFetchJob (issue #69)
-- Overpass timeout too short for large cities like Fresno (issue #70)
+- Issues #68, #69, #70, #78 now resolved
