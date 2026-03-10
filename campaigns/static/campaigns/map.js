@@ -188,55 +188,30 @@
 
   function loadAllStreets() {
     const PAGE_SIZE = 2000;
-    const BATCH_SIZE = 5;  // parallel requests per batch
 
-    fetch(window.STREETS_URL + '?page=1&page_size=' + PAGE_SIZE)
-      .then(r => r.json())
-      .then(firstPage => {
-        if (!firstPage.features) return;
+    // Compute total pages from server-rendered STREETS_TOTAL so we can fire
+    // all requests simultaneously without waiting for a first-page response.
+    const totalStreets = window.STREETS_TOTAL || 0;
+    const totalPages = totalStreets > 0 ? Math.ceil(totalStreets / PAGE_SIZE) : 1;
 
-        addFeatures(firstPage.features);
+    let pagesLoaded = 0;
 
-        const totalPages = firstPage.total_pages || 1;
-        btnLogTrip.textContent = 'Loading streets… ' + Math.round(1 / totalPages * 100) + '%';
+    function fetchPage(p) {
+      return fetch(window.STREETS_URL + '?page=' + p + '&page_size=' + PAGE_SIZE)
+        .then(r => r.json())
+        .then(geojson => {
+          if (geojson.features) addFeatures(geojson.features);
+          pagesLoaded++;
+          btnLogTrip.textContent = 'Loading streets… ' + Math.round(pagesLoaded / totalPages * 100) + '%';
+        });
+    }
 
-        if (totalPages <= 1) {
-          initAfterStreetsLoaded();
-          return;
-        }
+    // Fire all page requests simultaneously.
+    const pages = [];
+    for (let p = 1; p <= totalPages; p++) pages.push(p);
 
-        // Build list of remaining page numbers
-        const remaining = [];
-        for (let p = 2; p <= totalPages; p++) remaining.push(p);
-
-        let pagesLoaded = 1;
-
-        function fetchBatch(pages) {
-          const promises = pages.map(p =>
-            fetch(window.STREETS_URL + '?page=' + p + '&page_size=' + PAGE_SIZE)
-              .then(r => r.json())
-              .then(geojson => {
-                if (geojson.features) addFeatures(geojson.features);
-                pagesLoaded++;
-                btnLogTrip.textContent = 'Loading streets… ' + Math.round(pagesLoaded / totalPages * 100) + '%';
-              })
-          );
-          return Promise.all(promises);
-        }
-
-        // Process remaining pages in batches of BATCH_SIZE
-        function processBatches(pages) {
-          if (pages.length === 0) {
-            initAfterStreetsLoaded();
-            return;
-          }
-          const batch = pages.slice(0, BATCH_SIZE);
-          const rest = pages.slice(BATCH_SIZE);
-          fetchBatch(batch).then(() => processBatches(rest));
-        }
-
-        processBatches(remaining);
-      })
+    Promise.all(pages.map(fetchPage))
+      .then(() => { initAfterStreetsLoaded(); })
       .catch(err => {
         console.error('Failed to load streets:', err);
         btnLogTrip.disabled = false;

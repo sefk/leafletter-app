@@ -178,6 +178,25 @@ class CampaignDetailViewTest(TestCase):
         resp = self.client.get('/c/does-not-exist/')
         self.assertEqual(resp.status_code, 404)
 
+    def test_total_blocks_in_context(self):
+        """total_blocks is passed in context so STREETS_TOTAL can be embedded."""
+        resp = self.client.get('/c/detail-camp/')
+        self.assertIn('total_blocks', resp.context)
+        self.assertEqual(resp.context['total_blocks'], 0)
+
+    def test_total_blocks_increments_with_streets(self):
+        """total_blocks reflects the actual street count for this campaign."""
+        make_street(self.campaign, osm_id=1001)
+        make_street(self.campaign, osm_id=1002)
+        resp = self.client.get('/c/detail-camp/')
+        self.assertEqual(resp.context['total_blocks'], 2)
+
+    def test_streets_total_embedded_in_page(self):
+        """STREETS_TOTAL is rendered into the HTML page for map.js to use."""
+        make_street(self.campaign, osm_id=2001)
+        resp = self.client.get('/c/detail-camp/')
+        self.assertContains(resp, 'window.STREETS_TOTAL = 1;')
+
 
 # ── Access control tests ──────────────────────────────────────────────────────
 

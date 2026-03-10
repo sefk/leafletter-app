@@ -453,6 +453,7 @@
     var coverageUrl = "{% url 'manage_coverage_geojson' campaign.slug %}";
     var bbox = {{ bbox_json }};
     var csrfToken = "{{ csrf_token }}";
+    window.STREETS_TOTAL = {{ total_blocks }};
 
     // Server-side trip data (all trips, including deleted)
     var allTripData = [

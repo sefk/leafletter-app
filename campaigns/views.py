@@ -67,6 +67,7 @@ def campaign_detail(request, slug):
     return render(request, 'campaigns/campaign_detail.html', {
         'campaign': campaign,
         'bbox_json': json.dumps(campaign.bbox),
+        'total_blocks': campaign.streets.count(),
     })
 
 
