@@ -436,16 +436,32 @@
 
   // ── Buttons ───────────────────────────────────────────────────────────────
   document.getElementById('btn-log-trip').addEventListener('click', () => {
-    setSelectionMode(true);
-    updateSelectionCount();
-    if (DEBUG_MODE) {
-      document.getElementById('debug-section').style.display = 'block';
-      updateDebugPanel();
+    const ZOOM_THRESHOLD = 15;
+    const TARGET_ZOOM = 16;
+
+    function activateSelectionMode() {
+      setSelectionMode(true);
+      updateSelectionCount();
+      if (DEBUG_MODE) {
+        document.getElementById('debug-section').style.display = 'block';
+        updateDebugPanel();
+      }
+      if (lasso) {
+        lasso.enable();
+      }
+      document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
     }
-    if (lasso) {
-      lasso.enable();
+
+    if (map.getZoom() < ZOOM_THRESHOLD) {
+      showStatus('Zooming in to your street — then draw a loop to select streets.', 'info');
+      map.once('zoomend', () => {
+        document.getElementById('status-message').style.display = 'none';
+        activateSelectionMode();
+      });
+      map.flyTo(map.getCenter(), TARGET_ZOOM);
+    } else {
+      activateSelectionMode();
     }
-    document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
