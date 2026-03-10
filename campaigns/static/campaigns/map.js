@@ -236,11 +236,17 @@
           byTrip.get(tid).push(f);
         });
 
-        let colorIdx = 0;
+        function tripColorIndex(tid) {
+          let hash = 0;
+          for (let i = 0; i < tid.length; i++) {
+            hash = (hash * 31 + tid.charCodeAt(i)) >>> 0;
+          }
+          return hash % TRIP_PALETTE.length;
+        }
+
         byTrip.forEach((features, tid) => {
           const first = features[0].properties;
-          const color = TRIP_PALETTE[colorIdx % TRIP_PALETTE.length];
-          colorIdx++;
+          const color = TRIP_PALETTE[tripColorIndex(tid)];
           tripMeta.set(tid, {
             worker_name: first.worker_name,
             recorded_at: first.recorded_at,
