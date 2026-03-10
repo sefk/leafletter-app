@@ -506,16 +506,29 @@
         if (!r.ok) return r.text().then(t => { throw new Error(t); });
         return r.json();
       })
-      .then(() => {
+      .then(data => {
         setSelectionMode(false);
         document.getElementById('debug-section').style.display = 'none';
         document.getElementById('worker-name').value = '';
         document.getElementById('notes').value = '';
         document.getElementById('btn-done').disabled = false;
-        showStatus('Trip logged! Thank you for your work.', 'success');
         resetSelection();
         if (coverageMode !== 'hidden') loadCoverage();
-        document.getElementById('status-message').scrollIntoView({ behavior: 'smooth' });
+
+        const tripId = data.trip_id;
+        window._lastTripId = tripId;
+        window._lastTripGetUrl = window.TRIP_URL + tripId + '/';
+        window._lastTripEditUrl = window.TRIP_URL + tripId + '/edit/';
+
+        const statusEl = document.getElementById('status-message');
+        statusEl.innerHTML = 'Trip logged! Thank you. <a href="#" id="edit-trip-link" style="color:inherit;font-weight:600;">Edit this trip</a>';
+        statusEl.className = 'success';
+        statusEl.style.display = 'block';
+        document.getElementById('edit-trip-link').addEventListener('click', e => {
+          e.preventDefault();
+          openEditTripPanel();
+        });
+        statusEl.scrollIntoView({ behavior: 'smooth' });
       })
       .catch(err => {
         showStatus('Error submitting trip: ' + err.message, 'error');
@@ -541,6 +554,56 @@
     applyCoverageMode();
     const legendEl = document.getElementById('trip-legend');
     if (legendEl) legendEl.style.display = coverageMode === 'detail' && tripMeta.size > 0 ? 'block' : 'none';
+  });
+
+  // ── Edit last trip (session-scoped) ───────────────────────────────────────
+
+  function openEditTripPanel() {
+    fetch(window._lastTripGetUrl)
+      .then(r => {
+        if (!r.ok) throw new Error('Session expired — this trip can no longer be edited.');
+        return r.json();
+      })
+      .then(data => {
+        document.getElementById('edit-worker-name').value = data.worker_name || '';
+        document.getElementById('edit-notes').value = data.notes || '';
+        const panel = document.getElementById('edit-trip-panel');
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth' });
+      })
+      .catch(err => showStatus(err.message, 'error'));
+  }
+
+  document.getElementById('btn-save-edit').addEventListener('click', () => {
+    const workerName = document.getElementById('edit-worker-name').value.trim();
+    const notes = document.getElementById('edit-notes').value.trim();
+    const btn = document.getElementById('btn-save-edit');
+    btn.disabled = true;
+    fetch(window._lastTripEditUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ worker_name: workerName, notes }),
+    })
+      .then(r => {
+        if (!r.ok) return r.text().then(t => { throw new Error(t); });
+        return r.json();
+      })
+      .then(() => {
+        document.getElementById('edit-trip-panel').style.display = 'none';
+        showStatus('Trip updated.', 'success');
+        btn.disabled = false;
+        if (coverageMode !== 'hidden') loadCoverage();
+      })
+      .catch(err => {
+        const el = document.getElementById('edit-trip-status');
+        el.textContent = 'Error: ' + err.message;
+        el.style.display = 'block';
+        btn.disabled = false;
+      });
+  });
+
+  document.getElementById('btn-cancel-edit').addEventListener('click', () => {
+    document.getElementById('edit-trip-panel').style.display = 'none';
   });
 
 

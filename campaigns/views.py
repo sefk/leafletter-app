@@ -168,7 +168,39 @@ def log_trip(request, slug):
     )
     trip.streets.set(streets)
 
+    request.session[f'last_trip_{campaign.slug}'] = str(trip.pk)
+
     return JsonResponse({'status': 'ok', 'trip_id': str(trip.pk)})
+
+
+@require_GET
+def worker_get_trip(request, slug, trip_id):
+    """Return trip details — only if this session logged the trip."""
+    campaign = get_object_or_404(Campaign, slug=slug, status='published')
+    if request.session.get(f'last_trip_{campaign.slug}') != str(trip_id):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Not your trip or session expired')
+    trip = get_object_or_404(Trip, pk=trip_id, campaign=campaign, deleted=False)
+    return JsonResponse({'trip_id': str(trip.pk), 'worker_name': trip.worker_name, 'notes': trip.notes})
+
+
+@csrf_exempt
+@require_POST
+def worker_edit_trip(request, slug, trip_id):
+    """Allow a worker to edit their last trip within the same session."""
+    campaign = get_object_or_404(Campaign, slug=slug, status='published')
+    if request.session.get(f'last_trip_{campaign.slug}') != str(trip_id):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Not your trip or session expired')
+    trip = get_object_or_404(Trip, pk=trip_id, campaign=campaign, deleted=False)
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest('Invalid JSON')
+    trip.worker_name = body.get('worker_name', trip.worker_name).strip()
+    trip.notes = body.get('notes', trip.notes).strip()
+    trip.save(update_fields=['worker_name', 'notes'])
+    return JsonResponse({'status': 'ok'})
 
 
 # ── Manager UI helpers ────────────────────────────────────────────────────────

@@ -258,6 +258,19 @@
 
 <div id="status-message"></div>
 
+<div id="edit-trip-panel" style="display:none; padding:16px 20px; background:#fff; border-top:1px solid #ddd;">
+  <h3 style="margin:0 0 12px; font-size:1rem;">Edit Your Last Trip</h3>
+  <label for="edit-worker-name" style="display:block; margin-bottom:4px; font-size:0.85rem; color:#555;">Your Name (optional)</label>
+  <input type="text" id="edit-worker-name" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; margin-bottom:10px; font-family:inherit;">
+  <label for="edit-notes" style="display:block; margin-bottom:4px; font-size:0.85rem; color:#555;">Notes (optional)</label>
+  <textarea id="edit-notes" rows="3" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; margin-bottom:10px; font-family:inherit;"></textarea>
+  <div style="display:flex; gap:10px;">
+    <button id="btn-save-edit" class="btn btn-primary">Save Changes</button>
+    <button id="btn-cancel-edit" class="btn btn-secondary">Cancel</button>
+  </div>
+  <div id="edit-trip-status" style="margin-top:10px; font-size:0.9rem; display:none;"></div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-lasso/dist/leaflet-lasso.umd.min.js"></script>
