@@ -12,7 +12,7 @@ class Campaign(models.Model):
     ]
     MAP_STATUS = [
         ('pending', 'Pending'),
-        ('generating', 'Generating'),
+        ('generating', 'Fetching'),
         ('rendering', 'Rendering'),
         ('ready', 'Ready'),
         ('warning', 'Warning'),
@@ -63,7 +63,7 @@ class Street(models.Model):
 class CityFetchJob(models.Model):
     STATUS = [
         ('pending', 'Pending'),
-        ('generating', 'Generating'),
+        ('generating', 'Fetching'),
         ('ready', 'Ready'),
         ('error', 'Error'),
     ]
