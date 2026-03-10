@@ -31,22 +31,22 @@
       transition: box-shadow 0.15s;
     }
     .campaign-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
-    .campaign-card-hero { border-left: none; padding: 0; overflow: hidden; }
+    .campaign-card-hero { border-left: none; padding: 0; overflow: hidden; border: 1px solid #ccc; }
     .campaign-hero {
       background-size: cover;
       background-position: center;
-      aspect-ratio: 16/9;
+      aspect-ratio: 32/9;
       position: relative;
       display: flex;
       align-items: flex-end;
     }
     .campaign-hero-overlay {
-      background: linear-gradient(transparent, rgba(0,0,0,0.65));
+      background: linear-gradient(transparent, rgba(255,255,255,0.97) 40%);
       width: 100%;
       padding: 20px 20px 16px;
     }
-    .campaign-card-hero h2 { font-size: 1.15rem; color: #fff; margin-bottom: 4px; }
-    .campaign-card-hero .meta { font-size: 0.85rem; color: rgba(255,255,255,0.85); }
+    .campaign-card-hero h2 { font-size: 1.15rem; color: #111; margin-bottom: 4px; }
+    .campaign-card-hero .meta { font-size: 0.85rem; color: #333; }
 
     .campaign-link {
       text-decoration: none;
