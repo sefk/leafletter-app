@@ -31,6 +31,22 @@
       transition: box-shadow 0.15s;
     }
     .campaign-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
+    .campaign-card-hero { border-left: none; padding: 0; overflow: hidden; }
+    .campaign-hero {
+      background-size: cover;
+      background-position: center;
+      aspect-ratio: 16/9;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+    }
+    .campaign-hero-overlay {
+      background: linear-gradient(transparent, rgba(0,0,0,0.65));
+      width: 100%;
+      padding: 20px 20px 16px;
+    }
+    .campaign-card-hero h2 { font-size: 1.15rem; color: #fff; margin-bottom: 4px; }
+    .campaign-card-hero .meta { font-size: 0.85rem; color: rgba(255,255,255,0.85); }
 
     .campaign-link {
       text-decoration: none;
@@ -113,14 +129,23 @@
 <div class="content">
   {% if current_campaigns %}
     {% for campaign in current_campaigns %}
-    <div class="campaign-card">
+    <div class="campaign-card{% if campaign.hero_image_url %} campaign-card-hero{% endif %}">
       <a href="/c/{{ campaign.slug }}/" class="campaign-link">
-        <h2>{{ campaign.name }}</h2>
-        <div class="meta">
-          {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
-          &nbsp;·&nbsp;
-          {% for city in campaign.cities %}{% if city.name %}{{ city.name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
-        </div>
+        {% if campaign.hero_image_url %}
+          <div class="campaign-hero" style="background-image:url('{{ campaign.hero_image_url }}');">
+            <div class="campaign-hero-overlay">
+              <h2>{{ campaign.name }}</h2>
+              <div class="meta">{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</div>
+            </div>
+          </div>
+        {% else %}
+          <h2>{{ campaign.name }}</h2>
+          <div class="meta">
+            {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
+            &nbsp;·&nbsp;
+            {% for city in campaign.cities %}{% if city.name %}{{ city.name }}{% else %}{{ city }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+          </div>
+        {% endif %}
       </a>
     </div>
     {% endfor %}

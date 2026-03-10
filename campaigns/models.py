@@ -31,6 +31,7 @@ class Campaign(models.Model):
     map_error = models.TextField(blank=True, default='')
     bbox = models.JSONField(null=True, blank=True)  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
     geo_limit = models.PolygonField(srid=4326, null=True, blank=True)  # free-form campaign boundary
+    hero_image_url = models.URLField(blank=True, default='')  # optional campaign hero image (landscape/16:9 recommended)
     streets_geojson = models.TextField(blank=True, default='')  # pre-rendered GeoJSON FeatureCollection
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

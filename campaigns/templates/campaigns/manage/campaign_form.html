@@ -108,6 +108,21 @@
       {% endif %}
     </div>
 
+    {# Hero image URL #}
+    <div style="margin-bottom:16px;">
+      <label for="{{ form.hero_image_url.id_for_label }}"
+             style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Hero Image URL <span style="font-weight:400; color:#888;">(optional — landscape/16:9 recommended)</span>
+      </label>
+      {{ form.hero_image_url }}
+      {% if form.hero_image_url.errors %}
+        <div style="font-size:0.82rem; color:#c62828; margin-top:4px;">{{ form.hero_image_url.errors }}</div>
+      {% endif %}
+      <div id="hero-preview" style="margin-top:10px; display:none;">
+        <img id="hero-preview-img" src="" alt="Hero preview" style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd;">
+      </div>
+    </div>
+
     {# City Picker moved to its own card below #}
   </form>
 </div>
@@ -329,5 +344,21 @@
   })();
 </script>
 {% endif %}
+
+<script>
+  (function () {
+    const urlInput = document.getElementById('{{ form.hero_image_url.id_for_label }}');
+    const preview = document.getElementById('hero-preview');
+    const previewImg = document.getElementById('hero-preview-img');
+    if (!urlInput) return;
+    function updatePreview() {
+      const val = urlInput.value.trim();
+      if (val) { previewImg.src = val; preview.style.display = 'block'; }
+      else { preview.style.display = 'none'; }
+    }
+    urlInput.addEventListener('input', updatePreview);
+    updatePreview();
+  })();
+</script>
 
 {% endblock %}
