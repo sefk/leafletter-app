@@ -8,6 +8,7 @@ from celery import shared_task
 from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import LineString
 from django.core.mail import send_mail
+from django.db import connection
 from django.utils import timezone
 
 from .models import Campaign, CityFetchJob, Street
@@ -196,11 +197,89 @@ def build_streets_geojson(campaign_id: int, bbox=None, geo_limit=None) -> str:
     return json.dumps({'type': 'FeatureCollection', 'features': features})
 
 
+def _write_streets_geojson_chunked(campaign_id: int, geo_limit=None, chunk_size: int = 200) -> None:
+    """
+    Write the GeoJSON FeatureCollection for a campaign's streets directly into
+    the DB using chunked CONCAT updates, so no single MySQL packet ever carries
+    the full blob.  Avoids the ``max_allowed_packet`` error that occurs when
+    the entire GeoJSON is passed in one UPDATE for large cities like Houston.
+
+    Each raw-SQL CONCAT call appends only one batch of ``chunk_size`` features,
+    keeping individual packet sizes well below the server limit.
+
+    ``build_streets_geojson`` is intentionally left unchanged — it is still used
+    by the paginated API endpoint in views.py where the result is returned to the
+    client (no DB write needed).
+    """
+    from django.contrib.gis.geos import Polygon as GeosPoly
+
+    qs = Street.objects.filter(campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
+    if geo_limit is not None:
+        qs = qs.filter(geometry__intersects=geo_limit)
+
+    # Initialise the field with the opening of the FeatureCollection.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE campaigns_campaign SET streets_geojson = %s WHERE id = %s",
+            ['{"type":"FeatureCollection","features":[', campaign_id],
+        )
+
+    first_feature = True
+    batch = []
+
+    def _flush(batch, first_feature):
+        """Append one batch of serialised features via CONCAT."""
+        fragments = []
+        for street in batch:
+            feature = {
+                'type': 'Feature',
+                'id': street.pk,
+                'geometry': json.loads(street.geometry.geojson),
+                'properties': {
+                    'osm_id': street.osm_id,
+                    'name': street.name,
+                },
+            }
+            fragments.append(json.dumps(feature, separators=(',', ':')))
+
+        if not fragments:
+            return first_feature
+
+        chunk_str = ','.join(fragments)
+        if not first_feature:
+            chunk_str = ',' + chunk_str
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE campaigns_campaign SET streets_geojson = CONCAT(streets_geojson, %s) WHERE id = %s",
+                [chunk_str, campaign_id],
+            )
+        return False  # first_feature is now False after the first flush
+
+    for street in qs.iterator(chunk_size=chunk_size):
+        batch.append(street)
+        if len(batch) >= chunk_size:
+            first_feature = _flush(batch, first_feature)
+            batch = []
+
+    if batch:
+        first_feature = _flush(batch, first_feature)  # noqa: F841
+
+    # Close the FeatureCollection.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE campaigns_campaign SET streets_geojson = CONCAT(streets_geojson, %s) WHERE id = %s",
+            [']}', campaign_id],
+        )
+
+
 def _sync_campaign_map_status(campaign_id: int) -> None:
     """
     Recompute Campaign.map_status from all CityFetchJob records and save.
     When all cities are ready (or some have errors), compute bbox synchronously
-    and dispatch render_campaign_geojson to build the GeoJSON blob asynchronously.
+    and set map_status to 'ready' or 'warning'.  streets_geojson is left empty
+    until the manager draws a geo_limit boundary and saves it, which triggers
+    render_campaign_geojson via manage_campaign_update_geo_limit.
     """
     jobs = list(CityFetchJob.objects.filter(campaign_id=campaign_id))
     if not jobs:
@@ -234,7 +313,10 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
     if new_status == 'ready':
         updates['map_error'] = ''
     if new_status in ('ready', 'warning'):
-        # Compute bbox synchronously (cheap) then dispatch async GeoJSON rendering.
+        # Compute bbox synchronously (cheap) so the geo_limit editor has a
+        # reference frame.  Do NOT dispatch render_campaign_geojson here —
+        # rendering is deferred until the manager draws a geo_limit boundary
+        # and saves it via manage_campaign_update_geo_limit.
         campaign = Campaign.objects.only('geo_limit').get(pk=campaign_id)
         if campaign.geo_limit:
             # Preserve manager-drawn boundary; derive bbox from its extent
@@ -251,13 +333,8 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
                 max_lat = max(max_lat, ymax)
             if min_lon != float('inf'):
                 updates['bbox'] = [[min_lat, min_lon], [max_lat, max_lon]]
-        # Switch to 'rendering' and clear stale geojson; async task will set final status.
-        final_status = new_status  # 'ready' or 'warning'
-        updates['map_status'] = 'rendering'
+        # Leave streets_geojson empty — rendering is triggered by geo_limit save.
         updates['streets_geojson'] = ''
-        Campaign.objects.filter(pk=campaign_id).update(**updates)
-        render_campaign_geojson.delay(campaign_id, final_status=final_status)
-        return
 
     Campaign.objects.filter(pk=campaign_id).update(**updates)
 
@@ -272,10 +349,11 @@ def render_campaign_geojson(self, campaign_id: int, final_status: str = 'ready')
     """
     try:
         campaign = Campaign.objects.only('geo_limit', 'map_status').get(pk=campaign_id)
-        geojson = build_streets_geojson(campaign_id, geo_limit=campaign.geo_limit)
-        Campaign.objects.filter(pk=campaign_id).update(
-            streets_geojson=geojson, map_status=final_status,
-        )
+        # Use chunked CONCAT writes to avoid MySQL max_allowed_packet errors on
+        # large cities (e.g. Houston).  build_streets_geojson is kept for the
+        # paginated API endpoint in views.py (returns to client, no DB write).
+        _write_streets_geojson_chunked(campaign_id, geo_limit=campaign.geo_limit)
+        Campaign.objects.filter(pk=campaign_id).update(map_status=final_status)
         logger.info(
             'render_campaign_geojson: campaign %s rendered, final_status=%s',
             campaign_id, final_status,

@@ -416,6 +416,15 @@
 
 <!-- Campaign Map (read-only) -->
 {% if campaign.map_status == 'ready' or campaign.map_status == 'warning' %}
+{% if not campaign.geo_limit %}
+<div class="card" style="border-left:4px solid #e6ac00; background:#fffde7;">
+  <p style="margin:0; font-size:0.95rem; color:#5a4000;">
+    <strong>Draw a geographic boundary to render the campaign map.</strong>
+    Street data has been imported. Use the "Geographical Limit" section above to draw a polygon
+    defining the campaign area. Saving the boundary will trigger map rendering.
+  </p>
+</div>
+{% endif %}
 <div class="card">
   <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
     Campaign Map

@@ -26,6 +26,7 @@ from .models import Campaign, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
                     lookup_city, queue_city_fetches, query_overpass, render_campaign_geojson,
                     split_way_at_intersections, _sync_campaign_map_status,
+                    _write_streets_geojson_chunked,
                     watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES)
 from .views import _apply_city_list_changes
 
@@ -647,9 +648,10 @@ class FetchOSMSegmentsTaskTest(TestCase):
 
         self.assertIn('generating', statuses)
         self.campaign.refresh_from_db()
-        # After fetch_osm_segments, the task dispatches render_campaign_geojson
-        # asynchronously. In tests the task is not executed, so status is 'rendering'.
-        self.assertEqual(self.campaign.map_status, 'rendering')
+        # After fetch_osm_segments completes, status is 'ready'.
+        # render_campaign_geojson is NOT dispatched here; it fires only after
+        # the manager draws a geo_limit boundary.
+        self.assertEqual(self.campaign.map_status, 'ready')
 
     @patch('campaigns.tasks.query_overpass')
     def test_sets_map_status_error_on_failure(self, mock_qo):
@@ -1327,8 +1329,7 @@ class FetchOSMErrorHandlingTest(TestCase):
         ]
         fetch_osm_segments(self.campaign.pk)
         self.campaign.refresh_from_db()
-        # Async rendering is dispatched; status is 'rendering' in tests (task not executed).
-        self.assertEqual(self.campaign.map_status, 'rendering')
+        self.assertEqual(self.campaign.map_status, 'ready')
         self.assertEqual(self.campaign.map_error, '')
 
     def test_map_error_cleared_at_start_of_fetch(self):
@@ -1365,8 +1366,7 @@ class FetchOSMErrorHandlingTest(TestCase):
         fetch_osm_segments(self.campaign.pk)
         self.mock_lookup.assert_not_called()
         self.campaign.refresh_from_db()
-        # Async rendering dispatched; in tests the task is not executed so status is 'rendering'.
-        self.assertEqual(self.campaign.map_status, 'rendering')
+        self.assertEqual(self.campaign.map_status, 'ready')
 
 
 # ── Task tests: retry on transient errors ─────────────────────────────────────
@@ -2063,7 +2063,7 @@ class RenderCampaignGeoJSONTaskTest(TestCase):
         self.assertEqual(self.campaign.map_status, 'warning')
 
     def test_sets_map_status_error_on_exception(self):
-        with patch('campaigns.tasks.build_streets_geojson', side_effect=RuntimeError('OOM')):
+        with patch('campaigns.tasks._write_streets_geojson_chunked', side_effect=RuntimeError('OOM')):
             with self.assertRaises(RuntimeError):
                 render_campaign_geojson(self.campaign.pk, final_status='ready')
         self.campaign.refresh_from_db()
@@ -2088,11 +2088,82 @@ class RenderCampaignGeoJSONTaskTest(TestCase):
         self.assertEqual(data['features'], [])
 
 
+# ── Task tests: _write_streets_geojson_chunked ───────────────────────────────
+
+class WriteStreetsGeoJSONChunkedTest(TestCase):
+    """Tests for the chunked DB writer that avoids max_allowed_packet errors."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='chunked-camp', map_status='rendering')
+
+    def test_writes_valid_feature_collection(self):
+        """A campaign with streets gets a valid GeoJSON FeatureCollection written."""
+        make_street(self.campaign, osm_id=1001, name='Elm St')
+        make_street(self.campaign, osm_id=1002, name='Oak Ave', geometry=GEOM2, block_index=0)
+        _write_streets_geojson_chunked(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['type'], 'FeatureCollection')
+        self.assertEqual(len(data['features']), 2)
+
+    def test_feature_count_matches_street_count(self):
+        """Each street produces exactly one Feature."""
+        n = 7
+        for i in range(n):
+            make_street(self.campaign, osm_id=2000 + i, name=f'Street {i}', block_index=i)
+        _write_streets_geojson_chunked(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(len(data['features']), n)
+
+    def test_empty_campaign_writes_empty_feature_collection(self):
+        """A campaign with no streets gets an empty FeatureCollection."""
+        _write_streets_geojson_chunked(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['type'], 'FeatureCollection')
+        self.assertEqual(data['features'], [])
+
+    def test_chunking_produces_same_result_as_single_chunk(self):
+        """chunk_size=1 (one SQL CONCAT per feature) yields identical feature count."""
+        n = 5
+        for i in range(n):
+            make_street(self.campaign, osm_id=3000 + i, name=f'Road {i}', block_index=i)
+        _write_streets_geojson_chunked(self.campaign.pk, chunk_size=1)
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['type'], 'FeatureCollection')
+        self.assertEqual(len(data['features']), n)
+
+    def test_geo_limit_filters_streets(self):
+        """Only streets intersecting geo_limit are included."""
+        from django.contrib.gis.geos import Polygon as GeosPoly
+        make_street(self.campaign, osm_id=4001, name='Inside St')  # GEOM is at ~-122/37
+        outside_box = GeosPoly.from_bbox((-100.0, 10.0, -99.0, 11.0))
+        outside_box.srid = 4326
+        _write_streets_geojson_chunked(self.campaign.pk, geo_limit=outside_box)
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['features'], [])
+
+    def test_chunk_size_one_writes_correct_features(self):
+        """chunk_size=1 exercises one CONCAT per feature; result must still be valid JSON."""
+        n = 4
+        for i in range(n):
+            make_street(self.campaign, osm_id=5000 + i, name=f'Blvd {i}', block_index=i)
+        _write_streets_geojson_chunked(self.campaign.pk, chunk_size=1)
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['type'], 'FeatureCollection')
+        self.assertEqual(len(data['features']), n)
+
+
 # ── Task tests: _sync_campaign_map_status dispatches render task ──────────────
 
 class SyncCampaignMapStatusRenderTest(TestCase):
-    """Verify _sync_campaign_map_status dispatches render_campaign_geojson instead
-    of building GeoJSON inline."""
+    """Verify _sync_campaign_map_status sets map_status to 'ready'/'warning' but
+    does NOT dispatch render_campaign_geojson.  Rendering is deferred until the
+    manager saves a geo_limit boundary via manage_campaign_update_geo_limit."""
 
     def setUp(self):
         self.campaign = make_campaign(slug='sync-render-camp', map_status='generating')
@@ -2105,14 +2176,22 @@ class SyncCampaignMapStatusRenderTest(TestCase):
         )
 
     @patch('campaigns.tasks.render_campaign_geojson')
-    def test_dispatches_render_task_when_all_cities_ready(self, mock_render):
+    def test_does_not_dispatch_render_when_all_cities_ready(self, mock_render):
         mock_render.delay = MagicMock()
         self._make_ready_job(status='ready')
         _sync_campaign_map_status(self.campaign.pk)
-        mock_render.delay.assert_called_once_with(self.campaign.pk, final_status='ready')
+        mock_render.delay.assert_not_called()
 
     @patch('campaigns.tasks.render_campaign_geojson')
-    def test_dispatches_render_task_with_warning_when_some_cities_error(self, mock_render):
+    def test_sets_map_status_ready_when_all_cities_ready(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._make_ready_job(status='ready')
+        _sync_campaign_map_status(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'ready')
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_does_not_dispatch_render_with_warning_when_some_cities_error(self, mock_render):
         mock_render.delay = MagicMock()
         self._make_ready_job(city_index=0, city_name='Good City', status='ready')
         CityFetchJob.objects.create(
@@ -2120,15 +2199,19 @@ class SyncCampaignMapStatusRenderTest(TestCase):
             status='error', error='Not found',
         )
         _sync_campaign_map_status(self.campaign.pk)
-        mock_render.delay.assert_called_once_with(self.campaign.pk, final_status='warning')
+        mock_render.delay.assert_not_called()
 
     @patch('campaigns.tasks.render_campaign_geojson')
-    def test_sets_map_status_rendering_before_dispatch(self, mock_render):
+    def test_sets_map_status_warning_when_some_cities_error(self, mock_render):
         mock_render.delay = MagicMock()
-        self._make_ready_job(status='ready')
+        self._make_ready_job(city_index=0, city_name='Good City', status='ready')
+        CityFetchJob.objects.create(
+            campaign=self.campaign, city_index=1, city_name='Bad City',
+            status='error', error='Not found',
+        )
         _sync_campaign_map_status(self.campaign.pk)
         self.campaign.refresh_from_db()
-        self.assertEqual(self.campaign.map_status, 'rendering')
+        self.assertEqual(self.campaign.map_status, 'warning')
 
     @patch('campaigns.tasks.render_campaign_geojson')
     def test_does_not_dispatch_render_when_still_generating(self, mock_render):
