@@ -575,3 +575,48 @@ def city_search(request):
                 'display_name': r.get('display_name', ''),
             })
     return JsonResponse({'results': results})
+
+
+# ---------------------------------------------------------------------------
+# JSON API for iOS app
+# ---------------------------------------------------------------------------
+
+@require_GET
+def api_campaigns(request):
+    today = date.today()
+    published = Campaign.objects.filter(status='published')
+    current = published.filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=today)
+    ).order_by(F('end_date').asc(nulls_last=True))
+    prior = published.filter(end_date__lt=today).order_by('-end_date')
+    campaigns = list(current) + list(prior)
+    data = [
+        {
+            'id': c.id,
+            'name': c.name,
+            'slug': c.slug,
+            'start_date': c.start_date.isoformat() if c.start_date else None,
+            'end_date': c.end_date.isoformat() if c.end_date else None,
+            'hero_image_url': c.hero_image_url or None,
+            'map_status': c.map_status,
+        }
+        for c in campaigns
+    ]
+    return JsonResponse(data, safe=False)
+
+
+@require_GET
+def api_campaign_detail(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug, status='published')
+    return JsonResponse({
+        'id': campaign.id,
+        'name': campaign.name,
+        'slug': campaign.slug,
+        'start_date': campaign.start_date.isoformat() if campaign.start_date else None,
+        'end_date': campaign.end_date.isoformat() if campaign.end_date else None,
+        'instructions': campaign.instructions or '',
+        'contact_info': campaign.contact_info or '',
+        'hero_image_url': campaign.hero_image_url or None,
+        'map_status': campaign.map_status,
+        'bbox': campaign.bbox,
+    })

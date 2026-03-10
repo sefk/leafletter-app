@@ -18,5 +18,8 @@ dump.rdb
 .vscode/
 *.swp
 
+# IOS
+ios/Leafletter.xcodeproj
+
 # Claude
 .claude/settings.local.json
