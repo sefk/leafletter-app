@@ -2320,3 +2320,91 @@ class ManageCampaignUpdateGeoLimitAsyncTest(TestCase):
         with patch('campaigns.views.build_streets_geojson') as mock_build:
             self._post_polygon()
             mock_build.assert_not_called()
+
+
+# ── run_task management command ───────────────────────────────────────────────
+
+from io import StringIO
+from django.core.management import call_command
+from django.core.management.base import CommandError
+
+
+class RunTaskCommandTest(TestCase):
+    """Tests for the run_task management command."""
+
+    def test_list_shows_app_tasks(self):
+        out = StringIO()
+        call_command('run_task', '--list', stdout=out)
+        output = out.getvalue()
+        self.assertIn('campaigns.tasks.watchdog_stuck_jobs', output)
+        self.assertIn('campaigns.tasks.fetch_city_osm_data', output)
+        self.assertIn('campaigns.tasks.render_campaign_geojson', output)
+
+    def test_list_excludes_celery_internals(self):
+        """Internal celery.* tasks are not listed as selectable items."""
+        out = StringIO()
+        call_command('run_task', '--list', stdout=out)
+        lines = out.getvalue().splitlines()
+        # Only lines starting with two spaces (the indented task listing) are checked;
+        # the summary footer may mention celery.* in passing.
+        task_lines = [ln for ln in lines if ln.startswith('  ')]
+        for line in task_lines:
+            self.assertFalse(line.strip().startswith('celery.'),
+                             f'Internal task listed: {line}')
+
+    def test_no_task_name_raises_error(self):
+        with self.assertRaises(CommandError) as ctx:
+            call_command('run_task')
+        self.assertIn('task name', str(ctx.exception).lower())
+
+    def test_unknown_task_name_raises_error(self):
+        with self.assertRaises(CommandError) as ctx:
+            call_command('run_task', 'campaigns.tasks.does_not_exist')
+        self.assertIn('not found', str(ctx.exception))
+
+    def test_unknown_task_suggests_matches(self):
+        """A partial name match in the error message helps the user find the right task."""
+        err = StringIO()
+        with self.assertRaises(CommandError) as ctx:
+            call_command('run_task', 'campaigns.tasks.watchdog_unknown', stderr=err)
+        # 'watchdog_stuck_jobs' contains 'watchdog' — should appear as suggestion
+        self.assertIn('watchdog', str(ctx.exception))
+
+    def test_run_watchdog_inline(self):
+        """Watchdog task runs successfully with no stuck jobs."""
+        out = StringIO()
+        call_command('run_task', 'campaigns.tasks.watchdog_stuck_jobs', stdout=out)
+        output = out.getvalue()
+        self.assertIn('completed successfully', output)
+
+    def test_run_watchdog_returns_result(self):
+        """Return value dict is printed when task succeeds."""
+        out = StringIO()
+        call_command('run_task', 'campaigns.tasks.watchdog_stuck_jobs', stdout=out)
+        # Result contains 'found' and 'marked_error' keys
+        self.assertIn('found', out.getvalue())
+
+    def test_positional_int_arg_decoded(self):
+        """Integer CLI args are JSON-decoded so tasks receive the correct type."""
+        out = StringIO()
+        # Campaign pk 99999 doesn't exist — task logs a warning and returns cleanly
+        call_command('run_task', 'campaigns.tasks.fetch_city_osm_data', '99999', '0', stdout=out)
+        self.assertIn('completed successfully', out.getvalue())
+
+    def test_invalid_kwargs_json_raises_error(self):
+        with self.assertRaises(CommandError) as ctx:
+            call_command('run_task', 'campaigns.tasks.watchdog_stuck_jobs',
+                         kwargs='not-valid-json')
+        self.assertIn('not valid JSON', str(ctx.exception))
+
+    @patch('campaigns.tasks.watchdog_stuck_jobs.apply_async')
+    def test_async_flag_calls_apply_async(self, mock_apply_async):
+        mock_result = MagicMock()
+        mock_result.id = 'test-task-id-123'
+        mock_apply_async.return_value = mock_result
+
+        out = StringIO()
+        call_command('run_task', 'campaigns.tasks.watchdog_stuck_jobs',
+                     use_async=True, stdout=out)
+        mock_apply_async.assert_called_once_with(args=[], kwargs={})
+        self.assertIn('test-task-id-123', out.getvalue())
