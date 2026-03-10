@@ -252,6 +252,11 @@
           // Import finished — hide the spinner banner and stop polling.
           if (banner) banner.style.display = 'none';
           clearTimeout(pollTimer);
+          // Both map panes loaded before the import completed; show stale warnings.
+          var geoLimitStale = document.getElementById('geo-limit-stale-banner');
+          if (geoLimitStale) geoLimitStale.style.display = '';
+          var campaignMapStale = document.getElementById('campaign-map-stale-banner');
+          if (campaignMapStale) campaignMapStale.style.display = '';
         } else {
           // Still running — schedule the next poll.
           pollTimer = setTimeout(poll, 5000);
@@ -276,6 +281,10 @@
     The Geographical Limit defines the boundary of this campaign. Only streets inside this polygon
     are shown to workers. Draw a polygon that matches the true campaign area for best results.
   </p>
+  <div id="geo-limit-stale-banner" style="display:none; padding:8px 12px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; margin-bottom:12px; font-size:0.875rem; color:#5a4000;">
+    Street data has been updated since this map loaded.
+    <a href="javascript:location.reload()" style="color:#1a6b3c; font-weight:600; margin-left:4px;">Refresh page</a> to see the latest streets.
+  </div>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
@@ -428,6 +437,10 @@
 <div class="card">
   <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
     Campaign Map
+    <div id="campaign-map-stale-banner" style="display:none; font-size:0.8rem; font-weight:400; padding:4px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:4px; color:#5a4000;">
+      Map data updated.
+      <a href="javascript:location.reload()" style="color:#1a6b3c; font-weight:600;">Refresh</a> to reload.
+    </div>
     <select id="manage-coverage-mode" style="font-size:0.85rem; padding:4px 8px; border:1px solid #ccc; border-radius:4px; cursor:pointer;">
       <option value="detail">Coverage detail</option>
       <option value="summary">Coverage summary</option>
