@@ -19,6 +19,8 @@ class CampaignForm(forms.ModelForm):
         widgets = {
             'instructions': forms.HiddenInput(attrs={'id': 'id_instructions'}),
             'contact_info': forms.TextInput(),
+            'start_date': forms.DateInput(attrs={'type': 'date'}),
+            'end_date': forms.DateInput(attrs={'type': 'date'}),
         }
 
     def __init__(self, *args, **kwargs):
