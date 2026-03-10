@@ -383,7 +383,6 @@
 
     btnSave.addEventListener('click', function() {
       if (!newPolygon) return;
-      if (!confirm('Saving the geographical limit will queue a background render. Continue?')) return;
       btnSave.disabled = true;
       statusEl.textContent = 'Saving\u2026';
       fetch(updateUrl, {
@@ -659,7 +658,7 @@
           actionBtn.textContent = 'Delete';
           actionBtn.style.cssText += 'background:#fff; border-color:#e57373; color:#c62828;';
           actionBtn.addEventListener('click', function() {
-            if (confirm('Delete this trip? You can undo this later.')) { postTripAction(trip.deleteUrl); }
+            postTripAction(trip.deleteUrl);
           });
         }
 
