@@ -76,17 +76,16 @@ def campaign_streets_geojson(request, slug):
 
     qs = campaign.streets.only('pk', 'osm_id', 'name', 'geometry')
 
-    bbox_param = request.GET.get('bbox')
-    if bbox_param:
-        try:
-            sw_lat, sw_lon, ne_lat, ne_lon = [float(x) for x in bbox_param.split(',')]
-            bbox_poly = Polygon.from_bbox((sw_lon, sw_lat, ne_lon, ne_lat))
-            bbox_poly.srid = 4326
-            qs = qs.filter(geometry__intersects=bbox_poly)
-        except (ValueError, TypeError):
-            return HttpResponseBadRequest('Invalid bbox')
-    elif campaign.geo_limit:
+    if campaign.geo_limit:
         qs = qs.filter(geometry__intersects=campaign.geo_limit)
+
+    page = int(request.GET.get('page', 1))
+    page_size = min(int(request.GET.get('page_size', 2000)), 5000)
+
+    total = qs.count()
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    offset = (page - 1) * page_size
+    page_streets = qs.order_by('id')[offset:offset + page_size]
 
     features = [
         {
@@ -95,9 +94,15 @@ def campaign_streets_geojson(request, slug):
             'geometry': json.loads(s.geometry.geojson),
             'properties': {'osm_id': s.osm_id, 'name': s.name},
         }
-        for s in qs[:5000]
+        for s in page_streets
     ]
-    return JsonResponse({'type': 'FeatureCollection', 'features': features})
+    return JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+        'total': total,
+        'page': page,
+        'total_pages': total_pages,
+    })
 
 
 @require_GET
@@ -393,17 +398,16 @@ def manage_campaign_streets_geojson(request, slug):
 
     qs = campaign.streets.only('pk', 'osm_id', 'name', 'geometry')
 
-    bbox_param = request.GET.get('bbox')
-    if bbox_param:
-        try:
-            sw_lat, sw_lon, ne_lat, ne_lon = [float(x) for x in bbox_param.split(',')]
-            bbox_poly = Polygon.from_bbox((sw_lon, sw_lat, ne_lon, ne_lat))
-            bbox_poly.srid = 4326
-            qs = qs.filter(geometry__intersects=bbox_poly)
-        except (ValueError, TypeError):
-            return HttpResponseBadRequest('Invalid bbox')
-    elif campaign.geo_limit:
+    if campaign.geo_limit:
         qs = qs.filter(geometry__intersects=campaign.geo_limit)
+
+    page = int(request.GET.get('page', 1))
+    page_size = min(int(request.GET.get('page_size', 2000)), 5000)
+
+    total = qs.count()
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    offset = (page - 1) * page_size
+    page_streets = qs.order_by('id')[offset:offset + page_size]
 
     features = [
         {
@@ -412,9 +416,15 @@ def manage_campaign_streets_geojson(request, slug):
             'geometry': json.loads(s.geometry.geojson),
             'properties': {'osm_id': s.osm_id, 'name': s.name},
         }
-        for s in qs[:5000]
+        for s in page_streets
     ]
-    return JsonResponse({'type': 'FeatureCollection', 'features': features})
+    return JsonResponse({
+        'type': 'FeatureCollection',
+        'features': features,
+        'total': total,
+        'page': page,
+        'total_pages': total_pages,
+    })
 
 
 @_login_required
