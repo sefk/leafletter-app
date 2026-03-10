@@ -70,8 +70,8 @@
     <span id="sm-map-status-badge" class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
   </div>
 
-  <!-- In-progress indicator — shown while a fetch is running, hidden when done -->
-  <div id="sm-inflight-banner" style="display:{% if campaign.map_status == 'generating' or campaign.map_status == 'pending' %}flex{% else %}none{% endif %}; align-items:center; gap:10px; margin-bottom:12px;">
+  <!-- In-progress indicator — shown while a fetch or render is running, hidden when done -->
+  <div id="sm-inflight-banner" style="display:{% if campaign.map_status == 'generating' or campaign.map_status == 'pending' or campaign.map_status == 'rendering' %}flex{% else %}none{% endif %}; align-items:center; gap:10px; margin-bottom:12px;">
     <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0;"></span>
     <span style="color:#666;">Street import in progress — status updates automatically.</span>
   </div>
@@ -374,9 +374,9 @@
 
     btnSave.addEventListener('click', function() {
       if (!newPolygon) return;
-      if (!confirm('Saving the geographical limit may take several minutes. Please be patient and do not close the page. Continue?')) return;
+      if (!confirm('Saving the geographical limit will queue a background render. Continue?')) return;
       btnSave.disabled = true;
-      statusEl.textContent = 'Saving\u2026 (this may take a few minutes)';
+      statusEl.textContent = 'Saving\u2026';
       fetch(updateUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
@@ -384,7 +384,7 @@
       })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          if (data.status === 'ok') {
+          if (data.status === 'ok' || data.status === 'rendering') {
             currentGeoLimit = newPolygon;
             currentBbox = data.bbox;
             exitEditMode();
@@ -392,8 +392,15 @@
             limitLayer = L.geoJSON(currentGeoLimit, {
               style: { color: '#1a6b3c', weight: 2, fillOpacity: 0.05, dashArray: '6,4' }
             }).addTo(map);
-            statusEl.textContent = 'Saved!';
-            setTimeout(function() { statusEl.textContent = ''; }, 2000);
+            if (data.status === 'rendering') {
+              statusEl.textContent = 'Saved! GeoJSON rendering in background\u2026';
+              // Show the inflight banner so the user knows polling is active.
+              var inflightBanner = document.getElementById('sm-inflight-banner');
+              if (inflightBanner) inflightBanner.style.display = 'flex';
+            } else {
+              statusEl.textContent = 'Saved!';
+              setTimeout(function() { statusEl.textContent = ''; }, 2000);
+            }
             if (window.reloadManageMap) window.reloadManageMap(currentBbox);
           }
         })

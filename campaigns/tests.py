@@ -24,7 +24,8 @@ from django.utils import timezone
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
 from .models import Campaign, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
-                    lookup_city, queue_city_fetches, query_overpass, split_way_at_intersections,
+                    lookup_city, queue_city_fetches, query_overpass, render_campaign_geojson,
+                    split_way_at_intersections, _sync_campaign_map_status,
                     watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES)
 from .views import _apply_city_list_changes
 
@@ -646,7 +647,9 @@ class FetchOSMSegmentsTaskTest(TestCase):
 
         self.assertIn('generating', statuses)
         self.campaign.refresh_from_db()
-        self.assertEqual(self.campaign.map_status, 'ready')
+        # After fetch_osm_segments, the task dispatches render_campaign_geojson
+        # asynchronously. In tests the task is not executed, so status is 'rendering'.
+        self.assertEqual(self.campaign.map_status, 'rendering')
 
     @patch('campaigns.tasks.query_overpass')
     def test_sets_map_status_error_on_failure(self, mock_qo):
@@ -973,6 +976,8 @@ class WorkerFlowEndToEndTest(TestCase):
         # ── 1. Publish campaign and run OSM import ────────────────────────────
         campaign = make_campaign(slug='e2e-camp', cities=['Testville'])
         fetch_osm_segments(campaign.pk)
+        # Simulate the async render step (normally dispatched to Celery).
+        render_campaign_geojson(campaign.pk, final_status='ready')
         campaign.refresh_from_db()
 
         self.assertEqual(campaign.map_status, 'ready')
@@ -1322,7 +1327,8 @@ class FetchOSMErrorHandlingTest(TestCase):
         ]
         fetch_osm_segments(self.campaign.pk)
         self.campaign.refresh_from_db()
-        self.assertEqual(self.campaign.map_status, 'ready')
+        # Async rendering is dispatched; status is 'rendering' in tests (task not executed).
+        self.assertEqual(self.campaign.map_status, 'rendering')
         self.assertEqual(self.campaign.map_error, '')
 
     def test_map_error_cleared_at_start_of_fetch(self):
@@ -1359,7 +1365,8 @@ class FetchOSMErrorHandlingTest(TestCase):
         fetch_osm_segments(self.campaign.pk)
         self.mock_lookup.assert_not_called()
         self.campaign.refresh_from_db()
-        self.assertEqual(self.campaign.map_status, 'ready')
+        # Async rendering dispatched; in tests the task is not executed so status is 'rendering'.
+        self.assertEqual(self.campaign.map_status, 'rendering')
 
 
 # ── Task tests: retry on transient errors ─────────────────────────────────────
@@ -2027,3 +2034,206 @@ class WatchdogStuckJobsTest(TestCase):
         body = mail.outbox[0].body
         self.assertIn('Springfield', body)
         self.assertIn('Shelbyville', body)
+
+
+# ── Task tests: render_campaign_geojson ───────────────────────────────────────
+
+class RenderCampaignGeoJSONTaskTest(TestCase):
+    """Tests for the async render_campaign_geojson Celery task (issue #78)."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='render-camp', map_status='rendering')
+        make_street(self.campaign, osm_id=1001, name='Elm St')
+
+    def test_sets_streets_geojson_on_success(self):
+        render_campaign_geojson(self.campaign.pk, final_status='ready')
+        self.campaign.refresh_from_db()
+        self.assertTrue(len(self.campaign.streets_geojson) > 0)
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['type'], 'FeatureCollection')
+
+    def test_sets_map_status_to_final_status_ready(self):
+        render_campaign_geojson(self.campaign.pk, final_status='ready')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'ready')
+
+    def test_sets_map_status_to_final_status_warning(self):
+        render_campaign_geojson(self.campaign.pk, final_status='warning')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'warning')
+
+    def test_sets_map_status_error_on_exception(self):
+        with patch('campaigns.tasks.build_streets_geojson', side_effect=RuntimeError('OOM')):
+            with self.assertRaises(RuntimeError):
+                render_campaign_geojson(self.campaign.pk, final_status='ready')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+        self.assertIn('OOM', self.campaign.map_error)
+
+    def test_silently_does_nothing_for_missing_campaign(self):
+        # Should log an error but not raise.
+        render_campaign_geojson(99999, final_status='ready')  # no exception expected
+
+    def test_geojson_respects_geo_limit(self):
+        """When campaign has a geo_limit, only streets within it appear in geojson."""
+        from django.contrib.gis.geos import Polygon as GeosPoly
+        # Tight box that does NOT contain GEOM (which spans -122.1 to -122.15, 37.4 to 37.45)
+        outside_box = GeosPoly.from_bbox((-100.0, 10.0, -99.0, 11.0))
+        outside_box.srid = 4326
+        self.campaign.geo_limit = outside_box
+        self.campaign.save(update_fields=['geo_limit'])
+        render_campaign_geojson(self.campaign.pk, final_status='ready')
+        self.campaign.refresh_from_db()
+        data = json.loads(self.campaign.streets_geojson)
+        self.assertEqual(data['features'], [])
+
+
+# ── Task tests: _sync_campaign_map_status dispatches render task ──────────────
+
+class SyncCampaignMapStatusRenderTest(TestCase):
+    """Verify _sync_campaign_map_status dispatches render_campaign_geojson instead
+    of building GeoJSON inline."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='sync-render-camp', map_status='generating')
+        make_street(self.campaign, osm_id=2001, name='Oak Ave')
+
+    def _make_ready_job(self, city_index=0, city_name='Testville', status='ready'):
+        return CityFetchJob.objects.create(
+            campaign=self.campaign, city_index=city_index,
+            city_name=city_name, status=status,
+        )
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_dispatches_render_task_when_all_cities_ready(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._make_ready_job(status='ready')
+        _sync_campaign_map_status(self.campaign.pk)
+        mock_render.delay.assert_called_once_with(self.campaign.pk, final_status='ready')
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_dispatches_render_task_with_warning_when_some_cities_error(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._make_ready_job(city_index=0, city_name='Good City', status='ready')
+        CityFetchJob.objects.create(
+            campaign=self.campaign, city_index=1, city_name='Bad City',
+            status='error', error='Not found',
+        )
+        _sync_campaign_map_status(self.campaign.pk)
+        mock_render.delay.assert_called_once_with(self.campaign.pk, final_status='warning')
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_sets_map_status_rendering_before_dispatch(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._make_ready_job(status='ready')
+        _sync_campaign_map_status(self.campaign.pk)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'rendering')
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_does_not_dispatch_render_when_still_generating(self, mock_render):
+        mock_render.delay = MagicMock()
+        CityFetchJob.objects.create(
+            campaign=self.campaign, city_index=0, city_name='Pending City', status='pending',
+        )
+        _sync_campaign_map_status(self.campaign.pk)
+        mock_render.delay.assert_not_called()
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_does_not_dispatch_render_when_all_cities_error(self, mock_render):
+        mock_render.delay = MagicMock()
+        CityFetchJob.objects.create(
+            campaign=self.campaign, city_index=0, city_name='Bad City',
+            status='error', error='Not found',
+        )
+        _sync_campaign_map_status(self.campaign.pk)
+        mock_render.delay.assert_not_called()
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'error')
+
+
+# ── View tests: manage_campaign_update_geo_limit async ───────────────────────
+
+class ManageCampaignUpdateGeoLimitAsyncTest(TestCase):
+    """Verify that manage_campaign_update_geo_limit returns 'rendering' and
+    dispatches render_campaign_geojson instead of building GeoJSON inline."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='geo_manager', password='pw')
+        self.campaign = make_campaign(
+            slug='geo-async-camp', status='draft', map_status='ready',
+            bbox=[[-122.2, 37.3], [-122.0, 37.5]],
+        )
+        make_street(self.campaign, osm_id=3001, name='Pine St')
+
+    def _login(self):
+        self.client.login(username='geo_manager', password='pw')
+
+    def _post_polygon(self, slug=None):
+        slug = slug or self.campaign.slug
+        polygon = {
+            'type': 'Polygon',
+            'coordinates': [[
+                [-122.15, 37.35],
+                [-122.05, 37.35],
+                [-122.05, 37.45],
+                [-122.15, 37.45],
+                [-122.15, 37.35],
+            ]],
+        }
+        return self.client.post(
+            f'/manage/{slug}/update-geo-limit/',
+            data=json.dumps(polygon),
+            content_type='application/json',
+        )
+
+    @patch('campaigns.views.render_campaign_geojson')
+    def test_returns_rendering_status(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._login()
+        resp = self._post_polygon()
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'rendering')
+
+    @patch('campaigns.views.render_campaign_geojson')
+    def test_returns_bbox_in_response(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._login()
+        resp = self._post_polygon()
+        data = resp.json()
+        self.assertIn('bbox', data)
+
+    @patch('campaigns.views.render_campaign_geojson')
+    def test_dispatches_render_task(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._login()
+        self._post_polygon()
+        mock_render.delay.assert_called_once_with(self.campaign.pk, final_status='ready')
+
+    @patch('campaigns.views.render_campaign_geojson')
+    def test_sets_map_status_rendering_in_db(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._login()
+        self._post_polygon()
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'rendering')
+
+    @patch('campaigns.views.render_campaign_geojson')
+    def test_clears_streets_geojson_in_db(self, mock_render):
+        mock_render.delay = MagicMock()
+        self.campaign.streets_geojson = '{"type":"FeatureCollection","features":[]}'
+        self.campaign.save(update_fields=['streets_geojson'])
+        self._login()
+        self._post_polygon()
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.streets_geojson, '')
+
+    @patch('campaigns.views.render_campaign_geojson')
+    def test_does_not_call_build_streets_geojson_inline(self, mock_render):
+        mock_render.delay = MagicMock()
+        self._login()
+        with patch('campaigns.views.build_streets_geojson') as mock_build:
+            self._post_polygon()
+            mock_build.assert_not_called()

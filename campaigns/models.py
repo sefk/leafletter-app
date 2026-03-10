@@ -13,6 +13,7 @@ class Campaign(models.Model):
     MAP_STATUS = [
         ('pending', 'Pending'),
         ('generating', 'Generating'),
+        ('rendering', 'Rendering'),
         ('ready', 'Ready'),
         ('warning', 'Warning'),
         ('error', 'Error'),

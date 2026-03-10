@@ -13,7 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm
 from .models import Campaign, CityFetchJob, Street, Trip
-from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
 
@@ -234,7 +234,7 @@ def manage_campaign_list(request):
         street_count=Count('streets', distinct=True),
         trip_count=Count('trips', distinct=True),
     )
-    inflight = campaigns.filter(map_status__in=('pending', 'generating')).order_by('updated_at')
+    inflight = campaigns.filter(map_status__in=('pending', 'generating', 'rendering')).order_by('updated_at')
     return render(request, 'campaigns/manage/campaign_list.html', {
         'campaigns': campaigns,
         'inflight': inflight,
@@ -475,11 +475,11 @@ def manage_campaign_update_geo_limit(request, slug):
         return HttpResponseBadRequest('Invalid polygon')
     xmin, ymin, xmax, ymax = geo_limit.extent
     bbox = [[ymin, xmin], [ymax, xmax]]
-    geojson = build_streets_geojson(campaign.pk, geo_limit=geo_limit)
     Campaign.objects.filter(pk=campaign.pk).update(
-        geo_limit=geo_limit, bbox=bbox, streets_geojson=geojson,
+        geo_limit=geo_limit, bbox=bbox, streets_geojson='', map_status='rendering',
     )
-    return JsonResponse({'status': 'ok', 'bbox': bbox})
+    render_campaign_geojson.delay(campaign.pk, final_status='ready')
+    return JsonResponse({'status': 'rendering', 'bbox': bbox})
 
 
 @_login_required

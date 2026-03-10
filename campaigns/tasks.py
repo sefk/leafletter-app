@@ -199,7 +199,8 @@ def build_streets_geojson(campaign_id: int, bbox=None, geo_limit=None) -> str:
 def _sync_campaign_map_status(campaign_id: int) -> None:
     """
     Recompute Campaign.map_status from all CityFetchJob records and save.
-    Also recalculates bbox and pre-renders streets_geojson when all cities are ready.
+    When all cities are ready (or some have errors), compute bbox synchronously
+    and dispatch render_campaign_geojson to build the GeoJSON blob asynchronously.
     """
     jobs = list(CityFetchJob.objects.filter(campaign_id=campaign_id))
     if not jobs:
@@ -233,12 +234,12 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
     if new_status == 'ready':
         updates['map_error'] = ''
     if new_status in ('ready', 'warning'):
+        # Compute bbox synchronously (cheap) then dispatch async GeoJSON rendering.
         campaign = Campaign.objects.only('geo_limit').get(pk=campaign_id)
         if campaign.geo_limit:
             # Preserve manager-drawn boundary; derive bbox from its extent
             xmin, ymin, xmax, ymax = campaign.geo_limit.extent
             updates['bbox'] = [[ymin, xmin], [ymax, xmax]]
-            updates['streets_geojson'] = build_streets_geojson(campaign_id, geo_limit=campaign.geo_limit)
         else:
             min_lon = min_lat = float('inf')
             max_lon = max_lat = float('-inf')
@@ -250,9 +251,43 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
                 max_lat = max(max_lat, ymax)
             if min_lon != float('inf'):
                 updates['bbox'] = [[min_lat, min_lon], [max_lat, max_lon]]
-                updates['streets_geojson'] = build_streets_geojson(campaign_id)
+        # Switch to 'rendering' and clear stale geojson; async task will set final status.
+        final_status = new_status  # 'ready' or 'warning'
+        updates['map_status'] = 'rendering'
+        updates['streets_geojson'] = ''
+        Campaign.objects.filter(pk=campaign_id).update(**updates)
+        render_campaign_geojson.delay(campaign_id, final_status=final_status)
+        return
 
     Campaign.objects.filter(pk=campaign_id).update(**updates)
+
+
+@shared_task(bind=True)
+def render_campaign_geojson(self, campaign_id: int, final_status: str = 'ready') -> None:
+    """
+    Build and store the pre-rendered GeoJSON blob for a campaign.
+    Called asynchronously after city fetches complete or after the geo_limit changes.
+    Sets map_status to final_status ('ready' or 'warning') on success,
+    or 'error' on failure.
+    """
+    try:
+        campaign = Campaign.objects.only('geo_limit', 'map_status').get(pk=campaign_id)
+        geojson = build_streets_geojson(campaign_id, geo_limit=campaign.geo_limit)
+        Campaign.objects.filter(pk=campaign_id).update(
+            streets_geojson=geojson, map_status=final_status,
+        )
+        logger.info(
+            'render_campaign_geojson: campaign %s rendered, final_status=%s',
+            campaign_id, final_status,
+        )
+    except Campaign.DoesNotExist:
+        logger.error('render_campaign_geojson: campaign %s not found', campaign_id)
+    except Exception as exc:
+        logger.error('render_campaign_geojson: campaign %s failed: %s', campaign_id, exc)
+        Campaign.objects.filter(pk=campaign_id).update(
+            map_status='error', map_error=str(exc),
+        )
+        raise
 
 
 def queue_city_fetches(campaign_id: int, city_indices: list[int] | None = None) -> None:
