@@ -43,7 +43,8 @@
     .instructions p:empty { min-height: 1.42em; }
     .instructions ul, .instructions ol { padding-left: 1.5em; margin: 0; }
     .instructions li { margin: 0; font-size: 0.9rem; color: #444; line-height: 1.42; }
-    .instructions-toggle { display: none; margin-top: 4px; background: none; border: none; padding: 0; color: #1a6b3c; font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
+    .instructions-toggle { display: none; margin-top: 6px; background: none; border: 1px solid #1a6b3c; border-radius: 4px; padding: 2px 8px; color: #1a6b3c; font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .instructions-toggle:hover { background: #1a6b3c; color: #fff; }
 
     #map { height: 55vh; width: 100%; }
     @media (pointer: coarse), (max-width: 768px) {
@@ -289,11 +290,11 @@
     if (!body || !toggle) return;
     if (body.scrollHeight > body.clientHeight) {
       toggle.style.display = 'inline';
-      toggle.textContent = 'more';
+      toggle.textContent = '▼ more';
     }
     window.toggleInstructions = function() {
       var expanded = body.classList.toggle('expanded');
-      toggle.textContent = expanded ? 'less' : 'more';
+      toggle.textContent = expanded ? '▲ less' : '▼ more';
     };
   })();
 </script>
