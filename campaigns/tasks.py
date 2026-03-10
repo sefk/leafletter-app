@@ -7,6 +7,7 @@ import requests
 from celery import shared_task
 from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import LineString
+from django.db import connection
 from django.core.mail import send_mail
 from django.utils import timezone
 
@@ -167,39 +168,11 @@ def split_way_at_intersections(way: dict, intersection_nodes: set) -> list[dict]
 
 # ── Per-city helpers ───────────────────────────────────────────────────────────
 
-def build_streets_geojson(campaign_id: int, bbox=None, geo_limit=None) -> str:
-    """
-    Serialize streets for a campaign to a GeoJSON FeatureCollection string.
-    If geo_limit (a GEOS Polygon) is provided, only streets intersecting it are included.
-    Otherwise, if bbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]], filter by that rectangle.
-    """
-    from django.contrib.gis.geos import Polygon as GeosPoly
-    qs = Street.objects.filter(campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
-    if geo_limit is not None:
-        qs = qs.filter(geometry__intersects=geo_limit)
-    elif bbox:
-        sw, ne = bbox
-        bbox_poly = GeosPoly.from_bbox((sw[1], sw[0], ne[1], ne[0]))
-        bbox_poly.srid = 4326
-        qs = qs.filter(geometry__intersects=bbox_poly)
-    features = []
-    for street in qs:
-        features.append({
-            'type': 'Feature',
-            'id': street.pk,
-            'geometry': json.loads(street.geometry.geojson),
-            'properties': {
-                'osm_id': street.osm_id,
-                'name': street.name,
-            },
-        })
-    return json.dumps({'type': 'FeatureCollection', 'features': features})
-
-
 def _sync_campaign_map_status(campaign_id: int) -> None:
     """
     Recompute Campaign.map_status from all CityFetchJob records and save.
-    Also recalculates bbox and pre-renders streets_geojson when all cities are ready.
+    Also recalculates bbox when all cities are ready.
+    Streets are served dynamically by the streets GeoJSON endpoint; no pre-rendering.
     """
     jobs = list(CityFetchJob.objects.filter(campaign_id=campaign_id))
     if not jobs:
@@ -238,19 +211,21 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
             # Preserve manager-drawn boundary; derive bbox from its extent
             xmin, ymin, xmax, ymax = campaign.geo_limit.extent
             updates['bbox'] = [[ymin, xmin], [ymax, xmax]]
-            updates['streets_geojson'] = build_streets_geojson(campaign_id, geo_limit=campaign.geo_limit)
         else:
-            min_lon = min_lat = float('inf')
-            max_lon = max_lat = float('-inf')
-            for street in Street.objects.filter(campaign_id=campaign_id).only('geometry'):
-                xmin, ymin, xmax, ymax = street.geometry.extent
-                min_lon = min(min_lon, xmin)
-                min_lat = min(min_lat, ymin)
-                max_lon = max(max_lon, xmax)
-                max_lat = max(max_lat, ymax)
-            if min_lon != float('inf'):
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT "
+                    "MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(geometry)), 1))), "
+                    "MIN(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(geometry)), 1))), "
+                    "MAX(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(geometry)), 3))), "
+                    "MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(geometry)), 3))) "
+                    "FROM campaigns_street WHERE campaign_id = %s",
+                    [campaign_id],
+                )
+                row = cursor.fetchone()
+            if row and row[0] is not None:
+                min_lon, min_lat, max_lon, max_lat = row
                 updates['bbox'] = [[min_lat, min_lon], [max_lat, max_lon]]
-                updates['streets_geojson'] = build_streets_geojson(campaign_id)
 
     Campaign.objects.filter(pk=campaign_id).update(**updates)
 
@@ -267,7 +242,7 @@ def queue_city_fetches(campaign_id: int, city_indices: list[int] | None = None) 
     if city_indices is None:
         city_indices = list(range(len(cities)))
 
-    Campaign.objects.filter(pk=campaign_id).update(map_status='generating', map_error='', streets_geojson='')
+    Campaign.objects.filter(pk=campaign_id).update(map_status='generating', map_error='')
 
     for idx in city_indices:
         city = cities[idx]
@@ -497,7 +472,7 @@ def fetch_osm_segments(self, campaign_id: int) -> None:
         logger.error("fetch_osm_segments: campaign %s not found", campaign_id)
         return
     Campaign.objects.filter(pk=campaign_id).update(
-        map_status='generating', map_error='', bbox=None, streets_geojson='',
+        map_status='generating', map_error='', bbox=None,
     )
     for idx in range(len(campaign.cities)):
         city = campaign.cities[idx]

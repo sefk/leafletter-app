@@ -13,7 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm
 from .models import Campaign, CityFetchJob, Street, Trip
-from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import fetch_city_osm_data, queue_city_fetches, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
 
@@ -74,36 +74,30 @@ def campaign_detail(request, slug):
 def campaign_streets_geojson(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
 
-    if campaign.streets_geojson and not request.GET.get('all'):
-        return HttpResponse(campaign.streets_geojson, content_type='application/json')
+    qs = campaign.streets.only('pk', 'osm_id', 'name', 'geometry')
 
-    streets = campaign.streets.all()
-
-    if not request.GET.get('all'):
-        if campaign.geo_limit:
-            streets = streets.filter(geometry__intersects=campaign.geo_limit)
-        elif campaign.bbox:
-            sw, ne = campaign.bbox  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
-            bbox_poly = Polygon.from_bbox((sw[1], sw[0], ne[1], ne[0]))  # (xmin, ymin, xmax, ymax)
+    bbox_param = request.GET.get('bbox')
+    if bbox_param:
+        try:
+            sw_lat, sw_lon, ne_lat, ne_lon = [float(x) for x in bbox_param.split(',')]
+            bbox_poly = Polygon.from_bbox((sw_lon, sw_lat, ne_lon, ne_lat))
             bbox_poly.srid = 4326
-            streets = streets.filter(geometry__intersects=bbox_poly)
+            qs = qs.filter(geometry__intersects=bbox_poly)
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest('Invalid bbox')
+    elif campaign.geo_limit:
+        qs = qs.filter(geometry__intersects=campaign.geo_limit)
 
-    features = []
-    for street in streets:
-        features.append({
+    features = [
+        {
             'type': 'Feature',
-            'id': street.pk,
-            'geometry': json.loads(street.geometry.geojson),
-            'properties': {
-                'osm_id': street.osm_id,
-                'name': street.name,
-            },
-        })
-
-    return JsonResponse({
-        'type': 'FeatureCollection',
-        'features': features,
-    })
+            'id': s.pk,
+            'geometry': json.loads(s.geometry.geojson),
+            'properties': {'osm_id': s.osm_id, 'name': s.name},
+        }
+        for s in qs[:5000]
+    ]
+    return JsonResponse({'type': 'FeatureCollection', 'features': features})
 
 
 @require_GET
@@ -218,8 +212,7 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
         new_indices = sorted(new_key_to_idx[k] for k in added_keys)
         queue_city_fetches(campaign.pk, city_indices=new_indices)
     elif removed_keys:
-        # Cities removed but none added; invalidate cached GeoJSON and sync status.
-        Campaign.objects.filter(pk=campaign.pk).update(streets_geojson='')
+        # Cities removed but none added; sync status.
         if not new_cities:
             Campaign.objects.filter(pk=campaign.pk).update(map_status='pending', map_error='')
         else:
@@ -388,10 +381,8 @@ def manage_city_delete(request, slug, city_index):
     campaign = get_object_or_404(Campaign, slug=slug)
     Street.objects.filter(campaign=campaign, city_index=city_index).delete()
     CityFetchJob.objects.filter(campaign=campaign, city_index=city_index).update(status='pending', error='')
-    update = {'streets_geojson': ''}
     if not campaign.streets.exists():
-        update['map_status'] = 'pending'
-    Campaign.objects.filter(pk=campaign.pk).update(**update)
+        Campaign.objects.filter(pk=campaign.pk).update(map_status='pending')
     return redirect('manage_campaign_detail', slug=slug)
 
 
@@ -400,36 +391,30 @@ def manage_city_delete(request, slug, city_index):
 def manage_campaign_streets_geojson(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
 
-    if campaign.streets_geojson and not request.GET.get('all'):
-        return HttpResponse(campaign.streets_geojson, content_type='application/json')
+    qs = campaign.streets.only('pk', 'osm_id', 'name', 'geometry')
 
-    streets = campaign.streets.all()
-
-    if not request.GET.get('all'):
-        if campaign.geo_limit:
-            streets = streets.filter(geometry__intersects=campaign.geo_limit)
-        elif campaign.bbox:
-            sw, ne = campaign.bbox
-            bbox_poly = Polygon.from_bbox((sw[1], sw[0], ne[1], ne[0]))
+    bbox_param = request.GET.get('bbox')
+    if bbox_param:
+        try:
+            sw_lat, sw_lon, ne_lat, ne_lon = [float(x) for x in bbox_param.split(',')]
+            bbox_poly = Polygon.from_bbox((sw_lon, sw_lat, ne_lon, ne_lat))
             bbox_poly.srid = 4326
-            streets = streets.filter(geometry__intersects=bbox_poly)
+            qs = qs.filter(geometry__intersects=bbox_poly)
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest('Invalid bbox')
+    elif campaign.geo_limit:
+        qs = qs.filter(geometry__intersects=campaign.geo_limit)
 
-    features = []
-    for street in streets:
-        features.append({
+    features = [
+        {
             'type': 'Feature',
-            'id': street.pk,
-            'geometry': json.loads(street.geometry.geojson),
-            'properties': {
-                'osm_id': street.osm_id,
-                'name': street.name,
-            },
-        })
-
-    return JsonResponse({
-        'type': 'FeatureCollection',
-        'features': features,
-    })
+            'id': s.pk,
+            'geometry': json.loads(s.geometry.geojson),
+            'properties': {'osm_id': s.osm_id, 'name': s.name},
+        }
+        for s in qs[:5000]
+    ]
+    return JsonResponse({'type': 'FeatureCollection', 'features': features})
 
 
 @_login_required
@@ -475,10 +460,7 @@ def manage_campaign_update_geo_limit(request, slug):
         return HttpResponseBadRequest('Invalid polygon')
     xmin, ymin, xmax, ymax = geo_limit.extent
     bbox = [[ymin, xmin], [ymax, xmax]]
-    geojson = build_streets_geojson(campaign.pk, geo_limit=geo_limit)
-    Campaign.objects.filter(pk=campaign.pk).update(
-        geo_limit=geo_limit, bbox=bbox, streets_geojson=geojson,
-    )
+    Campaign.objects.filter(pk=campaign.pk).update(geo_limit=geo_limit, bbox=bbox)
     return JsonResponse({'status': 'ok', 'bbox': bbox})
 
 

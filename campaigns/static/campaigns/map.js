@@ -92,114 +92,135 @@
   // ── Loading state for "Log a Trip" button ────────────────────────────────
   const btnLogTrip = document.getElementById('btn-log-trip');
   btnLogTrip.disabled = true;
-  btnLogTrip.textContent = 'Loading streets… 0%';
+  btnLogTrip.textContent = 'Loading streets…';
 
-  // ── Load streets ─────────────────────────────────────────────────────────
-  fetchJSON(window.STREETS_URL, pct => { btnLogTrip.textContent = `Loading streets… ${pct}%`; })
-    .then(geojson => {
-      if (!geojson.features || geojson.features.length === 0) {
-        map.setView([0, 0], 2);
-        btnLogTrip.disabled = false;
-        btnLogTrip.textContent = 'Log a Trip';
-        return;
-      }
+  // ── Viewport-aware street loading ─────────────────────────────────────────
+  const MIN_ZOOM = 13;
+  let streetsLoaded = false;
 
-      streetsLayer = L.geoJSON(geojson, {
-        style: STYLE_DEFAULT,
-        onEachFeature: (feature, layer) => {
-          const id = feature.id;
-          const name = feature.properties.name || 'Unnamed street';
+  function debounce(fn, ms) {
+    let timer;
+    return function () { clearTimeout(timer); timer = setTimeout(fn, ms); };
+  }
 
-          layerById.set(id, layer);
-          layerToId.set(layer, id);
-          nameById.set(id, name);
+  function loadStreets() {
+    if (map.getZoom() < MIN_ZOOM) {
+      if (!streetsLoaded) btnLogTrip.textContent = 'Zoom in to see streets';
+      return;
+    }
+    const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+    const bboxParam = `${sw.lat.toFixed(6)},${sw.lng.toFixed(6)},${ne.lat.toFixed(6)},${ne.lng.toFixed(6)}`;
+    const url = window.STREETS_URL + '?bbox=' + bboxParam;
 
-          layer.on('click', () => {
-            if (!selectionMode) return;
-            if (selectedIds.has(id)) {
-              selectedIds.delete(id);
-              // Remove from wherever it sits in the stack (may be inside a batch array)
-              for (let i = selectionStack.length - 1; i >= 0; i--) {
-                const entry = selectionStack[i];
-                if (Array.isArray(entry)) {
-                  const idx = entry.indexOf(id);
-                  if (idx !== -1) {
-                    entry.splice(idx, 1);
-                    if (entry.length === 0) selectionStack.splice(i, 1);
-                    break;
-                  }
-                } else if (entry === id) {
-                  selectionStack.splice(i, 1);
-                  break;
-                }
-              }
-              layer.setStyle(STYLE_DEFAULT);
-            } else {
-              selectedIds.add(id);
-              selectionStack.push(id);
-              layer.setStyle(STYLE_SELECTED);
-            }
-            updateSelectionCount();
-            updateUndoButton();
-          });
-
-          layer.on('mouseover', () => {
-            if (!selectionMode || !isPointerDown || selectedIds.has(id)) return;
-            selectedIds.add(id);
-            selectionStack.push(id);
-            layer.setStyle(STYLE_SELECTED);
-            updateSelectionCount();
-            updateUndoButton();
-          });
-        },
-      }).addTo(map);
-
-      // Disable pointer events on streets until selection mode is active
-      setStreetsInteractive(false);
-
-      // Initialize lasso if plugin is loaded
-      if (typeof L.lasso === 'function') {
-        lasso = L.lasso(map, { intersect: true });
-        map.on('lasso.finished', event => {
-          const batch = [];
-          event.layers.forEach(layer => {
-            const id = layerToId.get(layer);
-            if (id !== undefined && !selectedIds.has(id)) {
-              selectedIds.add(id);
-              batch.push(id);
-              layer.setStyle(STYLE_SELECTED);
-            }
-          });
-          if (batch.length > 0) {
-            selectionStack.push(batch);
-            document.getElementById('lasso-warning').style.display = 'none';
-          } else {
-            document.getElementById('lasso-warning').style.display = 'block';
-          }
-          updateSelectionCount();
-          updateUndoButton();
-          if (selectionMode) {
-            setTimeout(() => {
-              lasso.enable();
-            }, 0);
-          }
-        });
-      }
-
-      // Fit map to streets bounds only if no server-provided bbox
-      if (!window.BBOX) {
-        map.fitBounds(streetsLayer.getBounds(), { padding: [20, 20] });
-      }
-
-      // Load coverage by default
-      btnLogTrip.textContent = 'Loading coverage… 0%';
-      loadCoverage();
+    fetchJSON(url, pct => {
+      if (!streetsLoaded) btnLogTrip.textContent = `Loading streets… ${pct}%`;
     })
-    .catch(err => {
-      console.error('Failed to load streets:', err);
-      btnLogTrip.disabled = false;
-      btnLogTrip.textContent = 'Log a Trip';
-    });
+      .then(geojson => {
+        if (!geojson.features) return;
+
+        const newFeatures = geojson.features.filter(f => !layerById.has(f.id));
+
+        if (newFeatures.length > 0) {
+          L.geoJSON({ type: 'FeatureCollection', features: newFeatures }, {
+            style: STYLE_DEFAULT,
+            onEachFeature: (feature, layer) => {
+              const id = feature.id;
+              const name = feature.properties.name || 'Unnamed street';
+
+              layerById.set(id, layer);
+              layerToId.set(layer, id);
+              nameById.set(id, name);
+
+              layer.on('click', () => {
+                if (!selectionMode) return;
+                if (selectedIds.has(id)) {
+                  selectedIds.delete(id);
+                  for (let i = selectionStack.length - 1; i >= 0; i--) {
+                    const entry = selectionStack[i];
+                    if (Array.isArray(entry)) {
+                      const idx = entry.indexOf(id);
+                      if (idx !== -1) {
+                        entry.splice(idx, 1);
+                        if (entry.length === 0) selectionStack.splice(i, 1);
+                        break;
+                      }
+                    } else if (entry === id) {
+                      selectionStack.splice(i, 1);
+                      break;
+                    }
+                  }
+                  layer.setStyle(STYLE_DEFAULT);
+                } else {
+                  selectedIds.add(id);
+                  selectionStack.push(id);
+                  layer.setStyle(STYLE_SELECTED);
+                }
+                updateSelectionCount();
+                updateUndoButton();
+              });
+
+              layer.on('mouseover', () => {
+                if (!selectionMode || !isPointerDown || selectedIds.has(id)) return;
+                selectedIds.add(id);
+                selectionStack.push(id);
+                layer.setStyle(STYLE_SELECTED);
+                updateSelectionCount();
+                updateUndoButton();
+              });
+            },
+          }).addTo(map);
+
+          // Apply current interactive state to newly added layers
+          setStreetsInteractive(selectionMode);
+        }
+
+        if (!streetsLoaded) {
+          streetsLoaded = true;
+
+          // Initialize lasso if plugin is loaded
+          if (typeof L.lasso === 'function') {
+            lasso = L.lasso(map, { intersect: true });
+            map.on('lasso.finished', event => {
+              const batch = [];
+              event.layers.forEach(layer => {
+                const id = layerToId.get(layer);
+                if (id !== undefined && !selectedIds.has(id)) {
+                  selectedIds.add(id);
+                  batch.push(id);
+                  layer.setStyle(STYLE_SELECTED);
+                }
+              });
+              if (batch.length > 0) {
+                selectionStack.push(batch);
+                document.getElementById('lasso-warning').style.display = 'none';
+              } else {
+                document.getElementById('lasso-warning').style.display = 'block';
+              }
+              updateSelectionCount();
+              updateUndoButton();
+              if (selectionMode) {
+                setTimeout(() => { lasso.enable(); }, 0);
+              }
+            });
+          }
+
+          btnLogTrip.disabled = false;
+          btnLogTrip.textContent = 'Loading coverage… 0%';
+          loadCoverage();
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load streets:', err);
+        if (!streetsLoaded) {
+          btnLogTrip.disabled = false;
+          btnLogTrip.textContent = 'Log a Trip';
+        }
+      });
+  }
+
+  map.on('zoomend', debounce(loadStreets, 300));
+  map.on('moveend', debounce(loadStreets, 300));
+  loadStreets();
 
   // ── Coverage layer ────────────────────────────────────────────────────────
   function loadCoverage() {
@@ -334,8 +355,7 @@
   }
 
   function setStreetsInteractive(active) {
-    if (!streetsLayer) return;
-    streetsLayer.eachLayer(layer => {
+    layerById.forEach(layer => {
       if (layer._path) layer._path.style.pointerEvents = active ? '' : 'none';
     });
   }
@@ -369,12 +389,11 @@
     document.getElementById('btn-done').style.display = active ? '' : 'none';
     document.getElementById('btn-cancel').style.display = active ? '' : 'none';
     document.getElementById('trip-form').style.display = active ? 'block' : 'none';
-    if (streetsLayer) {
+    if (layerById.size > 0) {
       map.getContainer().style.cursor = active ? 'crosshair' : '';
       setStreetsInteractive(active);
-      streetsLayer.eachLayer(layer => {
+      layerById.forEach((layer, id) => {
         if (active) {
-          const id = layerToId.get(layer);
           layer.bindTooltip(nameById.get(id) || 'Unnamed street', { sticky: true });
         } else {
           layer.unbindTooltip();
@@ -401,9 +420,7 @@
     selectionStack.length = 0;
     updateSelectionCount();
     updateUndoButton();
-    if (streetsLayer) {
-      streetsLayer.setStyle(STYLE_DEFAULT);
-    }
+    layerById.forEach(layer => { layer.setStyle(STYLE_DEFAULT); });
   }
 
   function updateDebugPanel() {

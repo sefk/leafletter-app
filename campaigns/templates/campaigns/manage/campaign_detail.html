@@ -291,7 +291,7 @@
   (function() {
     var currentBbox = {{ bbox_json }};
     var currentGeoLimit = {{ geo_limit_json|safe }};  // GeoJSON polygon or null
-    var streetsUrl = "{% url 'manage_streets_geojson' campaign.slug %}?all=1";
+    var streetsUrl = "{% url 'manage_streets_geojson' campaign.slug %}";
     var updateUrl = "{% url 'manage_campaign_update_geo_limit' campaign.slug %}";
     var csrfToken = "{{ csrf_token }}";
 
@@ -315,14 +315,23 @@
       map.fitBounds(currentBbox, { padding: [20, 20], animate: false });
     }
 
-    fetch(streetsUrl)
-      .then(function(r) { return r.json(); })
-      .then(function(geojson) {
-        if (geojson.features && geojson.features.length > 0) {
-          L.geoJSON(geojson, { style: { color: '#888', weight: 1.5, opacity: 0.6 } }).addTo(map);
-        }
-      })
-      .catch(function() {});
+    var bboxStreetsLayer = null;
+    function loadBboxStreetsForViewport() {
+      var b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+      var bboxParam = sw.lat.toFixed(6) + ',' + sw.lng.toFixed(6) + ',' + ne.lat.toFixed(6) + ',' + ne.lng.toFixed(6);
+      fetch(streetsUrl + '?bbox=' + bboxParam)
+        .then(function(r) { return r.json(); })
+        .then(function(geojson) {
+          if (bboxStreetsLayer) map.removeLayer(bboxStreetsLayer);
+          if (geojson.features && geojson.features.length > 0) {
+            bboxStreetsLayer = L.geoJSON(geojson, { style: { color: '#888', weight: 1.5, opacity: 0.6 } }).addTo(map);
+          }
+        })
+        .catch(function() {});
+    }
+    loadBboxStreetsForViewport();
+    map.on('moveend', loadBboxStreetsForViewport);
+    map.on('zoomend', loadBboxStreetsForViewport);
 
     var drawnItems = new L.FeatureGroup().addTo(map);
     var drawControl = new L.Control.Draw({
@@ -498,6 +507,24 @@
     var tripMeta = {};
     var coverageMode = 'detail';
 
+    function getStreetsUrlForViewport() {
+      var b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+      var bboxParam = sw.lat.toFixed(6) + ',' + sw.lng.toFixed(6) + ',' + ne.lat.toFixed(6) + ',' + ne.lng.toFixed(6);
+      return streetsUrl + '?bbox=' + bboxParam;
+    }
+
+    function reloadManageStreets() {
+      if (currentStreetsLayer) { map.removeLayer(currentStreetsLayer); currentStreetsLayer = null; }
+      fetch(getStreetsUrlForViewport())
+        .then(function(r) { return r.json(); })
+        .then(function(geojson) {
+          if (geojson.features && geojson.features.length > 0) {
+            currentStreetsLayer = L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
+          }
+        })
+        .catch(function() {});
+    }
+
     function loadMap(newBbox) {
       bbox = newBbox;
       if (currentStreetsLayer) { map.removeLayer(currentStreetsLayer); currentStreetsLayer = null; }
@@ -509,14 +536,13 @@
       if (loadingEl) loadingEl.style.display = '';
       if (loadingTextEl) loadingTextEl.textContent = 'Loading streets… 0%';
 
-      fetchJSON(streetsUrl, function(pct) { if (loadingTextEl) loadingTextEl.textContent = 'Loading streets… ' + pct + '%'; })
+      fetchJSON(getStreetsUrlForViewport(), function(pct) { if (loadingTextEl) loadingTextEl.textContent = 'Loading streets… ' + pct + '%'; })
         .then(function(geojson) {
           if (!geojson.features || geojson.features.length === 0) {
             if (loadingEl) loadingEl.style.display = 'none';
             return;
           }
           currentStreetsLayer = L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
-          if (!bbox) map.fitBounds(currentStreetsLayer.getBounds(), { padding: [20, 20] });
           if (loadingTextEl) loadingTextEl.textContent = 'Loading coverage… 0%';
           loadCoverage();
         })
@@ -525,6 +551,9 @@
           if (loadingEl) loadingEl.style.display = 'none';
         });
     }
+
+    map.on('moveend', function() { if (!loadingEl || loadingEl.style.display === 'none') reloadManageStreets(); });
+    map.on('zoomend', function() { if (!loadingEl || loadingEl.style.display === 'none') reloadManageStreets(); });
 
     window.reloadManageMap = loadMap;
 
