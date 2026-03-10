@@ -7,6 +7,7 @@ from campaigns.views import public_campaign_list, about
 urlpatterns = [
     path('', public_campaign_list, name='public_campaign_list'),
     path('about/', about, name='about'),
+    path('admin/dj-celery-panel/', include('dj_celery_panel.urls')),
     path('admin/', admin.site.urls),
     path('c/', include('campaigns.urls', namespace='campaigns')),
     path('manage/', include(manage_urlpatterns)),

@@ -35,6 +35,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.gis',
     'django_celery_results',
+    'django_celery_beat',
+    'dj_celery_panel',
     'campaigns',
 ]
 

@@ -4,7 +4,9 @@ django[argon2]
 celery
 kombu[sqlalchemy]
 requests
+django-celery-beat
 django-celery-results
+dj-celery-panel
 watchdog
 honcho
 gunicorn
