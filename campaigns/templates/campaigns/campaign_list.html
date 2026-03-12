@@ -33,17 +33,19 @@
     .campaign-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
     .campaign-card-hero { border-left: none; padding: 0; overflow: hidden; border: 1px solid #ccc; }
     .campaign-hero {
-      background-size: cover;
-      background-position: center;
-      aspect-ratio: 32/9;
-      width: 100%;
       position: relative;
-      display: flex;
-      align-items: flex-end;
+      width: 100%;
+    }
+    .campaign-hero img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 32/9;
+      object-fit: cover;
     }
     .campaign-hero-overlay {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
       background: linear-gradient(transparent, rgba(255,255,255,0.97) 40%);
-      width: 100%;
       padding: 20px 20px 16px;
     }
     .campaign-card-hero h2 { font-size: 1.15rem; color: #111; margin-bottom: 4px; }
@@ -134,7 +136,8 @@
     <div class="campaign-card{% if campaign.hero_image_url %} campaign-card-hero{% endif %}">
       <a href="/c/{{ campaign.slug }}/" class="campaign-link">
         {% if campaign.hero_image_url %}
-          <div class="campaign-hero" style="background-image:url('{{ campaign.hero_image_url }}');">
+          <div class="campaign-hero">
+            <img src="{{ campaign.hero_image_url }}" alt="{{ campaign.name }}" loading="lazy">
             <div class="campaign-hero-overlay">
               <h2>{{ campaign.name }}</h2>
               <div class="meta">{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</div>
