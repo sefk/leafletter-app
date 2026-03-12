@@ -25,6 +25,7 @@
     .header-icons { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
     .header-gear { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.9rem; font-weight: 600; line-height: 1; flex-shrink: 0; }
     .header-gear:hover { color: #fff; }
+    @media (pointer: coarse), (max-width: 768px) { .header-gear-desktop { display: none; } }
 
     .campaign-info {
       padding: 16px 20px;
@@ -186,6 +187,7 @@
   <div class="header-icons">
     <a href="/about/" class="header-gear" title="About">About</a>
     <a href="/" class="header-gear" title="Home">Home</a>
+    <a href="/manage/{{ campaign.slug }}/" class="header-gear header-gear-desktop" title="Manage campaign">Manage</a>
   </div>
 </div>
 
