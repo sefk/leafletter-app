@@ -112,20 +112,35 @@ private struct CampaignRow: View {
     let campaign: Campaign
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(campaign.name)
-                .font(.headline)
-            if let dates = campaign.dateRangeText {
-                Text(dates)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            if let urlString = campaign.heroImageUrl, let url = URL(string: urlString) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(32/9, contentMode: .fill)
+                        .clipped()
+                } placeholder: {
+                    Color(.systemGray5)
+                        .aspectRatio(32/9, contentMode: .fill)
+                }
             }
-            if !campaign.isReady {
-                Label("Map generating…", systemImage: "clock")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(campaign.name)
+                    .font(.headline)
+                if let dates = campaign.dateRangeText {
+                    Text(dates)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !campaign.isReady {
+                    Label("Map generating…", systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
             }
+            .padding(.vertical, 8)
+            .padding(.horizontal, campaign.heroImageUrl != nil ? 12 : 0)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, campaign.heroImageUrl != nil ? 0 : 4)
     }
 }
