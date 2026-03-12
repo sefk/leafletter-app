@@ -14,6 +14,7 @@ struct StreetMapView: UIViewRepresentable {
     let streets: [Street]
     @Binding var selectedIds: Set<Int>
     let bbox: [[Double]]?
+    @Binding var lassoMode: Bool
 
     // MARK: - Make
 
@@ -22,11 +23,23 @@ struct StreetMapView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.mapType = .standard
+        mapView.isScrollEnabled = false  // lasso is default
 
+        // Tap for individual street toggle
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                         action: #selector(Coordinator.handleTap(_:)))
         tap.delegate = context.coordinator
         mapView.addGestureRecognizer(tap)
+
+        // One-finger pan for lasso drawing
+        let pan = UIPanGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.handleLasso(_:)))
+        pan.minimumNumberOfTouches = 1
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = context.coordinator
+        mapView.addGestureRecognizer(pan)
+        context.coordinator.lassoPan = pan
+
         return mapView
     }
 
@@ -35,6 +48,10 @@ struct StreetMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+
+        // Sync lasso / pan mode
+        mapView.isScrollEnabled = !lassoMode
+        coordinator.lassoPan?.isEnabled = lassoMode
 
         // Load street overlays once when streets first arrive
         if coordinator.loadedStreetCount != streets.count {
@@ -79,7 +96,6 @@ struct StreetMapView: UIViewRepresentable {
     // MARK: - Region helper
 
     private func setRegion(on mapView: MKMapView, bbox: [[Double]]) {
-        // bbox format: [[sw_lat, sw_lon], [ne_lat, ne_lon]]
         let sw = CLLocationCoordinate2D(latitude: bbox[0][0], longitude: bbox[0][1])
         let ne = CLLocationCoordinate2D(latitude: bbox[1][0], longitude: bbox[1][1])
         let center = CLLocationCoordinate2D(
@@ -101,6 +117,11 @@ struct StreetMapView: UIViewRepresentable {
         var renderedSelection: Set<Int> = []
         var polylineById: [Int: StreetPolyline] = [:]
 
+        // Lasso state
+        weak var lassoPan: UIPanGestureRecognizer?
+        private var lassoPoints: [CGPoint] = []
+        private var lassoLayer: CAShapeLayer?
+
         init(_ parent: StreetMapView) { self.parent = parent }
 
         // MARK: Overlay renderer
@@ -116,7 +137,7 @@ struct StreetMapView: UIViewRepresentable {
             return renderer
         }
 
-        // MARK: Tap handling
+        // MARK: Tap — toggle individual street
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard gesture.state == .ended,
@@ -125,12 +146,9 @@ struct StreetMapView: UIViewRepresentable {
             let tapPt = gesture.location(in: mapView)
             let tapCoord = mapView.convert(tapPt, toCoordinateFrom: mapView)
             let tapMapPt = MKMapPoint(tapCoord)
-
-            // Threshold: 25 meters expressed in MKMapPoints
             let threshold = 25.0 * MKMapPointsPerMeterAtLatitude(tapCoord.latitude)
 
             var best: (distance: Double, id: Int)?
-
             for overlay in mapView.overlays {
                 guard let poly = overlay as? StreetPolyline else { continue }
                 let points = poly.points()
@@ -150,10 +168,108 @@ struct StreetMapView: UIViewRepresentable {
             }
         }
 
-        // Allow the tap gesture to coexist with MapKit's built-in gestures
+        // MARK: Lasso — draw & select
+
+        @objc func handleLasso(_ gesture: UIPanGestureRecognizer) {
+            guard let mapView = gesture.view as? MKMapView else { return }
+            let pt = gesture.location(in: mapView)
+
+            switch gesture.state {
+            case .began:
+                lassoPoints = [pt]
+                let layer = CAShapeLayer()
+                layer.strokeColor = UIColor.systemBlue.cgColor
+                layer.fillColor = UIColor.systemBlue.withAlphaComponent(0.12).cgColor
+                layer.lineWidth = 2
+                layer.lineDashPattern = [6, 3]
+                mapView.layer.addSublayer(layer)
+                lassoLayer = layer
+
+            case .changed:
+                lassoPoints.append(pt)
+                let path = UIBezierPath()
+                path.move(to: lassoPoints[0])
+                for p in lassoPoints.dropFirst() { path.addLine(to: p) }
+                path.close()
+                lassoLayer?.path = path.cgPath
+
+            case .ended:
+                lassoLayer?.removeFromSuperlayer()
+                lassoLayer = nil
+                if lassoPoints.count > 3 {
+                    selectStreetsInLasso(mapView: mapView)
+                }
+                lassoPoints = []
+
+            case .cancelled, .failed:
+                lassoLayer?.removeFromSuperlayer()
+                lassoLayer = nil
+                lassoPoints = []
+
+            default:
+                break
+            }
+        }
+
+        private func selectStreetsInLasso(mapView: MKMapView) {
+            let lassoMapPts = lassoPoints.map {
+                MKMapPoint(mapView.convert($0, toCoordinateFrom: mapView))
+            }
+            for overlay in mapView.overlays {
+                guard let poly = overlay as? StreetPolyline else { continue }
+                if polylineIntersectsLasso(poly: poly, lasso: lassoMapPts) {
+                    parent.selectedIds.insert(poly.streetId)
+                }
+            }
+        }
+
+        private func polylineIntersectsLasso(poly: StreetPolyline, lasso: [MKMapPoint]) -> Bool {
+            let pts = poly.points()
+            for i in 0..<poly.pointCount {
+                if pointInPolygon(pts[i], polygon: lasso) { return true }
+            }
+            for i in 0..<max(0, poly.pointCount - 1) {
+                for j in 0..<lasso.count {
+                    if segmentsIntersect(lasso[j], lasso[(j + 1) % lasso.count],
+                                         pts[i], pts[i + 1]) { return true }
+                }
+            }
+            return false
+        }
+
+        // Ray-casting point-in-polygon
+        private func pointInPolygon(_ p: MKMapPoint, polygon: [MKMapPoint]) -> Bool {
+            var inside = false
+            var j = polygon.count - 1
+            for i in 0..<polygon.count {
+                let xi = polygon[i].x, yi = polygon[i].y
+                let xj = polygon[j].x, yj = polygon[j].y
+                if ((yi > p.y) != (yj > p.y)) &&
+                   (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi) {
+                    inside.toggle()
+                }
+                j = i
+            }
+            return inside
+        }
+
+        private func segmentsIntersect(_ a1: MKMapPoint, _ a2: MKMapPoint,
+                                       _ b1: MKMapPoint, _ b2: MKMapPoint) -> Bool {
+            func cross(_ o: MKMapPoint, _ a: MKMapPoint, _ b: MKMapPoint) -> Double {
+                (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+            }
+            let d1 = cross(b1, b2, a1), d2 = cross(b1, b2, a2)
+            let d3 = cross(a1, a2, b1), d4 = cross(a1, a2, b2)
+            return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+                   ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+        }
+
+        // MARK: Gesture coexistence
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            true
+            // Tap can coexist with everything; lasso pan should not coexist with MapKit pan
+            gestureRecognizer is UITapGestureRecognizer
         }
 
         // MARK: Geometry

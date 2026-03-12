@@ -10,6 +10,7 @@ struct CampaignDetailView: View {
     @State private var mapError: String?
     @State private var showTripSheet = false
     @State private var showInstructions = false
+    @State private var lassoMode = true
 
     private var activeCampaign: Campaign { detail ?? campaign }
 
@@ -32,12 +33,23 @@ struct CampaignDetailView: View {
                     StreetMapView(
                         streets: streets,
                         selectedIds: $selectedIds,
-                        bbox: activeCampaign.bbox
+                        bbox: activeCampaign.bbox,
+                        lassoMode: $lassoMode
                     )
                     .ignoresSafeArea(edges: .bottom)
                 }
 
-                // Selection badge + Log Trip button
+                // Lasso / pan toggle (top-left)
+                VStack {
+                    HStack {
+                        lassoToggleButton
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding()
+
+                // Selection badge + Log Trip button (bottom-right)
                 VStack(alignment: .trailing, spacing: 12) {
                     if !selectedIds.isEmpty {
                         selectionBadge
@@ -71,6 +83,20 @@ struct CampaignDetailView: View {
     }
 
     // MARK: - Subviews
+
+    private var lassoToggleButton: some View {
+        Button {
+            lassoMode.toggle()
+        } label: {
+            Image(systemName: lassoMode ? "lasso" : "hand.draw")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(lassoMode ? .white : Color(red: 0.1, green: 0.42, blue: 0.24))
+                .frame(width: 44, height: 44)
+                .background(lassoMode ? Color(red: 0.1, green: 0.42, blue: 0.24) : Color(.systemBackground))
+                .clipShape(Circle())
+                .shadow(radius: 3)
+        }
+    }
 
     private var selectionBadge: some View {
         Text("● \(selectedIds.count) block\(selectedIds.count == 1 ? "" : "s")")
