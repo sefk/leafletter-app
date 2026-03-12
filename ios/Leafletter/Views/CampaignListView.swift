@@ -117,11 +117,12 @@ private struct CampaignRow: View {
                 AsyncImage(url: url) { image in
                     image
                         .resizable()
-                        .aspectRatio(32/9, contentMode: .fill)
-                        .clipped()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
                 } placeholder: {
                     Color(.systemGray5)
-                        .aspectRatio(32/9, contentMode: .fill)
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(32/9, contentMode: .fit)
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
