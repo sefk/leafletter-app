@@ -72,19 +72,16 @@ private struct BannerView: View {
     let onAbout: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip.")
+        Group {
+            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.9))
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: onAbout) {
-                Text("About this app")
-                    .font(.footnote.bold())
-                    .foregroundStyle(.white)
-                    .underline()
-            }
-            .buttonStyle(.plain)
+            + Text("About this app")
+                .font(.footnote.bold())
+                .foregroundStyle(.white)
+                .underline()
         }
+        .onTapGesture { onAbout() }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
