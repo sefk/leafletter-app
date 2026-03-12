@@ -1,9 +1,11 @@
 import SwiftUI
+import WebKit
 
 struct CampaignListView: View {
     @State private var campaigns: [Campaign] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var showAbout = false
 
     var body: some View {
         NavigationStack {
@@ -20,9 +22,17 @@ struct CampaignListView: View {
                 } else if campaigns.isEmpty {
                     ContentUnavailableView("No Active Campaigns", systemImage: "mappin.slash")
                 } else {
-                    List(campaigns) { campaign in
-                        NavigationLink(destination: CampaignDetailView(campaign: campaign)) {
-                            CampaignRow(campaign: campaign)
+                    List {
+                        Section {
+                            ForEach(campaigns) { campaign in
+                                NavigationLink(destination: CampaignDetailView(campaign: campaign)) {
+                                    CampaignRow(campaign: campaign)
+                                }
+                            }
+                        } header: {
+                            BannerView(onAbout: { showAbout = true })
+                                .textCase(nil)
+                                .listRowInsets(EdgeInsets())
                         }
                     }
                     .listStyle(.plain)
@@ -36,6 +46,9 @@ struct CampaignListView: View {
                     }
                     .disabled(isLoading)
                 }
+            }
+            .sheet(isPresented: $showAbout) {
+                AboutWebView()
             }
         }
         .task { await load() }
@@ -51,6 +64,46 @@ struct CampaignListView: View {
         }
         isLoading = false
     }
+}
+
+// MARK: - Banner
+
+private struct BannerView: View {
+    let onAbout: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip.")
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: onAbout) {
+                Text("About this app")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.white)
+                    .underline()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+    }
+}
+
+// MARK: - About sheet
+
+private struct AboutWebView: UIViewRepresentable {
+    private let url = URL(string: Config.baseURL + "/about/")!
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {}
 }
 
 // MARK: - Row
