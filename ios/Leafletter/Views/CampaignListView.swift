@@ -91,16 +91,62 @@ private struct BannerView: View {
 
 // MARK: - About sheet
 
-private struct AboutWebView: UIViewRepresentable {
+struct AboutWebView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            AboutWKWebViewRepresentable(onNavigateHome: { dismiss() })
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle("About")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+struct AboutWKWebViewRepresentable: UIViewRepresentable {
+    let onNavigateHome: () -> Void
     private let url = URL(string: Config.baseURL + "/about/")!
+
+    func makeCoordinator() -> Coordinator { Coordinator(onNavigateHome: onNavigateHome, baseURL: Config.baseURL) }
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView()
+        webView.navigationDelegate = context.coordinator
         webView.load(URLRequest(url: url))
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        let onNavigateHome: () -> Void
+        let baseURL: String
+
+        init(onNavigateHome: @escaping () -> Void, baseURL: String) {
+            self.onNavigateHome = onNavigateHome
+            self.baseURL = baseURL
+        }
+
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            if navigationAction.navigationType == .linkActivated,
+               let url = navigationAction.request.url,
+               (url.path == "/" || url.path.isEmpty),
+               url.absoluteString.hasPrefix(baseURL) {
+                decisionHandler(.cancel)
+                onNavigateHome()
+            } else {
+                decisionHandler(.allow)
+            }
+        }
+    }
 }
 
 // MARK: - Row
