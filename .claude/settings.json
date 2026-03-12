@@ -8,6 +8,6 @@
     "railway run"
   ],
   "allowedTools": [
-    "Bash(xcodebuild*)"
+    "Bash(xcodebuild:*)"
   ]
 }
