@@ -44,7 +44,7 @@ struct Street: Identifiable {
     let coordinates: [CLLocationCoordinate2D]
 }
 
-// MARK: - GeoJSON decoding
+// MARK: - GeoJSON decoding (streets)
 
 struct GeoJSONFeatureCollection: Decodable {
     let features: [GeoJSONFeature]
@@ -62,6 +62,30 @@ struct GeoJSONGeometry: Decodable {
 
 struct StreetProperties: Decodable {
     let name: String?
+}
+
+// MARK: - Coverage GeoJSON decoding
+
+struct CoveredStreet {
+    let coordinates: [CLLocationCoordinate2D]
+    let tripId: String
+}
+
+struct CoverageFeatureCollection: Decodable {
+    let features: [CoverageFeature]
+}
+
+struct CoverageFeature: Decodable {
+    let geometry: GeoJSONGeometry
+    let properties: CoverageProperties
+}
+
+struct CoverageProperties: Decodable {
+    let tripId: String
+
+    enum CodingKeys: String, CodingKey {
+        case tripId = "trip_id"
+    }
 }
 
 // MARK: - Trip

@@ -5,6 +5,7 @@ struct CampaignDetailView: View {
 
     @State private var detail: Campaign?
     @State private var streets: [Street] = []
+    @State private var coveredStreets: [CoveredStreet] = []
     @State private var selectedIds: Set<Int> = []
     @State private var isLoadingMap = true
     @State private var mapError: String?
@@ -32,6 +33,7 @@ struct CampaignDetailView: View {
                 } else {
                     StreetMapView(
                         streets: streets,
+                        coveredStreets: coveredStreets,
                         selectedIds: $selectedIds,
                         bbox: activeCampaign.bbox,
                         lassoMode: $lassoMode
@@ -127,6 +129,7 @@ struct CampaignDetailView: View {
     private func loadAll() async {
         async let detailTask = APIClient.shared.fetchCampaignDetail(slug: campaign.slug)
         async let streetsTask = APIClient.shared.fetchStreets(slug: campaign.slug)
+        async let coverageTask = APIClient.shared.fetchCoverage(slug: campaign.slug)
 
         do {
             let (d, s) = try await (detailTask, streetsTask)
@@ -136,6 +139,9 @@ struct CampaignDetailView: View {
             mapError = error.localizedDescription
         }
         isLoadingMap = false
+
+        // Coverage is best-effort — don't block the map if it fails
+        coveredStreets = (try? await coverageTask) ?? []
     }
 
     private func showContactInfo(_ info: String) {

@@ -10,8 +10,14 @@ final class StreetPolyline: MKPolyline {
 
 // MARK: - StreetMapView (UIViewRepresentable)
 
+// Plain MKPolyline subclass to tag coverage overlays
+final class CoveragePolyline: MKPolyline {
+    var tripId: String = ""
+}
+
 struct StreetMapView: UIViewRepresentable {
     let streets: [Street]
+    let coveredStreets: [CoveredStreet]
     @Binding var selectedIds: Set<Int>
     let bbox: [[Double]]?
     @Binding var lassoMode: Bool
@@ -53,9 +59,28 @@ struct StreetMapView: UIViewRepresentable {
         mapView.isScrollEnabled = !lassoMode
         coordinator.lassoPan?.isEnabled = lassoMode
 
+        // Load coverage overlays when coverage changes (rendered below street network)
+        if coordinator.loadedCoverageCount != coveredStreets.count {
+            // Remove existing coverage polylines
+            let oldCoverage = mapView.overlays.filter { $0 is CoveragePolyline }
+            mapView.removeOverlays(oldCoverage)
+
+            var coverageOverlays: [MKOverlay] = []
+            for covered in coveredStreets {
+                var coords = covered.coordinates
+                let poly = CoveragePolyline(coordinates: &coords, count: coords.count)
+                poly.tripId = covered.tripId
+                coverageOverlays.append(poly)
+            }
+            // Insert at index 0 so coverage renders below street overlays
+            mapView.insertOverlays(coverageOverlays, at: 0, level: .aboveRoads)
+            coordinator.loadedCoverageCount = coveredStreets.count
+        }
+
         // Load street overlays once when streets first arrive
         if coordinator.loadedStreetCount != streets.count {
-            mapView.removeOverlays(mapView.overlays)
+            let oldStreets = mapView.overlays.filter { $0 is StreetPolyline }
+            mapView.removeOverlays(oldStreets)
             coordinator.polylineById = [:]
 
             var overlays: [MKOverlay] = []
@@ -114,6 +139,7 @@ struct StreetMapView: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: StreetMapView
         var loadedStreetCount = 0
+        var loadedCoverageCount = 0
         var renderedSelection: Set<Int> = []
         var polylineById: [Int: StreetPolyline] = [:]
 
@@ -127,6 +153,12 @@ struct StreetMapView: UIViewRepresentable {
         // MARK: Overlay renderer
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let coverage = overlay as? CoveragePolyline {
+                let renderer = MKPolylineRenderer(polyline: coverage)
+                renderer.strokeColor = UIColor(red: 0.95, green: 0.55, blue: 0.1, alpha: 0.7)
+                renderer.lineWidth = 4
+                return renderer
+            }
             guard let poly = overlay as? StreetPolyline else {
                 return MKOverlayRenderer(overlay: overlay)
             }

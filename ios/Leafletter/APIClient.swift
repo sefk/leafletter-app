@@ -61,6 +61,21 @@ actor APIClient {
         }
     }
 
+    // MARK: - Coverage GeoJSON
+
+    func fetchCoverage(slug: String) async throws -> [CoveredStreet] {
+        let url = try makeURL("/c/\(slug)/coverage.geojson")
+        let (data, response) = try await session.data(from: url)
+        try checkResponse(response)
+        let collection = try JSONDecoder().decode(CoverageFeatureCollection.self, from: data)
+        return collection.features.map { feature in
+            let coords = feature.geometry.coordinates.map {
+                CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
+            }
+            return CoveredStreet(coordinates: coords, tripId: feature.properties.tripId)
+        }
+    }
+
     // MARK: - Submit trip
 
     func submitTrip(slug: String, segmentIds: [Int], workerName: String, notes: String) async throws -> TripResponse {
