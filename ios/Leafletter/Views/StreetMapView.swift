@@ -73,7 +73,9 @@ struct StreetMapView: UIViewRepresentable {
                 coverageOverlays.append(poly)
             }
             // Insert at index 0 so coverage renders below street overlays
-            mapView.insertOverlays(coverageOverlays, at: 0, level: .aboveRoads)
+            for (i, overlay) in coverageOverlays.enumerated() {
+                mapView.insertOverlay(overlay, at: i, level: .aboveRoads)
+            }
             coordinator.loadedCoverageCount = coveredStreets.count
         }
 
