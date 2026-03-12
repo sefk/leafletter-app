@@ -21,6 +21,7 @@ struct StreetMapView: UIViewRepresentable {
     @Binding var selectedIds: Set<Int>
     let bbox: [[Double]]?
     @Binding var lassoMode: Bool
+    let onWillChangeSelection: () -> Void
 
     // MARK: - Make
 
@@ -54,6 +55,7 @@ struct StreetMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+        coordinator.onWillChangeSelection = onWillChangeSelection
 
         // Sync lasso / pan mode
         mapView.isScrollEnabled = !lassoMode
@@ -150,6 +152,8 @@ struct StreetMapView: UIViewRepresentable {
         private var lassoPoints: [CGPoint] = []
         private var lassoLayer: CAShapeLayer?
 
+        var onWillChangeSelection: (() -> Void)?
+
         init(_ parent: StreetMapView) { self.parent = parent }
 
         // MARK: Overlay renderer
@@ -195,6 +199,7 @@ struct StreetMapView: UIViewRepresentable {
             }
 
             guard let hit = best else { return }
+            onWillChangeSelection?()
             if parent.selectedIds.contains(hit.id) {
                 parent.selectedIds.remove(hit.id)
             } else {
@@ -231,6 +236,7 @@ struct StreetMapView: UIViewRepresentable {
                 lassoLayer?.removeFromSuperlayer()
                 lassoLayer = nil
                 if lassoPoints.count > 3 {
+                    onWillChangeSelection?()
                     selectStreetsInLasso(mapView: mapView)
                 }
                 lassoPoints = []

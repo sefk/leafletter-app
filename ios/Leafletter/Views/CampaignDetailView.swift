@@ -7,6 +7,7 @@ struct CampaignDetailView: View {
     @State private var streets: [Street] = []
     @State private var coveredStreets: [CoveredStreet] = []
     @State private var selectedIds: Set<Int> = []
+    @State private var selectionHistory: [Set<Int>] = []
     @State private var isLoadingMap = true
     @State private var mapError: String?
     @State private var showTripSheet = false
@@ -36,7 +37,10 @@ struct CampaignDetailView: View {
                         coveredStreets: coveredStreets,
                         selectedIds: $selectedIds,
                         bbox: activeCampaign.bbox,
-                        lassoMode: $lassoMode
+                        lassoMode: $lassoMode,
+                        onWillChangeSelection: {
+                            selectionHistory.append(selectedIds)
+                        }
                     )
                     .ignoresSafeArea(edges: .bottom)
                 }
@@ -53,8 +57,16 @@ struct CampaignDetailView: View {
 
                 // Selection badge + Log Trip button (bottom-right)
                 VStack(alignment: .trailing, spacing: 12) {
-                    if !selectedIds.isEmpty {
-                        selectionBadge
+                    if !selectedIds.isEmpty || !selectionHistory.isEmpty {
+                        HStack(spacing: 8) {
+                            if !selectionHistory.isEmpty {
+                                undoButton
+                            }
+                            if !selectedIds.isEmpty {
+                                selectionBadge
+                                clearButton
+                            }
+                        }
                     }
                     logTripButton
                 }
@@ -78,6 +90,7 @@ struct CampaignDetailView: View {
                 selectedIds: Array(selectedIds)
             ) {
                 selectedIds = []
+                selectionHistory = []
                 showTripSheet = false
             }
         }
@@ -108,6 +121,34 @@ struct CampaignDetailView: View {
             .padding(.vertical, 6)
             .background(Color(red: 0.1, green: 0.42, blue: 0.24))
             .clipShape(Capsule())
+    }
+
+    private var undoButton: some View {
+        Button {
+            selectedIds = selectionHistory.removeLast()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color(red: 0.1, green: 0.42, blue: 0.24))
+                .frame(width: 36, height: 36)
+                .background(Color(.systemBackground))
+                .clipShape(Circle())
+                .shadow(radius: 2)
+        }
+    }
+
+    private var clearButton: some View {
+        Button {
+            selectionHistory.append(selectedIds)
+            selectedIds = []
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Color(red: 0.1, green: 0.42, blue: 0.24))
+                .clipShape(Circle())
+        }
     }
 
     private var logTripButton: some View {
