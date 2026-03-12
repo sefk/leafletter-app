@@ -5,6 +5,6 @@ enum Config {
     // when running on a real device. Example: "http://192.168.1.100:8000"
     //
     // testing
-    // static let baseURL = "http://127.0.0.1:8000"
-    static let baseURL = "https://leafletter.app"
+    static let baseURL = "http://10.10.0.200:8000"
+    // static let baseURL = "https://leafletter.app"
 }
