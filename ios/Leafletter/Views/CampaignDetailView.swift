@@ -1,241 +1,51 @@
 import SwiftUI
+import WebKit
 
 struct CampaignDetailView: View {
     let campaign: Campaign
 
-    @State private var detail: Campaign?
-    @State private var streets: [Street] = []
-    @State private var coveredStreets: [CoveredStreet] = []
-    @State private var selectedIds: Set<Int> = []
-    @State private var selectionHistory: [Set<Int>] = []
-    @State private var isLoadingMap = true
-    @State private var mapError: String?
-    @State private var showTripSheet = false
-    @State private var showInstructions = false
-    @State private var lassoMode = true
-
-    private var activeCampaign: Campaign { detail ?? campaign }
+    private var campaignURL: URL {
+        URL(string: Config.baseURL + "/c/\(campaign.slug)/")!
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Instructions banner (collapsible)
-            if let instructions = activeCampaign.instructions, !instructions.isEmpty {
-                InstructionsBanner(html: instructions, isExpanded: $showInstructions)
-            }
-
-            // Map
-            ZStack(alignment: .bottomTrailing) {
-                if isLoadingMap {
-                    ProgressView("Loading map…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(.systemGroupedBackground))
-                } else if let error = mapError {
-                    ContentUnavailableView("Map Error", systemImage: "map", description: Text(error))
-                } else {
-                    StreetMapView(
-                        streets: streets,
-                        coveredStreets: coveredStreets,
-                        selectedIds: $selectedIds,
-                        bbox: activeCampaign.bbox,
-                        lassoMode: $lassoMode,
-                        onWillChangeSelection: {
-                            selectionHistory.append(selectedIds)
-                        }
-                    )
-                    .ignoresSafeArea(edges: .bottom)
-                }
-
-                // Lasso / pan toggle (top-left)
-                VStack {
-                    HStack {
-                        lassoToggleButton
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .padding()
-
-                // Selection badge + Log Trip button (bottom-right)
-                VStack(alignment: .trailing, spacing: 12) {
-                    if !selectedIds.isEmpty || !selectionHistory.isEmpty {
-                        HStack(spacing: 8) {
-                            if !selectionHistory.isEmpty {
-                                undoButton
-                            }
-                            if !selectedIds.isEmpty {
-                                selectionBadge
-                                clearButton
-                            }
-                        }
-                    }
-                    logTripButton
-                }
-                .padding()
-            }
-        }
-        .navigationTitle(campaign.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if let info = activeCampaign.contactInfo, !info.isEmpty {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showContactInfo(info) } label: {
-                        Image(systemName: "person.circle")
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showTripSheet) {
-            TripSubmitView(
-                campaign: activeCampaign,
-                selectedIds: Array(selectedIds)
-            ) {
-                selectedIds = []
-                selectionHistory = []
-                showTripSheet = false
-            }
-        }
-        .task { await loadAll() }
-    }
-
-    // MARK: - Subviews
-
-    private var lassoToggleButton: some View {
-        Button {
-            lassoMode.toggle()
-        } label: {
-            Image(systemName: lassoMode ? "lasso" : "hand.draw")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(lassoMode ? .white : Color(red: 0.1, green: 0.42, blue: 0.24))
-                .frame(width: 44, height: 44)
-                .background(lassoMode ? Color(red: 0.1, green: 0.42, blue: 0.24) : Color(.systemBackground))
-                .clipShape(Circle())
-                .shadow(radius: 3)
-        }
-    }
-
-    private var selectionBadge: some View {
-        Text("● \(selectedIds.count) block\(selectedIds.count == 1 ? "" : "s")")
-            .font(.callout.bold())
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(red: 0.1, green: 0.42, blue: 0.24))
-            .clipShape(Capsule())
-    }
-
-    private var undoButton: some View {
-        Button {
-            selectedIds = selectionHistory.removeLast()
-        } label: {
-            Image(systemName: "arrow.uturn.backward")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(Color(red: 0.1, green: 0.42, blue: 0.24))
-                .frame(width: 36, height: 36)
-                .background(Color(.systemBackground))
-                .clipShape(Circle())
-                .shadow(radius: 2)
-        }
-    }
-
-    private var clearButton: some View {
-        Button {
-            selectionHistory.append(selectedIds)
-            selectedIds = []
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(Color(red: 0.1, green: 0.42, blue: 0.24))
-                .clipShape(Circle())
-        }
-    }
-
-    private var logTripButton: some View {
-        Button {
-            showTripSheet = true
-        } label: {
-            Label("Log a Trip", systemImage: "map.fill")
-                .font(.headline)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(Color(red: 0.1, green: 0.42, blue: 0.24))
-        .disabled(selectedIds.isEmpty || isLoadingMap)
-    }
-
-    // MARK: - Load
-
-    private func loadAll() async {
-        async let detailTask = APIClient.shared.fetchCampaignDetail(slug: campaign.slug)
-        async let streetsTask = APIClient.shared.fetchStreets(slug: campaign.slug)
-        async let coverageTask = APIClient.shared.fetchCoverage(slug: campaign.slug)
-
-        do {
-            let (d, s) = try await (detailTask, streetsTask)
-            detail = d
-            streets = s
-        } catch {
-            mapError = error.localizedDescription
-        }
-        isLoadingMap = false
-
-        // Coverage is best-effort — don't block the map if it fails
-        coveredStreets = (try? await coverageTask) ?? []
-    }
-
-    private func showContactInfo(_ info: String) {
-        // Present as alert — keep it simple for v1
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
-        let alert = UIAlertController(title: "Contact", message: info, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        root.present(alert, animated: true)
+        CampaignWebView(url: campaignURL)
+            .navigationTitle(campaign.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .ignoresSafeArea(edges: .bottom)
     }
 }
 
-// MARK: - Instructions banner
+// MARK: - WKWebView wrapper
 
-private struct InstructionsBanner: View {
-    let html: String
-    @Binding var isExpanded: Bool
+private struct CampaignWebView: UIViewRepresentable {
+    let url: URL
 
-    var plainText: String {
-        // Strip HTML tags for a simple plain-text preview
-        html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.navigationDelegate = context.coordinator
+        webView.load(URLRequest(url: url))
+        return webView
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation { isExpanded.toggle() }
-            } label: {
-                HStack {
-                    Text("Instructions")
-                        .font(.subheadline.bold())
-                    Spacer()
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .background(Color(.secondarySystemBackground))
+    func updateUIView(_ webView: WKWebView, context: Context) {}
 
-            if isExpanded {
-                Text(plainText)
-                    .font(.footnote)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.systemBackground))
+    func makeCoordinator() -> Coordinator { Coordinator(host: url.host) }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let host: String?
+
+        init(host: String?) { self.host = host }
+
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor action: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            // Allow same-host navigation; block external links
+            guard let linkHost = action.request.url?.host else {
+                decisionHandler(.allow)
+                return
             }
-        }
-        .overlay(alignment: .bottom) {
-            Divider()
+            decisionHandler(linkHost == host ? .allow : .cancel)
         }
     }
 }

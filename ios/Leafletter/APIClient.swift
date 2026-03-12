@@ -1,5 +1,4 @@
 import Foundation
-import CoreLocation
 
 enum APIError: LocalizedError {
     case badResponse(Int)
@@ -33,61 +32,6 @@ actor APIClient {
         let (data, response) = try await session.data(from: url)
         try checkResponse(response)
         return try JSONDecoder().decode([Campaign].self, from: data)
-    }
-
-    // MARK: - Campaign detail
-
-    func fetchCampaignDetail(slug: String) async throws -> Campaign {
-        let url = try makeURL("/api/campaigns/\(slug)/")
-        let (data, response) = try await session.data(from: url)
-        try checkResponse(response)
-        return try JSONDecoder().decode(Campaign.self, from: data)
-    }
-
-    // MARK: - Streets GeoJSON
-
-    func fetchStreets(slug: String) async throws -> [Street] {
-        let url = try makeURL("/c/\(slug)/streets.geojson")
-        let (data, response) = try await session.data(from: url)
-        try checkResponse(response)
-        let collection = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data)
-        return collection.features.compactMap { feature in
-            guard let id = feature.id else { return nil }
-            let coords = feature.geometry.coordinates.map {
-                CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-            }
-            guard !coords.isEmpty else { return nil }
-            return Street(id: id, name: feature.properties?.name ?? "", coordinates: coords)
-        }
-    }
-
-    // MARK: - Coverage GeoJSON
-
-    func fetchCoverage(slug: String) async throws -> [CoveredStreet] {
-        let url = try makeURL("/c/\(slug)/coverage.geojson")
-        let (data, response) = try await session.data(from: url)
-        try checkResponse(response)
-        let collection = try JSONDecoder().decode(CoverageFeatureCollection.self, from: data)
-        return collection.features.map { feature in
-            let coords = feature.geometry.coordinates.map {
-                CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-            }
-            return CoveredStreet(coordinates: coords, tripId: feature.properties.tripId)
-        }
-    }
-
-    // MARK: - Submit trip
-
-    func submitTrip(slug: String, segmentIds: [Int], workerName: String, notes: String) async throws -> TripResponse {
-        let url = try makeURL("/c/\(slug)/trip/")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body = TripSubmission(segmentIds: segmentIds, workerName: workerName, notes: notes)
-        request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await session.data(for: request)
-        try checkResponse(response)
-        return try JSONDecoder().decode(TripResponse.self, from: data)
     }
 
     // MARK: - Helpers

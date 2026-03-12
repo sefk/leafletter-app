@@ -6,5 +6,8 @@
     "railway environment",
     "railway service",
     "railway run"
+  ],
+  "allowedTools": [
+    "Bash(xcodebuild*)"
   ]
 }
