@@ -91,6 +91,8 @@ private fun CampaignWebView(
             WebView(context).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
                 webViewClient = CampaignWebViewClient(
                     host = host,
                     onAbout = onAbout,

@@ -18,5 +18,12 @@ dump.rdb
 .vscode/
 *.swp
 
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/.kotlin/
+android/.idea/caches/
+
 # Claude
 .claude/settings.local.json
