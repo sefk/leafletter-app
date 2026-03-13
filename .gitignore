@@ -24,6 +24,10 @@ android/app/build/
 android/build/
 android/.kotlin/
 android/.idea/caches/
+android/local.properties
+
+# iOS
+**/*.xcuserstate
 
 # Claude
 .claude/settings.local.json
