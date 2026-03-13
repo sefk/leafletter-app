@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Leafletter</string>
+    <string name="banner_text">Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip.</string>
+    <string name="about_link_text">About this app</string>
+    <string name="loading_campaigns">Loading campaigns…</string>
+    <string name="no_campaigns_title">No Active Campaigns</string>
+    <string name="error_loading_title">Unable to Load</string>
+    <string name="retry">Retry</string>
+    <string name="refresh">Refresh</string>
+    <string name="about">About</string>
+    <string name="done">Done</string>
+    <string name="map_generating">Map generating…</string>
+    <string name="back">Back</string>
+</resources>

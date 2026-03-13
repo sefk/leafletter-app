@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme. Compose handles most theming; this is just
+         the window/activity chrome while the Compose content loads. -->
+    <style name="Theme.Leafletter" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/leafletter_green_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

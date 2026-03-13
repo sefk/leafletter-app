@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary green matching the iOS app banner: rgb(26, 107, 61) -->
+    <color name="leafletter_green">#1A6B3D</color>
+    <color name="leafletter_green_dark">#145230</color>
+    <color name="leafletter_green_container">#C8E6C9</color>
+    <color name="on_leafletter_green">#FFFFFF</color>
+
+    <!-- Status indicator colours -->
+    <color name="status_ready">#4CAF50</color>
+    <color name="status_warning">#FFC107</color>
+    <color name="status_other">#9E9E9E</color>
+
+    <!-- Standard surface colours -->
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+</resources>
