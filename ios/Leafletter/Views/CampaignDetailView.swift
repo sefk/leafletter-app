@@ -15,11 +15,36 @@ struct CampaignDetailView: View {
             .navigationTitle(campaign.name)
             .navigationBarTitleDisplayMode(.inline)
             .ignoresSafeArea(edges: .bottom)
+            .onAppear {
+                // Walk the full view hierarchy to disable any edge-pan gesture
+                // recognizer driving swipe-to-pop, regardless of where iOS 26
+                // puts the UINavigationController or its equivalent.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    disableEdgePanGestures()
+                }
+            }
             .navigationDestination(isPresented: $navigateToAbout) {
-                // Pass the campaign slug so the About page's "back" link
-                // returns here rather than to the campaign list.
                 AboutWebView(returnSlug: campaign.slug)
             }
+    }
+}
+
+private func disableEdgePanGestures() {
+    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+          let window = scene.windows.first(where: \.isKeyWindow) ?? UIApplication.shared.connectedScenes
+              .compactMap({ $0 as? UIWindowScene })
+              .flatMap(\.windows)
+              .first
+    else { return }
+    disableEdgePanGestures(in: window)
+}
+
+private func disableEdgePanGestures(in view: UIView) {
+    for gr in view.gestureRecognizers ?? [] where gr is UIScreenEdgePanGestureRecognizer {
+        gr.isEnabled = false
+    }
+    for sub in view.subviews {
+        disableEdgePanGestures(in: sub)
     }
 }
 
@@ -46,7 +71,6 @@ private struct CampaignWebView: UIViewRepresentable {
         )
         config.userContentController.addUserScript(script)
         let webView = WKWebView(frame: .zero, configuration: config)
-        // Disable the swipe-back gesture — the native NavBar back button handles back navigation.
         webView.allowsBackForwardNavigationGestures = false
         webView.navigationDelegate = context.coordinator
         webView.load(URLRequest(url: url))
