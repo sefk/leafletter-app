@@ -1,11 +1,12 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 struct CampaignListView: View {
     @State private var campaigns: [Campaign] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var showAbout = false
+    @State private var navigateToAbout = false
 
     var body: some View {
         NavigationStack {
@@ -30,7 +31,7 @@ struct CampaignListView: View {
                                 }
                             }
                         } header: {
-                            BannerView(onAbout: { showAbout = true })
+                            BannerView(onAbout: { navigateToAbout = true })
                                 .textCase(nil)
                                 .listRowInsets(EdgeInsets())
                         }
@@ -47,8 +48,10 @@ struct CampaignListView: View {
                     .disabled(isLoading)
                 }
             }
-            .sheet(isPresented: $showAbout) {
-                AboutWebView()
+            // Navigate to About as a full-screen push (not a modal sheet) for
+            // consistency with the rest of the app.
+            .navigationDestination(isPresented: $navigateToAbout) {
+                AboutWebView(returnSlug: nil)
             }
         }
         .task { await load() }
@@ -89,34 +92,55 @@ private struct BannerView: View {
     }
 }
 
-// MARK: - About sheet
+// MARK: - About view (full-screen push navigation)
 
+/// Full-screen About page pushed onto the navigation stack.
+///
+/// - Parameter returnSlug: When non-nil the "Back to campaigns" HTML link
+///   navigates back to `/c/<slug>/` rather than `/`, so the native back
+///   button pops to the correct campaign detail screen.  When nil (launched
+///   from the campaign list) the link leads back to `/` and the native back
+///   button pops to the list.
 struct AboutWebView: View {
+    let returnSlug: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            AboutWKWebViewRepresentable(onNavigateHome: { dismiss() })
-                .ignoresSafeArea(edges: .bottom)
-                .navigationTitle("About")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Done") { dismiss() }
-                    }
-                }
-        }
+        AboutWKWebViewRepresentable(onNavigateBack: { dismiss() }, returnSlug: returnSlug)
+            .ignoresSafeArea(edges: .bottom)
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
     }
 }
 
 struct AboutWKWebViewRepresentable: UIViewRepresentable {
-    let onNavigateHome: () -> Void
+    let onNavigateBack: () -> Void
+    /// When non-nil, intercept `/c/<slug>/` links so tapping "Back to
+    /// campaigns" in the HTML header pops back to the campaign rather
+    /// than navigating the WebView to the home page.
+    let returnSlug: String?
+
     private let url = URL(string: Config.baseURL + "/about/")!
 
-    func makeCoordinator() -> Coordinator { Coordinator(onNavigateHome: onNavigateHome, baseURL: Config.baseURL) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onNavigateBack: onNavigateBack, returnSlug: returnSlug, baseURL: Config.baseURL)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
-        let webView = WKWebView()
+        let config = WKWebViewConfiguration()
+        let script = WKUserScript(
+            source: """
+            (function() {
+                var meta = document.querySelector('meta[name=viewport]');
+                if (!meta) { meta = document.createElement('meta'); meta.name = 'viewport'; document.head.appendChild(meta); }
+                meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(script)
+        let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.load(URLRequest(url: url))
         return webView
@@ -125,23 +149,38 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
     class Coordinator: NSObject, WKNavigationDelegate {
-        let onNavigateHome: () -> Void
+        let onNavigateBack: () -> Void
+        let returnSlug: String?
         let baseURL: String
 
-        init(onNavigateHome: @escaping () -> Void, baseURL: String) {
-            self.onNavigateHome = onNavigateHome
+        init(onNavigateBack: @escaping () -> Void, returnSlug: String?, baseURL: String) {
+            self.onNavigateBack = onNavigateBack
+            self.returnSlug = returnSlug
             self.baseURL = baseURL
         }
 
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if navigationAction.navigationType == .linkActivated,
-               let url = navigationAction.request.url,
-               (url.path == "/" || url.path.isEmpty),
-               url.absoluteString.hasPrefix(baseURL) {
+            guard navigationAction.navigationType == .linkActivated,
+                  let url = navigationAction.request.url,
+                  url.absoluteString.hasPrefix(baseURL) else {
+                decisionHandler(.allow)
+                return
+            }
+
+            // Intercept the "Back" link.  When we were launched from a campaign
+            // detail view, the back link is `/c/<slug>/`; from the list it is `/`.
+            let isBackLink: Bool
+            if let slug = returnSlug {
+                isBackLink = url.path == "/c/\(slug)/" || url.path == "/"
+            } else {
+                isBackLink = url.path == "/" || url.path.isEmpty
+            }
+
+            if isBackLink {
                 decisionHandler(.cancel)
-                onNavigateHome()
+                onNavigateBack()
             } else {
                 decisionHandler(.allow)
             }
