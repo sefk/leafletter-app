@@ -122,11 +122,30 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
 
     private let url = URL(string: Config.baseURL + "/about/")!
 
+    private static var buildInfo: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        let dateStr: String
+        if let execURL = Bundle.main.executableURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
+           let modDate = attrs[.modificationDate] as? Date {
+            let fmt = DateFormatter()
+            fmt.dateStyle = .medium
+            fmt.timeStyle = .none
+            dateStr = fmt.string(from: modDate)
+        } else {
+            dateStr = "unknown"
+        }
+        return "v\(version) (build \(build), \(dateStr))"
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(onNavigateBack: onNavigateBack, returnSlug: returnSlug, baseURL: Config.baseURL)
     }
 
     func makeUIView(context: Context) -> WKWebView {
+        let info = AboutWKWebViewRepresentable.buildInfo
         let config = WKWebViewConfiguration()
         let script = WKUserScript(
             source: """
@@ -134,6 +153,11 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
                 var meta = document.querySelector('meta[name=viewport]');
                 if (!meta) { meta = document.createElement('meta'); meta.name = 'viewport'; document.head.appendChild(meta); }
                 meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+
+                var ver = document.createElement('div');
+                ver.style.cssText = 'text-align:center;padding:12px;font-size:0.75rem;color:#888;font-family:-apple-system,sans-serif;';
+                ver.textContent = '\(info)';
+                document.body.appendChild(ver);
             })();
             """,
             injectionTime: .atDocumentEnd,
