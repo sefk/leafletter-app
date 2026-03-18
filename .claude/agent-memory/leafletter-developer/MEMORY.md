@@ -30,7 +30,15 @@ When a city street fetch is in progress, use AJAX polling instead of `location.r
 - `_sync_campaign_map_status` computes bbox synchronously, sets status to 'rendering', dispatches `render_campaign_geojson.delay()`
 - `manage_campaign_update_geo_limit` returns `{'status': 'rendering', 'bbox': ...}` — not 'ok'
 
+## iOS Build
+
+- Xcode project path: `ios/Leafletter.xcodeproj` (not `ios/Leafletter/Leafletter.xcodeproj`)
+- Use simulator `name:iPhone 17` (not iPhone 16 — no longer available on this machine)
+- Build command: `xcodebuild -project /Users/sefk/src/stanford-vibecoding/leafletter-app/ios/Leafletter.xcodeproj -scheme Leafletter -destination 'platform=iOS Simulator,name=iPhone 17' build`
+- `xcpretty` is not installed system-wide; pipe to `tail -30` or `grep -E "error:|warning:|BUILD"` to see results
+- Project uses `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES` (Xcode 26.2 / Swift 6): UIKit types (`UIViewRepresentable`, `Context`, `WKWebView.scrollView`) are NOT transitively visible from SwiftUI — any file using them must explicitly `import UIKit` in addition to `import SwiftUI`/`import WebKit`
+
 ## Known Issues / Technical Debt
 
 - `fetch_city_osm_data` missing `acks_late=True` (issue #68)
-- Issues #68, #69, #70, #78 now resolved
+- Issues #68, #69, #70, #78, #84, and #84 compile-error follow-up now resolved
