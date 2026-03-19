@@ -249,17 +249,25 @@
           byTrip.get(tid).push(f);
         });
 
-        function tripColorIndex(tid) {
-          let hash = 0;
-          for (let i = 0; i < tid.length; i++) {
-            hash = (hash * 31 + tid.charCodeAt(i)) >>> 0;
+        // Assign colors that are both stable and unique: sort trip IDs so the
+        // assignment is deterministic across page loads, then assign each trip
+        // the least-used palette color in order — guaranteeing no two trips
+        // share a color as long as there are fewer trips than palette entries.
+        const sortedTripIds = Array.from(byTrip.keys()).sort();
+        const paletteUsage = new Array(TRIP_PALETTE.length).fill(0);
+        const tripColorMap = new Map();
+        sortedTripIds.forEach(tid => {
+          let minUse = Infinity, bestIdx = 0;
+          for (let i = 0; i < TRIP_PALETTE.length; i++) {
+            if (paletteUsage[i] < minUse) { minUse = paletteUsage[i]; bestIdx = i; }
           }
-          return hash % TRIP_PALETTE.length;
-        }
+          tripColorMap.set(tid, TRIP_PALETTE[bestIdx]);
+          paletteUsage[bestIdx]++;
+        });
 
         byTrip.forEach((features, tid) => {
           const first = features[0].properties;
-          const color = TRIP_PALETTE[tripColorIndex(tid)];
+          const color = tripColorMap.get(tid);
           tripMeta.set(tid, {
             worker_name: first.worker_name,
             recorded_at: first.recorded_at,
