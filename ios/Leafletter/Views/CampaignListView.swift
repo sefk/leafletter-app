@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import WebKit
 
 struct CampaignListView: View {
@@ -29,6 +28,9 @@ struct CampaignListView: View {
                                 NavigationLink(destination: CampaignDetailView(campaign: campaign)) {
                                     CampaignRow(campaign: campaign)
                                 }
+                                // Hero-image rows go edge-to-edge with no insets or separator
+                                .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
+                                .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
                             }
                         } header: {
                             BannerView(onAbout: { navigateToAbout = true })
@@ -218,19 +220,56 @@ private struct CampaignRow: View {
     let campaign: Campaign
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let urlString = campaign.heroImageUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
-                } placeholder: {
-                    Color(.systemGray5)
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(32/9, contentMode: .fit)
+        if let urlString = campaign.heroImageUrl, let url = URL(string: urlString) {
+            // Hero image card: edge-to-edge image with gradient fade and
+            // text overlapping the bottom, matching the web campaign list style.
+            ZStack(alignment: .bottomLeading) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        Color(.systemGray5)
+                    }
                 }
+                .frame(maxWidth: .infinity, minHeight: 150, maxHeight: 150)
+                .clipped()
+
+                // Steep gradient fade from transparent to near-opaque
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.3),
+                        .init(color: Color(.systemBackground).opacity(0.97), location: 0.75)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // Text overlaid on top of the gradient
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(campaign.name)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                    if let dates = campaign.dateRangeText {
+                        Text(dates)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !campaign.isReady {
+                        Label("Map generating…", systemImage: "clock")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
             }
+        } else {
+            // No hero image — plain text row
             VStack(alignment: .leading, spacing: 4) {
                 Text(campaign.name)
                     .font(.headline)
@@ -245,9 +284,7 @@ private struct CampaignRow: View {
                         .foregroundStyle(.orange)
                 }
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, campaign.heroImageUrl != nil ? 12 : 0)
+            .padding(.vertical, 4)
         }
-        .padding(.vertical, campaign.heroImageUrl != nil ? 0 : 4)
     }
 }
