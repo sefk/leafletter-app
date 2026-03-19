@@ -169,12 +169,21 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let info = AboutWKWebViewRepresentable.buildInfo
         let config = WKWebViewConfiguration()
+        // Allow window.open() / target="_blank" links to be handled by the
+        // WKUIDelegate (which the Coordinator also implements) so we can
+        // redirect them to Safari.
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+
         let script = WKUserScript(
             source: """
             (function() {
                 var meta = document.querySelector('meta[name=viewport]');
                 if (!meta) { meta = document.createElement('meta'); meta.name = 'viewport'; document.head.appendChild(meta); }
                 meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+
+                // Signal to the page that we are running inside the iOS app so
+                // the about page can set target="_blank" on external links.
+                window.LEAFLETTER_IOS = true;
 
                 var ver = document.createElement('div');
                 ver.style.cssText = 'text-align:center;padding:12px;font-size:0.75rem;color:#888;font-family:-apple-system,sans-serif;';
@@ -188,13 +197,14 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
         config.userContentController.addUserScript(script)
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.load(URLRequest(url: url))
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let onNavigateBack: () -> Void
         let returnSlug: String?
         let baseURL: String
@@ -208,28 +218,51 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard navigationAction.navigationType == .linkActivated,
-                  let url = navigationAction.request.url,
-                  url.absoluteString.hasPrefix(baseURL) else {
+            guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
                 return
             }
 
-            // Intercept the "Back" link.  When we were launched from a campaign
-            // detail view, the back link is `/c/<slug>/`; from the list it is `/`.
-            let isBackLink: Bool
-            if let slug = returnSlug {
-                isBackLink = url.path == "/c/\(slug)/" || url.path == "/"
-            } else {
-                isBackLink = url.path == "/" || url.path.isEmpty
+            // Open all external HTTP(S) link clicks in Safari — don't load them
+            // inside the about-page WebView.
+            if navigationAction.navigationType == .linkActivated,
+               (url.scheme == "http" || url.scheme == "https"),
+               !url.absoluteString.hasPrefix(baseURL) {
+                decisionHandler(.cancel)
+                UIApplication.shared.open(url)
+                return
             }
 
-            if isBackLink {
-                decisionHandler(.cancel)
-                onNavigateBack()
-            } else {
-                decisionHandler(.allow)
+            // For same-host links, intercept the "Back" navigation so the native
+            // back button pops the correct screen rather than loading a new URL.
+            if navigationAction.navigationType == .linkActivated,
+               url.absoluteString.hasPrefix(baseURL) {
+                let isBackLink: Bool
+                if let slug = returnSlug {
+                    isBackLink = url.path == "/c/\(slug)/" || url.path == "/"
+                } else {
+                    isBackLink = url.path == "/" || url.path.isEmpty
+                }
+                if isBackLink {
+                    decisionHandler(.cancel)
+                    onNavigateBack()
+                    return
+                }
             }
+
+            decisionHandler(.allow)
+        }
+
+        // WKUIDelegate: handle window.open() calls and target="_blank" new
+        // window requests by opening the URL in Safari.
+        func webView(_ webView: WKWebView,
+                     createWebViewWith configuration: WKWebViewConfiguration,
+                     for navigationAction: WKNavigationAction,
+                     windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if let url = navigationAction.request.url {
+                UIApplication.shared.open(url)
+            }
+            return nil
         }
     }
 }
