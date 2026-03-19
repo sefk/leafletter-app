@@ -25,8 +25,12 @@ struct CampaignListView: View {
                     List {
                         Section {
                             ForEach(campaigns) { campaign in
-                                NavigationLink(destination: CampaignDetailView(campaign: campaign)) {
+                                // ZStack hides the NavigationLink chevron while keeping tap behavior
+                                ZStack(alignment: .leading) {
+                                    NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
+                                        .opacity(0)
                                     CampaignRow(campaign: campaign)
+                                        .contentShape(Rectangle())
                                 }
                                 // Hero-image rows go edge-to-edge with no insets or separator
                                 .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
