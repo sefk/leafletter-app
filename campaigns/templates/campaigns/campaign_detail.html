@@ -45,10 +45,47 @@
     .instructions-toggle { display: none; margin-top: 6px; background: none; border: 1px solid #1a6b3c; border-radius: 4px; padding: 2px 8px; color: #1a6b3c; font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
     .instructions-toggle:hover { background: #1a6b3c; color: #fff; }
 
-    #map { height: 55vh; width: 100%; }
+    #map { height: 55vh; width: 100%; position: relative; }
     @media (pointer: coarse), (max-width: 768px) {
       #map { height: 40vh; }
     }
+
+    #map-not-ready-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.88);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+      pointer-events: all;
+    }
+    #map-not-ready-overlay h3 {
+      font-size: 1.1rem;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    #map-not-ready-overlay p {
+      font-size: 0.9rem;
+      color: #555;
+      max-width: 320px;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    #map-not-ready-overlay .btn-contact {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #1a6b3c;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    #map-not-ready-overlay .btn-contact:hover { background: #155730; }
 
     .mobile-map-instructions {
       display: none;
@@ -211,7 +248,30 @@
   </div>
 </div>
 
-<div id="map"></div>
+<div id="map">
+  {% if campaign.map_status != 'ready' %}
+  <div id="map-not-ready-overlay">
+    <h3>Map Not Ready Yet</h3>
+    <p>
+      {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
+        Streets are being fetched from OpenStreetMap. This can take a few minutes.
+      {% elif campaign.map_status == 'rendering' %}
+        Streets are being processed. Please check back in a few minutes.
+      {% elif campaign.map_status == 'error' or campaign.map_status == 'warning' %}
+        There was a problem generating the map. The organizer has been notified.
+      {% else %}
+        The map is not available yet. Please check back later.
+      {% endif %}
+      {% if campaign.contact_info %}
+        If this is urgent, contact the organizer below.
+      {% endif %}
+    </p>
+    {% if campaign.contact_info %}
+    <a class="btn-contact" href="mailto:{{ campaign.contact_info }}">Email Organizer</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
 
 <div class="mobile-map-instructions">
   Draw loops to select streets. Two-finger drag to pan, pinch to zoom.
@@ -281,6 +341,7 @@
   window.COVERAGE_URL = "{% url 'campaigns:coverage_geojson' campaign.slug %}";
   window.TRIP_URL = "{% url 'campaigns:log_trip' campaign.slug %}";
   window.BBOX = {{ bbox_json }};
+  window.MAP_READY = {% if campaign.map_status == 'ready' %}true{% else %}false{% endif %};
 </script>
 <script src="{% static 'campaigns/map.js' %}"></script>
 <script>

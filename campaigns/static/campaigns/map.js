@@ -89,6 +89,21 @@
     map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, true));
   }
 
+  // ── Map-not-ready state: disable interaction, show overlay ───────────────
+  if (window.MAP_READY === false) {
+    // Disable all map interaction (scrolling/panning/zooming) but keep the
+    // map visible so the user can see the tile background.
+    map.dragging.disable();
+    map.touchZoom.disable();
+    map.doubleClickZoom.disable();
+    map.scrollWheelZoom.disable();
+    map.boxZoom.disable();
+    map.keyboard.disable();
+    if (map.tap) map.tap.disable();
+    // The overlay HTML is only rendered server-side when the map isn't ready,
+    // so no JS is needed to show it — it's visible as soon as it exists.
+  }
+
   // ── Loading state for "Log a Trip" button ────────────────────────────────
   const btnLogTrip = document.getElementById('btn-log-trip');
   btnLogTrip.disabled = true;
@@ -103,6 +118,12 @@
       el.textContent = '';
       el.style.display = 'none';
     }
+  }
+
+  // When map isn't ready, skip street/coverage loading entirely — the overlay
+  // already explains the situation and disables interaction.
+  if (window.MAP_READY === false) {
+    return;
   }
 
   setLoadingStatus('Loading streets… 0%');
