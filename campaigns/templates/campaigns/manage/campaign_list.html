@@ -60,7 +60,10 @@
   <tbody>
     {% for campaign in campaigns %}
     <tr>
-      <td><a href="/manage/{{ campaign.slug }}/">{{ campaign.name }}</a></td>
+      <td>
+        <a href="/manage/{{ campaign.slug }}/">{{ campaign.name }}</a>
+        {% if campaign.is_test %}<span style="display:inline-block;background:#1a6b3c;color:#fff;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;vertical-align:middle;margin-left:5px;">Test</span>{% endif %}
+      </td>
       <td><span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span></td>
       <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
       <td>{{ campaign.street_count }}</td>

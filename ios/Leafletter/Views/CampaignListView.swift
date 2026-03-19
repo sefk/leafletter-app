@@ -22,17 +22,17 @@ struct CampaignListView: View {
                 } else if campaigns.isEmpty {
                     ContentUnavailableView("No Active Campaigns", systemImage: "mappin.slash")
                 } else {
+                    let regular = campaigns.filter { !$0.isTest }
+                    let test = campaigns.filter { $0.isTest }
                     List {
                         Section {
-                            ForEach(campaigns) { campaign in
-                                // ZStack hides the NavigationLink chevron while keeping tap behavior
+                            ForEach(regular) { campaign in
                                 ZStack(alignment: .leading) {
                                     NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
                                         .opacity(0)
                                     CampaignRow(campaign: campaign)
                                         .contentShape(Rectangle())
                                 }
-                                // Hero-image rows go edge-to-edge with no insets or separator
                                 .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
                                 .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
                             }
@@ -40,6 +40,27 @@ struct CampaignListView: View {
                             BannerView(onAbout: { navigateToAbout = true })
                                 .textCase(nil)
                                 .listRowInsets(EdgeInsets())
+                        }
+
+                        if !test.isEmpty {
+                            Section {
+                                ForEach(test) { campaign in
+                                    ZStack(alignment: .leading) {
+                                        NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
+                                            .opacity(0)
+                                        CampaignRow(campaign: campaign)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
+                                    .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
+                                }
+                            } header: {
+                                Text("Test Campaigns")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.primary)
+                                    .textCase(nil)
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -248,10 +269,21 @@ private struct CampaignRow: View {
 
                 // Text overlaid on top of the gradient
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(campaign.name)
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.primary)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(campaign.name)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+                        if campaign.isTest {
+                            Text("TEST")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
                     if let dates = campaign.dateRangeText {
                         Text(dates)
                             .font(.caption)
@@ -270,8 +302,19 @@ private struct CampaignRow: View {
         } else {
             // No hero image — plain text row
             VStack(alignment: .leading, spacing: 4) {
-                Text(campaign.name)
-                    .font(.headline)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(campaign.name)
+                        .font(.headline)
+                    if campaign.isTest {
+                        Text("TEST")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
                 if let dates = campaign.dateRangeText {
                     Text(dates)
                         .font(.caption)

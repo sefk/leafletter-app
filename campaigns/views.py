@@ -48,12 +48,13 @@ def manage_logout(request):
 def public_campaign_list(request):
     today = date.today()
     published = Campaign.objects.filter(status='published')
-    current = published.filter(
-        Q(end_date__isnull=True) | Q(end_date__gte=today)
-    ).order_by(F('end_date').asc(nulls_last=True))
-    prior = published.filter(end_date__lt=today).order_by('-end_date')
+    active = published.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+    current = active.filter(is_test=False).order_by(F('end_date').asc(nulls_last=True))
+    current_test = active.filter(is_test=True).order_by(F('end_date').asc(nulls_last=True))
+    prior = published.filter(end_date__lt=today, is_test=False).order_by('-end_date')
     return render(request, 'campaigns/campaign_list.html', {
         'current_campaigns': current,
+        'current_test_campaigns': current_test,
         'prior_campaigns': prior,
     })
 
@@ -265,7 +266,7 @@ def manage_campaign_list(request):
     campaigns = Campaign.objects.exclude(status='deleted').annotate(
         street_count=Count('streets', distinct=True),
         trip_count=Count('trips', distinct=True),
-    )
+    ).order_by('is_test', '-created_at')
     inflight = campaigns.filter(map_status__in=('pending', 'generating', 'rendering')).order_by('updated_at')
     return render(request, 'campaigns/manage/campaign_list.html', {
         'campaigns': campaigns,
@@ -585,11 +586,11 @@ def city_search(request):
 def api_campaigns(request):
     today = date.today()
     published = Campaign.objects.filter(status='published')
-    current = published.filter(
-        Q(end_date__isnull=True) | Q(end_date__gte=today)
-    ).order_by(F('end_date').asc(nulls_last=True))
-    prior = published.filter(end_date__lt=today).order_by('-end_date')
-    campaigns = list(current) + list(prior)
+    active = published.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+    current = active.filter(is_test=False).order_by(F('end_date').asc(nulls_last=True))
+    current_test = active.filter(is_test=True).order_by(F('end_date').asc(nulls_last=True))
+    prior = published.filter(end_date__lt=today, is_test=False).order_by('-end_date')
+    campaigns = list(current) + list(prior) + list(current_test)
     data = [
         {
             'id': c.id,
@@ -599,6 +600,7 @@ def api_campaigns(request):
             'end_date': c.end_date.isoformat() if c.end_date else None,
             'hero_image_url': c.hero_image_url or None,
             'map_status': c.map_status,
+            'is_test': c.is_test,
         }
         for c in campaigns
     ]

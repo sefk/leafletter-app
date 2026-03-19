@@ -10,6 +10,7 @@ struct Campaign: Codable, Identifiable {
     let endDate: String?
     let heroImageUrl: String?
     let mapStatus: String
+    let isTest: Bool
     // Detail fields (nil when loaded from list endpoint)
     let instructions: String?
     let contactInfo: String?
@@ -21,6 +22,7 @@ struct Campaign: Codable, Identifiable {
         case endDate = "end_date"
         case heroImageUrl = "hero_image_url"
         case mapStatus = "map_status"
+        case isTest = "is_test"
         case instructions
         case contactInfo = "contact_info"
         case bbox

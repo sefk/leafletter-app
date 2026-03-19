@@ -123,6 +123,19 @@
       </div>
     </div>
 
+    {# Test campaign flag #}
+    <div style="margin-bottom:16px; padding:12px 14px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px;">
+      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+        {{ form.is_test }}
+        <span>
+          <span style="font-size:0.85rem; font-weight:600; color:#444;">Test Campaign</span>
+          <span style="display:block; font-size:0.82rem; color:#666; margin-top:2px;">
+            Test campaigns show up at the bottom of the list with a special badge. Use this for demos or evaluation campaigns.
+          </span>
+        </span>
+      </label>
+    </div>
+
     {# City Picker moved to its own card below #}
   </form>
 </div>
