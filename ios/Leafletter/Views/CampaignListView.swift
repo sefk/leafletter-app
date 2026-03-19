@@ -43,17 +43,10 @@ struct CampaignListView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .refreshable { await load() }
                 }
             }
             .navigationTitle("Leafletter")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { Task { await load() } } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
-                }
-            }
             // Navigate to About as a full-screen push (not a modal sheet) for
             // consistency with the rest of the app.
             .navigationDestination(isPresented: $navigateToAbout) {
@@ -64,7 +57,9 @@ struct CampaignListView: View {
     }
 
     private func load() async {
-        isLoading = true
+        if campaigns.isEmpty {
+            isLoading = true
+        }
         errorMessage = nil
         do {
             campaigns = try await APIClient.shared.fetchCampaigns()
