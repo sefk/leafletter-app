@@ -103,6 +103,13 @@ private struct CampaignWebView: UIViewRepresentable {
                 onAbout()
                 return
             }
+            // Hand off non-web schemes (mailto:, tel:, etc.) to the system.
+            if action.navigationType == .linkActivated,
+               url.scheme != "http", url.scheme != "https" {
+                decisionHandler(.cancel)
+                UIApplication.shared.open(url)
+                return
+            }
             // Allow same-host navigation; block external links
             guard let linkHost = url.host else {
                 decisionHandler(.allow)
