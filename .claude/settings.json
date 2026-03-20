@@ -1,13 +1,14 @@
 {
-  "allowedBashCommands": [
-    "railway status",
-    "railway logs",
-    "railway variables",
-    "railway environment",
-    "railway service",
-    "railway run"
-  ],
-  "allowedTools": [
-    "Bash(xcodebuild:*)"
-  ]
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild:*)",
+      "Bash(gh:*)",
+      "Bash(railway status)",
+      "Bash(railway logs)",
+      "Bash(railway variables)",
+      "Bash(railway environment)",
+      "Bash(railway service)",
+      "Bash(railway run)"
+    ]
+  }
 }
