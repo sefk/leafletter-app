@@ -82,6 +82,7 @@
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
+    referrerPolicy: 'origin',
   }).addTo(map);
 
   if (window.BBOX) {
