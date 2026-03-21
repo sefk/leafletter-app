@@ -15,7 +15,7 @@
   let isPointerDown = false;
   let selectionMode = false;
   let streetsLayer = null;
-  let coverageMode = 'detail';   // 'detail' | 'summary' | 'hidden'
+  let coverageMode = 'summary';   // 'detail' | 'summary' | 'hidden'
   let summaryLayer = null;
   let lasso = null;
   let map = null;
