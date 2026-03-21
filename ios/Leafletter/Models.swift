@@ -32,14 +32,35 @@ struct Campaign: Codable, Identifiable {
 
     var dateRangeText: String? {
         guard let start = startDate else { return nil }
-        if let end = endDate { return "\(start) – \(end)" }
-        let prefix = start <= today() ? "Started" : "Starting"
-        return "\(prefix) \(start)"
+        let startFormatted = Self.formatDate(start) ?? start
+        if let end = endDate {
+            let endFormatted = Self.formatDate(end) ?? end
+            return "\(startFormatted) – \(endFormatted)"
+        }
+        let prefix = start <= Self.isoToday() ? "Started" : "Starting"
+        return "\(prefix) \(startFormatted)"
     }
 
-    private func today() -> String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: Date())
+    private static let isoParser: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private static let display: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        f.timeStyle = .none
+        return f
+    }()
+
+    private static func formatDate(_ iso: String) -> String? {
+        guard let d = isoParser.date(from: iso) else { return nil }
+        return display.string(from: d)
+    }
+
+    private static func isoToday() -> String {
+        return isoParser.string(from: Date())
     }
 }
