@@ -3,7 +3,7 @@ from django.http import HttpResponseRedirect
 from django.utils.html import format_html
 from django.utils.text import slugify
 
-from .models import Campaign, CityFetchJob, Street, Trip
+from .models import Campaign, CampaignImage, CityFetchJob, Street, Trip
 from .tasks import queue_city_fetches
 
 
@@ -46,7 +46,7 @@ class CampaignAdmin(admin.ModelAdmin):
         fields = [
             'name', 'slug', 'cities',
             'start_date', 'end_date',
-            'instructions', 'contact_info',
+            'instructions', 'contact_info', 'hero_image_url',
             'status', 'map_status_badge',
         ]
         return fields
@@ -121,6 +121,21 @@ class CampaignAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         # Show all non-deleted campaigns in the list
         return super().get_queryset(request).exclude(status='deleted')
+
+
+@admin.register(CampaignImage)
+class CampaignImageAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'original_filename', 'uploaded_by', 'uploaded_at', 'image_preview')
+    readonly_fields = ('campaign', 'original_filename', 'content_type', 'uploaded_by', 'uploaded_at', 'image_preview')
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="max-width:300px; max-height:200px; object-fit:cover; border-radius:4px;">',
+                obj.image.url,
+            )
+        return '\u2014'
+    image_preview.short_description = 'Preview'
 
 
 @admin.register(CityFetchJob)

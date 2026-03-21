@@ -1,9 +1,10 @@
 import json
+import os
 
 from django import forms
 from django.utils.text import slugify
 
-from .models import Campaign
+from .models import Campaign, CampaignImage, ALLOWED_IMAGE_EXTENSIONS
 
 
 class CampaignForm(forms.ModelForm):
@@ -56,3 +57,27 @@ class CampaignForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class ImageUploadForm(forms.Form):
+    image = forms.FileField(
+        label='Image file',
+        help_text='Accepted formats: JPEG, PNG, GIF, WebP. Landscape orientation (16:9) recommended.',
+    )
+    attest_rights = forms.BooleanField(
+        required=True,
+        label='I confirm that I own or have rights to use this image.',
+    )
+    attest_content = forms.BooleanField(
+        required=True,
+        label='I confirm this image contains no abusive, hateful, or illegal content, including but not limited to CSAM, incitement to violence, or harassment.',
+    )
+
+    def clean_image(self):
+        f = self.cleaned_data['image']
+        ext = os.path.splitext(f.name)[1].lstrip('.').lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            raise forms.ValidationError(
+                f'Unsupported file type ".{ext}". Allowed: {", ".join(ALLOWED_IMAGE_EXTENSIONS)}.'
+            )
+        return f

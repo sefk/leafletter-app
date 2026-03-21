@@ -11,8 +11,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from .forms import CampaignForm
-from .models import Campaign, CityFetchJob, Street, Trip
+from .forms import CampaignForm, ImageUploadForm
+from .models import Campaign, CampaignImage, CityFetchJob, Street, Trip
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
@@ -622,3 +622,56 @@ def api_campaign_detail(request, slug):
         'map_status': campaign.map_status,
         'bbox': campaign.bbox,
     })
+
+
+# ── Hero image upload views ───────────────────────────────────────────────────
+
+@_login_required
+@require_POST
+def manage_campaign_upload_image(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    if campaign.hero_image_url:
+        return JsonResponse(
+            {'error': 'Cannot upload an image when a hero image URL is already set. Clear the URL first.'},
+            status=400,
+        )
+
+    form = ImageUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        errors = []
+        for field_errors in form.errors.values():
+            errors.extend(field_errors)
+        return JsonResponse({'error': ' '.join(errors)}, status=400)
+
+    uploaded_file = form.cleaned_data['image']
+
+    # Replace any existing uploaded image
+    try:
+        existing = campaign.uploaded_image
+        existing.image.delete(save=False)
+        existing.delete()
+    except CampaignImage.DoesNotExist:
+        pass
+
+    img = CampaignImage.objects.create(
+        campaign=campaign,
+        image=uploaded_file,
+        original_filename=uploaded_file.name,
+        content_type=uploaded_file.content_type or '',
+        uploaded_by=request.user,
+    )
+
+    return JsonResponse({'url': img.image.url})
+
+
+@_login_required
+@require_POST
+def manage_campaign_remove_image(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    try:
+        existing = campaign.uploaded_image
+        existing.image.delete(save=False)
+        existing.delete()
+    except CampaignImage.DoesNotExist:
+        pass
+    return JsonResponse({'ok': True})

@@ -152,11 +152,11 @@
 <div class="content">
   {% if current_campaigns %}
     {% for campaign in current_campaigns %}
-    <div class="campaign-card{% if campaign.hero_image_url %} campaign-card-hero{% endif %}">
+    <div class="campaign-card{% if campaign.hero_image_effective_url %} campaign-card-hero{% endif %}">
       <a href="/c/{{ campaign.slug }}/" class="campaign-link">
-        {% if campaign.hero_image_url %}
+        {% if campaign.hero_image_effective_url %}
           <div class="campaign-hero">
-            <img src="{{ campaign.hero_image_url }}" alt="{{ campaign.name }}" loading="lazy">
+            <img src="{{ campaign.hero_image_effective_url }}" alt="{{ campaign.name }}" loading="lazy">
             <div class="campaign-hero-overlay">
               <h2>{{ campaign.name }}</h2>
               <div class="meta">{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</div>

@@ -11,3 +11,5 @@ watchdog
 honcho
 gunicorn
 whitenoise
+django-storages[s3]
+boto3

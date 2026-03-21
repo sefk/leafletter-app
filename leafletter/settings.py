@@ -114,6 +114,25 @@ STORAGES = {
     },
 }
 
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Image storage: S3 in production (when AWS_ACCESS_KEY_ID is set), filesystem in dev
+_aws_key = os.environ.get('AWS_ACCESS_KEY_ID', '')
+if _aws_key:
+    STORAGES['default'] = {
+        'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+        'OPTIONS': {
+            'access_key': _aws_key,
+            'secret_key': os.environ.get('AWS_SECRET_ACCESS_KEY', ''),
+            'bucket_name': os.environ.get('AWS_STORAGE_BUCKET_NAME', 'images'),
+            'region_name': os.environ.get('AWS_S3_REGION_NAME', ''),
+            'endpoint_url': os.environ.get('AWS_S3_ENDPOINT_URL', ''),
+            'file_overwrite': False,
+            'querystring_auth': False,
+        },
+    }
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = '/manage/login/'

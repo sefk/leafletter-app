@@ -1,6 +1,7 @@
 import uuid
 from datetime import date
 
+from django.conf import settings
 from django.contrib.gis.db import models
 
 
@@ -40,8 +41,42 @@ class Campaign(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def hero_image_effective_url(self):
+        if self.hero_image_url:
+            return self.hero_image_url
+        try:
+            return self.uploaded_image.image.url
+        except Exception:
+            return None
+
     class Meta:
         ordering = ['-created_at']
+
+
+ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+
+
+def _campaign_image_upload_path(instance, filename):
+    import os
+    ext = os.path.splitext(filename)[1].lower()
+    return f'campaign_images/{uuid.uuid4().hex}{ext}'
+
+
+class CampaignImage(models.Model):
+    campaign = models.OneToOneField(
+        Campaign, on_delete=models.CASCADE, related_name='uploaded_image'
+    )
+    image = models.FileField(upload_to=_campaign_image_upload_path)
+    original_filename = models.CharField(max_length=255, blank=True)
+    content_type = models.CharField(max_length=100, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Image for {self.campaign.name}"
 
 
 class Street(models.Model):
