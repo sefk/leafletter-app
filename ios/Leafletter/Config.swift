@@ -6,7 +6,10 @@ enum Config {
     // dev server. Otherwise uses the production server.
     // Adjust the dev URL to your machine's LAN IP if running on a real device.
     static var baseURL: String {
-        isDebuggerAttached ? "http://10.10.0.200:8000" : "https://leafletter.app"
+        if let override = ProcessInfo.processInfo.environment["LEAFLETTER_BASE_URL"] {
+            return override
+        }
+        return isDebuggerAttached ? "http://10.10.0.200:8000" : "https://leafletter.app"
     }
 
     private static var isDebuggerAttached: Bool {
