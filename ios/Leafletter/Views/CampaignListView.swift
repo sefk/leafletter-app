@@ -68,10 +68,14 @@ struct CampaignListView: View {
                 }
             }
             .navigationTitle("Leafletter")
+            .navigationBarTitleDisplayMode(.large)
             // Navigate to About as a full-screen push (not a modal sheet) for
             // consistency with the rest of the app.
             .navigationDestination(isPresented: $navigateToAbout) {
                 AboutWebView(returnSlug: nil)
+            }
+            .safeAreaInset(edge: .bottom) {
+                BetaBannerView()
             }
         }
         .task { await load() }
@@ -111,6 +115,25 @@ private struct BannerView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+    }
+}
+
+// MARK: - Beta banner
+
+private struct BetaBannerView: View {
+    var body: some View {
+        Text("**Beta:** This app is in beta. If you have feedback or concerns, please [file a bug](https://github.com/sefk/leafletter-app/issues/) or [contact the owner](https://sef.kloninger.com/).")
+            .font(.caption)
+            .foregroundStyle(Color(red: 0.365, green: 0.251, blue: 0.216))
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(red: 1.0, green: 0.973, blue: 0.882))
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Color(red: 0.976, green: 0.659, blue: 0.145))
+                    .frame(height: 3)
+            }
     }
 }
 
