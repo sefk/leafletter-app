@@ -33,6 +33,13 @@ struct Campaign: Codable, Identifiable {
     var dateRangeText: String? {
         guard let start = startDate else { return nil }
         if let end = endDate { return "\(start) – \(end)" }
-        return "Starting \(start)"
+        let prefix = start <= today() ? "Started" : "Starting"
+        return "\(prefix) \(start)"
+    }
+
+    private func today() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: Date())
     }
 }
