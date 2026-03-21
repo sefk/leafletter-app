@@ -292,6 +292,18 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
 
 // MARK: - Row
 
+private struct TestBadgeView: View {
+    var body: some View {
+        Text("TEST")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
 private struct CampaignRow: View {
     let campaign: Campaign
 
@@ -330,15 +342,7 @@ private struct CampaignRow: View {
                             .font(.headline)
                             .fontWeight(.bold)
                             .foregroundStyle(.primary)
-                        if campaign.isTest {
-                            Text("TEST")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Color(red: 0.10, green: 0.42, blue: 0.24))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
+                        if campaign.isTest { TestBadgeView() }
                     }
                     if let dates = campaign.dateRangeText {
                         Text(dates)
