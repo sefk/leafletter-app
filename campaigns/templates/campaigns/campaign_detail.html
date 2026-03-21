@@ -72,21 +72,8 @@
       font-size: 0.9rem;
       color: #555;
       max-width: 320px;
-      margin-bottom: 16px;
       line-height: 1.5;
     }
-    #map-not-ready-overlay .btn-contact {
-      display: inline-block;
-      padding: 10px 20px;
-      background: #1a6b3c;
-      color: #fff;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      text-decoration: none;
-    }
-    #map-not-ready-overlay .btn-contact:hover { background: #155730; }
-
     .mobile-map-instructions {
       display: none;
       padding: 8px 16px;
@@ -252,23 +239,7 @@
   {% if campaign.map_status != 'ready' %}
   <div id="map-not-ready-overlay">
     <h3>Map Not Ready Yet</h3>
-    <p>
-      {% if campaign.map_status == 'pending' or campaign.map_status == 'generating' %}
-        Streets are being fetched from OpenStreetMap. This can take a few minutes.
-      {% elif campaign.map_status == 'rendering' %}
-        Streets are being processed. Please check back in a few minutes.
-      {% elif campaign.map_status == 'error' or campaign.map_status == 'warning' %}
-        There was a problem generating the map. The organizer has been notified.
-      {% else %}
-        The map is not available yet. Please check back later.
-      {% endif %}
-      {% if campaign.contact_info %}
-        If this is urgent, contact the organizer below.
-      {% endif %}
-    </p>
-    {% if campaign.contact_info %}
-    <a class="btn-contact" href="mailto:{{ campaign.contact_info }}">Email Organizer</a>
-    {% endif %}
+    <p>Please check back in a few minutes. If it seems stuck, use the contact information above to let the organizer know.</p>
   </div>
   {% endif %}
 </div>
