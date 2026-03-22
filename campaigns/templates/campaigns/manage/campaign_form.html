@@ -157,7 +157,7 @@
         <div id="upload-form-area">
           <label style="display:block; font-size:0.82rem; color:#666; margin-bottom:6px;">
             Upload a JPEG, PNG, GIF, or WebP image. Landscape orientation (16:9 or wider) recommended.
-            Maximum file size: 10 MB.
+            Maximum file size: 2 MB.
           </label>
           <input type="file" id="hero-image-file" accept=".jpg,.jpeg,.png,.gif,.webp"
                  style="display:block; margin-bottom:10px;">
@@ -476,7 +476,10 @@
     if (!attestContent.checked) { status.textContent = 'Please confirm the content attestation.'; return; }
 
     const file = fileInput.files[0];
-    if (file.size > 10 * 1024 * 1024) { status.textContent = 'File too large (max 10 MB).'; return; }
+    if (file.size > 2 * 1024 * 1024) {
+      status.innerHTML = 'Image exceeds the 2 MB size limit. Please resize and try again. If you need support for larger images, please add an upvote comment to <a href="https://github.com/sefk/leafletter-app/issues/98">issue #98</a>.';
+      return;
+    }
 
     const formData = new FormData();
     formData.append('image', file);

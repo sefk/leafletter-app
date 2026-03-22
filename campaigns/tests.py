@@ -28,6 +28,7 @@ from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_n
                     split_way_at_intersections, _sync_campaign_map_status,
                     _write_streets_geojson_chunked,
                     watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES)
+from .forms import ImageUploadForm
 from .views import _apply_city_list_changes
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
@@ -2408,3 +2409,36 @@ class RunTaskCommandTest(TestCase):
                      use_async=True, stdout=out)
         mock_apply_async.assert_called_once_with(args=[], kwargs={})
         self.assertIn('test-task-id-123', out.getvalue())
+
+
+# ── ImageUploadForm ────────────────────────────────────────────────────────────
+
+class ImageUploadFormTest(TestCase):
+    def _make_file(self, name, size, content_type='image/jpeg'):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile(name, b'x' * size, content_type=content_type)
+
+    def _valid_data(self):
+        return {'attest_rights': True, 'attest_content': True}
+
+    def test_accepts_image_under_limit(self):
+        f = self._make_file('photo.jpg', 512 * 1024)
+        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
+        self.assertTrue(form.is_valid())
+
+    def test_rejects_image_over_2mb(self):
+        f = self._make_file('big.jpg', 3 * 1024 * 1024)
+        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
+        self.assertFalse(form.is_valid())
+        self.assertIn('2 MB', str(form.errors['image']))
+        self.assertIn('issue #98', str(form.errors['image']))
+
+    def test_rejects_exactly_1mb_plus_one(self):
+        f = self._make_file('edge.jpg', 2 * 1024 * 1024 + 1)
+        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
+        self.assertFalse(form.is_valid())
+
+    def test_accepts_exactly_1mb(self):
+        f = self._make_file('exact.jpg', 2 * 1024 * 1024)
+        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
+        self.assertTrue(form.is_valid())
