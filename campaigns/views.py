@@ -274,19 +274,48 @@ def manage_campaign_list(request):
     })
 
 
+def _save_campaign_image(image_form, campaign, user):
+    """Create or replace CampaignImage from a validated ImageUploadForm."""
+    if campaign.hero_image_url:
+        campaign.hero_image_url = ''
+        campaign.save(update_fields=['hero_image_url'])
+    try:
+        existing = campaign.uploaded_image
+        existing.image.delete(save=False)
+        existing.delete()
+    except CampaignImage.DoesNotExist:
+        pass
+    uploaded_file = image_form.cleaned_data['image']
+    CampaignImage.objects.create(
+        campaign=campaign,
+        image=uploaded_file,
+        original_filename=uploaded_file.name,
+        content_type=uploaded_file.content_type or '',
+        uploaded_by=user,
+    )
+
+
 @_login_required
 def manage_campaign_create(request):
     if request.method == 'POST':
         form = CampaignForm(request.POST)
-        if form.is_valid():
+        image_form = ImageUploadForm(request.POST, request.FILES) if 'image' in request.FILES else None
+        campaign_valid = form.is_valid()
+        image_valid = image_form is None or image_form.is_valid()
+        if campaign_valid and image_valid:
             campaign = form.save(commit=False)
             campaign.status = 'draft'
             campaign.save()
+            if image_form:
+                _save_campaign_image(image_form, campaign, request.user)
             queue_city_fetches(campaign.pk)
             return redirect('manage_campaign_detail', slug=campaign.slug)
     else:
         form = CampaignForm()
-    return render(request, 'campaigns/manage/campaign_form.html', {'form': form, 'action': 'Create'})
+        image_form = None
+    return render(request, 'campaigns/manage/campaign_form.html', {
+        'form': form, 'image_form': image_form, 'action': 'Create',
+    })
 
 
 @_login_required
@@ -349,17 +378,24 @@ def manage_campaign_edit(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     if request.method == 'POST':
         form = CampaignForm(request.POST, instance=campaign)
-        if form.is_valid():
+        image_form = ImageUploadForm(request.POST, request.FILES) if 'image' in request.FILES else None
+        campaign_valid = form.is_valid()
+        image_valid = image_form is None or image_form.is_valid()
+        if campaign_valid and image_valid:
             old_cities = campaign.cities
             updated = form.save()
+            if image_form:
+                _save_campaign_image(image_form, updated, request.user)
             if updated.cities != old_cities:
                 _apply_city_list_changes(old_cities, updated)
             return redirect('manage_campaign_detail', slug=updated.slug)
     else:
         form = CampaignForm(instance=campaign)
+        image_form = None
     campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
     return render(request, 'campaigns/manage/campaign_form.html', {
         'form': form,
+        'image_form': image_form,
         'campaign': campaign,
         'action': 'Edit',
         'campaign_url': campaign_url,
@@ -622,46 +658,6 @@ def api_campaign_detail(request, slug):
         'map_status': campaign.map_status,
         'bbox': campaign.bbox,
     })
-
-
-# ── Hero image upload views ───────────────────────────────────────────────────
-
-@_login_required
-@require_POST
-def manage_campaign_upload_image(request, slug):
-    campaign = get_object_or_404(Campaign, slug=slug)
-    if campaign.hero_image_url:
-        return JsonResponse(
-            {'error': 'Cannot upload an image when a hero image URL is already set. Clear the URL first.'},
-            status=400,
-        )
-
-    form = ImageUploadForm(request.POST, request.FILES)
-    if not form.is_valid():
-        errors = []
-        for field_errors in form.errors.values():
-            errors.extend(field_errors)
-        return JsonResponse({'error': ' '.join(errors)}, status=400)
-
-    uploaded_file = form.cleaned_data['image']
-
-    # Replace any existing uploaded image
-    try:
-        existing = campaign.uploaded_image
-        existing.image.delete(save=False)
-        existing.delete()
-    except CampaignImage.DoesNotExist:
-        pass
-
-    img = CampaignImage.objects.create(
-        campaign=campaign,
-        image=uploaded_file,
-        original_filename=uploaded_file.name,
-        content_type=uploaded_file.content_type or '',
-        uploaded_by=request.user,
-    )
-
-    return JsonResponse({'url': img.image.url})
 
 
 @_login_required

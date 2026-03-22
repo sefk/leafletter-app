@@ -8,7 +8,7 @@
 </div>
 
 <div class="card">
-  <form method="post" id="campaign-form">
+  <form method="post" enctype="multipart/form-data" id="campaign-form">
     {% csrf_token %}
 
     {% if form.non_field_errors %}
@@ -159,30 +159,36 @@
             Upload a JPEG, PNG, GIF, or WebP image. Landscape orientation (16:9 or wider) recommended.
             Maximum file size: 2 MB.
           </label>
-          <input type="file" id="hero-image-file" accept=".jpg,.jpeg,.png,.gif,.webp"
-                 style="display:block; margin-bottom:10px;">
+          <input type="file" id="hero-image-file" name="image" accept=".jpg,.jpeg,.png,.gif,.webp"
+                 style="display:block; margin-bottom:10px;" onchange="previewHeroImage(this)">
+
+          {% if image_form and image_form.errors %}
+          <div style="font-size:0.82rem; color:#c62828; margin-bottom:8px;">
+            {% for error in image_form.non_field_errors %}{{ error }}{% endfor %}
+            {% for error in image_form.image.errors %}<div>{{ error }}</div>{% endfor %}
+            {% for error in image_form.attest_rights.errors %}<div>{{ error }}</div>{% endfor %}
+            {% for error in image_form.attest_content.errors %}<div>{{ error }}</div>{% endfor %}
+          </div>
+          {% endif %}
 
           <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 14px; margin-bottom:10px; font-size:0.82rem; color:#555;">
-            <strong>Before uploading, please confirm:</strong>
+            <strong>Before saving, please confirm:</strong>
             <label style="display:flex; align-items:flex-start; gap:8px; margin-top:8px; cursor:pointer;">
-              <input type="checkbox" id="attest-rights" style="width:auto; margin-top:2px;">
+              <input type="checkbox" id="attest-rights" name="attest_rights" style="width:auto; margin-top:2px;"
+                     {% if image_form and image_form.attest_rights.value %}checked{% endif %}>
               <span>I own or have rights to use this image and it may be publicly displayed.</span>
             </label>
             <label style="display:flex; align-items:flex-start; gap:8px; margin-top:6px; cursor:pointer;">
-              <input type="checkbox" id="attest-content" style="width:auto; margin-top:2px;">
+              <input type="checkbox" id="attest-content" name="attest_content" style="width:auto; margin-top:2px;"
+                     {% if image_form and image_form.attest_content.value %}checked{% endif %}>
               <span>This image contains no abusive, hateful, or illegal content (including CSAM, incitement to violence, or harassment).</span>
             </label>
           </div>
 
-          <button type="button" id="upload-btn" onclick="uploadHeroImage()"
-                  class="btn btn-secondary" style="font-size:0.85rem;">
-            Upload Image
-          </button>
-          <span id="upload-status" style="margin-left:10px; font-size:0.82rem; color:#555;"></span>
-
           <div id="upload-preview" style="margin-top:10px; display:none;">
             <img id="upload-preview-img" src="" alt="Upload preview"
                  style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd;">
+            <div id="upload-status" style="font-size:0.82rem; color:#555; margin-top:4px;"></div>
           </div>
         </div>
       </div>
@@ -464,68 +470,27 @@
   showHeroTab('upload');
   {% endif %}
 
-  // Upload image
-  window.uploadHeroImage = function() {
-    const fileInput = document.getElementById('hero-image-file');
-    const attestRights = document.getElementById('attest-rights');
-    const attestContent = document.getElementById('attest-content');
+  // Preview selected image locally before form save
+  window.previewHeroImage = function(input) {
     const status = document.getElementById('upload-status');
-
-    if (!fileInput.files.length) { status.textContent = 'Please select a file.'; return; }
-    if (!attestRights.checked) { status.textContent = 'Please confirm you have rights to this image.'; return; }
-    if (!attestContent.checked) { status.textContent = 'Please confirm the content attestation.'; return; }
-
-    const file = fileInput.files[0];
+    const previewDiv = document.getElementById('upload-preview');
+    const previewImg = document.getElementById('upload-preview-img');
+    if (!input.files.length) { previewDiv.style.display = 'none'; return; }
+    const file = input.files[0];
     if (file.size > 2 * 1024 * 1024) {
+      previewDiv.style.display = '';
+      previewImg.style.display = 'none';
       status.innerHTML = 'Image exceeds the 2 MB size limit. Please resize and try again. If you need support for larger images, please add an upvote comment to <a href="https://github.com/sefk/leafletter-app/issues/98">issue #98</a>.';
       return;
     }
-
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('attest_rights', 'true');
-    formData.append('attest_content', 'true');
-
-    status.textContent = 'Uploading\u2026';
-    document.getElementById('upload-btn').disabled = true;
-
-    {% if campaign %}
-    const uploadUrl = '/manage/{{ campaign.slug }}/upload-image/';
-    {% else %}
-    const uploadUrl = null;
-    {% endif %}
-
-    if (!uploadUrl) {
-      status.textContent = 'Please save the campaign first before uploading an image.';
-      document.getElementById('upload-btn').disabled = false;
-      return;
-    }
-
-    fetch(uploadUrl, {
-      method: 'POST',
-      headers: {'X-CSRFToken': '{{ csrf_token }}'},
-      body: formData,
-    })
-    .then(r => r.json())
-    .then(data => {
-      document.getElementById('upload-btn').disabled = false;
-      if (data.error) {
-        status.textContent = 'Error: ' + data.error;
-      } else {
-        status.textContent = 'Uploaded!';
-        const previewDiv = document.getElementById('upload-preview');
-        const previewImg = document.getElementById('upload-preview-img');
-        previewImg.src = data.url;
-        previewDiv.style.display = '';
-        // Hide the existing image area if it was there
-        const existing = document.getElementById('uploaded-image-existing');
-        if (existing) existing.style.display = 'none';
-      }
-    })
-    .catch(() => {
-      document.getElementById('upload-btn').disabled = false;
-      status.textContent = 'Upload failed.';
-    });
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      previewImg.src = e.target.result;
+      previewImg.style.display = '';
+      previewDiv.style.display = '';
+      status.textContent = 'Image will be uploaded when you save.';
+    };
+    reader.readAsDataURL(file);
   };
 
   // Remove uploaded image
