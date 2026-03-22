@@ -476,7 +476,7 @@
     // Server-side trip data (all trips, including deleted)
     var allTripData = [
       {% for trip in all_trips %}
-      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", notes: "{{ trip.notes|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'Y-m-d' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/", editUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/edit/" },
+      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", notes: "{{ trip.notes|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'c' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/", editUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/edit/" },
       {% endfor %}
     ];
 

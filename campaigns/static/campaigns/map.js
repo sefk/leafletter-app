@@ -370,7 +370,12 @@
 
       const metaSpan = document.createElement('span');
       metaSpan.className = 'trip-legend-meta';
-      metaSpan.textContent = meta.recorded_at;
+      const d = new Date(meta.recorded_at);
+      const day = String(d.getDate()).padStart(2, '0');
+      const mon = d.toLocaleString(undefined, { month: 'short' });
+      const yr = String(d.getFullYear());
+      const time = d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+      metaSpan.textContent = `${day}-${mon}-${yr} ${time}`;
 
       item.appendChild(cb);
       item.appendChild(swatch);
