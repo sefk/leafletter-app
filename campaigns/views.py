@@ -618,6 +618,16 @@ def city_search(request):
 # JSON API for iOS app
 # ---------------------------------------------------------------------------
 
+def _abs_hero_url(request, campaign):
+    """Return an absolute URL for the campaign's hero image, or None."""
+    url = campaign.hero_image_effective_url
+    if not url:
+        return None
+    if url.startswith(('http://', 'https://')):
+        return url  # Already absolute (e.g. S3)
+    return request.build_absolute_uri('/' + url.lstrip('/'))
+
+
 @require_GET
 def api_campaigns(request):
     today = date.today()
@@ -634,7 +644,7 @@ def api_campaigns(request):
             'slug': c.slug,
             'start_date': c.start_date.isoformat() if c.start_date else None,
             'end_date': c.end_date.isoformat() if c.end_date else None,
-            'hero_image_url': c.hero_image_effective_url or None,
+            'hero_image_url': _abs_hero_url(request, c),
             'map_status': c.map_status,
             'is_test': c.is_test,
         }
@@ -654,7 +664,7 @@ def api_campaign_detail(request, slug):
         'end_date': campaign.end_date.isoformat() if campaign.end_date else None,
         'instructions': campaign.instructions or '',
         'contact_info': campaign.contact_info or '',
-        'hero_image_url': campaign.hero_image_effective_url or None,
+        'hero_image_url': _abs_hero_url(request, campaign),
         'map_status': campaign.map_status,
         'bbox': campaign.bbox,
     })
