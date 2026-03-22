@@ -634,7 +634,7 @@ def api_campaigns(request):
             'slug': c.slug,
             'start_date': c.start_date.isoformat() if c.start_date else None,
             'end_date': c.end_date.isoformat() if c.end_date else None,
-            'hero_image_url': c.hero_image_url or None,
+            'hero_image_url': c.hero_image_effective_url or None,
             'map_status': c.map_status,
             'is_test': c.is_test,
         }
@@ -654,7 +654,7 @@ def api_campaign_detail(request, slug):
         'end_date': campaign.end_date.isoformat() if campaign.end_date else None,
         'instructions': campaign.instructions or '',
         'contact_info': campaign.contact_info or '',
-        'hero_image_url': campaign.hero_image_url or None,
+        'hero_image_url': campaign.hero_image_effective_url or None,
         'map_status': campaign.map_status,
         'bbox': campaign.bbox,
     })
