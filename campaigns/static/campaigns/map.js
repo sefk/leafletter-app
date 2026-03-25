@@ -14,6 +14,7 @@
   const nameById = new Map();       // id → street name (debug)
   let isPointerDown = false;
   let selectionMode = false;
+  let spacebarPanning = false;
   let streetsLayer = null;
   let coverageMode = 'summary';   // 'detail' | 'summary' | 'hidden'
   let summaryLayer = null;
@@ -68,6 +69,27 @@
   document.addEventListener('mouseup', () => { isPointerDown = false; });
   document.addEventListener('touchstart', () => { isPointerDown = true; });
   document.addEventListener('touchend', () => { isPointerDown = false; });
+
+  // ── Spacebar panning (hold Space to temporarily pan while in selection mode)
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && selectionMode && !spacebarPanning) {
+      e.preventDefault();
+      spacebarPanning = true;
+      if (lasso) lasso.disable();
+      map.dragging.enable();
+      map.getContainer().style.cursor = 'grab';
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space' && spacebarPanning) {
+      spacebarPanning = false;
+      if (selectionMode) {
+        map.dragging.disable();
+        if (lasso) lasso.enable();
+        map.getContainer().style.cursor = 'crosshair';
+      }
+    }
+  });
 
   // ── Init map ─────────────────────────────────────────────────────────────
   const mapOptions = { maxBoundsViscosity: 1.0 };
