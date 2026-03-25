@@ -129,8 +129,8 @@ if _aws_key:
             'region_name': os.environ.get('AWS_S3_REGION_NAME', ''),
             'endpoint_url': os.environ.get('AWS_S3_ENDPOINT_URL', ''),
             'file_overwrite': False,
-            'querystring_auth': False,
-            'default_acl': 'public-read',
+            'querystring_auth': True,
+            'url_expiration': 31536000,  # 1 year
         },
     }
 
