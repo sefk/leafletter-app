@@ -173,6 +173,7 @@
 
           layer.on('click', () => {
             if (!selectionMode) return;
+            if (spacebarPanning) return;
             if (selectedIds.has(id)) {
               selectedIds.delete(id);
               // Remove from wherever it sits in the stack (may be inside a batch array)
@@ -201,7 +202,7 @@
           });
 
           layer.on('mouseover', () => {
-            if (!selectionMode || !isPointerDown || selectedIds.has(id)) return;
+            if (!selectionMode || !isPointerDown || selectedIds.has(id) || spacebarPanning) return;
             selectedIds.add(id);
             selectionStack.push(id);
             layer.setStyle(STYLE_SELECTED);
