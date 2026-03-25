@@ -130,6 +130,7 @@ if _aws_key:
             'endpoint_url': os.environ.get('AWS_S3_ENDPOINT_URL', ''),
             'file_overwrite': False,
             'querystring_auth': False,
+            'default_acl': 'public-read',
         },
     }
 
