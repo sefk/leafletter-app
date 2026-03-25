@@ -14,6 +14,7 @@
   const nameById = new Map();       // id → street name (debug)
   let isPointerDown = false;
   let selectionMode = false;
+  let spacebarPanning = false;
   let streetsLayer = null;
   let coverageMode = 'summary';   // 'detail' | 'summary' | 'hidden'
   let summaryLayer = null;
@@ -68,6 +69,27 @@
   document.addEventListener('mouseup', () => { isPointerDown = false; });
   document.addEventListener('touchstart', () => { isPointerDown = true; });
   document.addEventListener('touchend', () => { isPointerDown = false; });
+
+  // ── Spacebar panning (hold Space to temporarily pan while in selection mode)
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && selectionMode && !spacebarPanning) {
+      e.preventDefault();
+      spacebarPanning = true;
+      if (lasso) lasso.disable();
+      map.dragging.enable();
+      map.getContainer().style.cursor = 'grab';
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space' && spacebarPanning) {
+      spacebarPanning = false;
+      if (selectionMode) {
+        map.dragging.disable();
+        if (lasso) lasso.enable();
+        map.getContainer().style.cursor = 'crosshair';
+      }
+    }
+  });
 
   // ── Init map ─────────────────────────────────────────────────────────────
   const mapOptions = { maxBoundsViscosity: 1.0 };
@@ -151,6 +173,7 @@
 
           layer.on('click', () => {
             if (!selectionMode) return;
+            if (spacebarPanning) return;
             if (selectedIds.has(id)) {
               selectedIds.delete(id);
               // Remove from wherever it sits in the stack (may be inside a batch array)
@@ -179,7 +202,7 @@
           });
 
           layer.on('mouseover', () => {
-            if (!selectionMode || !isPointerDown || selectedIds.has(id)) return;
+            if (!selectionMode || !isPointerDown || selectedIds.has(id) || spacebarPanning) return;
             selectedIds.add(id);
             selectionStack.push(id);
             layer.setStyle(STYLE_SELECTED);
