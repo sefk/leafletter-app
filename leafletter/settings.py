@@ -130,7 +130,7 @@ if _aws_key:
             'endpoint_url': os.environ.get('AWS_S3_ENDPOINT_URL', ''),
             'file_overwrite': False,
             'querystring_auth': True,
-            'url_expiration': 31536000,  # 1 year
+            'querystring_expire': 31536000,  # 1 year
         },
     }
 
