@@ -249,14 +249,10 @@
         }
 
         if (TERMINAL[data.map_status]) {
-          // Import finished — hide the spinner banner and stop polling.
-          if (banner) banner.style.display = 'none';
+          // Import finished — reload the page to show the latest street data.
           clearTimeout(pollTimer);
-          // Both map panes loaded before the import completed; show stale warnings.
-          var geoLimitStale = document.getElementById('geo-limit-stale-banner');
-          if (geoLimitStale) geoLimitStale.style.display = '';
-          var campaignMapStale = document.getElementById('campaign-map-stale-banner');
-          if (campaignMapStale) campaignMapStale.style.display = '';
+          location.reload();
+          return;
         } else {
           // Still running — schedule the next poll.
           pollTimer = setTimeout(poll, 5000);
