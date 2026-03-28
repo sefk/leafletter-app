@@ -101,10 +101,10 @@
 <body>
 
 <nav class="navbar">
-  <a href="/manage/" style="display:flex;align-items:center;gap:8px"><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="36" height="36">Leafletter</a>
+  <a href="/" style="display:flex;align-items:center;gap:8px"><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="36" height="36">Leafletter</a>
   <div class="nav-right">
     {% if user.is_authenticated %}<span>{{ user.username }}</span>{% endif %}
-    <a href="/">Home</a>
+    <a href="/manage/">List</a>
     {% if user.is_authenticated %}
       <form method="post" action="/manage/logout/" style="display:inline">
         {% csrf_token %}
