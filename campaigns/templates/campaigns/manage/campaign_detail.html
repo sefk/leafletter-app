@@ -309,6 +309,7 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
+      referrerPolicy: 'origin',
     }).addTo(map);
 
     // Show existing geo_limit polygon, or fall back to bbox rectangle as reference
@@ -488,9 +489,19 @@
     ];
 
     var map = L.map('manage-map', { zoomControl: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
+      referrerPolicy: 'origin',
     }).addTo(map);
+    var tileErrorShown = false;
+    tileLayer.on('tileerror', function() {
+      if (tileErrorShown) return;
+      tileErrorShown = true;
+      var banner = document.createElement('div');
+      banner.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(255,255,255,0.9);border:1px solid #ccc;border-radius:4px;padding:6px 12px;font-size:13px;color:#555;pointer-events:none;white-space:nowrap;';
+      banner.textContent = 'Map tiles temporarily unavailable';
+      document.getElementById('manage-map').appendChild(banner);
+    });
 
     var loadingEl = document.getElementById('manage-map-loading');
     var loadingTextEl = document.getElementById('manage-map-loading-text');
