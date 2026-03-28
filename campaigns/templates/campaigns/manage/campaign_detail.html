@@ -63,12 +63,21 @@
      data-initial-map-status="{{ campaign.map_status }}">
   <div class="card-title">Street Management</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    Streets are fetched from OpenStreetMap and put over the map tiles. Streets are split up into very small "blocks", sometimes much more granular than normal blocks. There are limits to the number of blocks in a campaign.
+    Streets are fetched from OpenStreetMap and put over the map tiles. Streets are split up into very small "blocks", often more granular than normal blocks.
+      Fetching data can take a long time depending on the map size and the load on the OpenStreetMap servers.
+      Leafletter tries six times before giving up.
   </p>
   <div style="margin-bottom:12px;">
     Map status:
     <span id="sm-map-status-badge" class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
   </div>
+
+  {% if campaign.map_status == 'error' or campaign.map_status == 'warning' %}
+  <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+    In case of error, try another geography, for example a county instead of a city or vice versa. Or try again later. If you're stuck,
+    <a href="https://github.com/sefk/leafletter-app/issues/">file a bug</a> with as much context as you can provide and we'll take a look.
+  </p>
+  {% endif %}
 
   <!-- In-progress indicator — shown while a fetch or render is running, hidden when done -->
   <div id="sm-inflight-banner" style="display:{% if campaign.map_status == 'generating' or campaign.map_status == 'pending' or campaign.map_status == 'rendering' %}flex{% else %}none{% endif %}; align-items:center; gap:10px; margin-bottom:12px;">
@@ -154,10 +163,6 @@
       <p style="color:#c62828; margin-bottom:8px;">
         <strong>Street import failed:</strong>
         {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
-      </p>
-      <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-        If the error is about a city name (not found or ambiguous), edit the campaign to fix the
-        city, then re-fetch. Otherwise you can re-fetch directly to retry.
       </p>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
