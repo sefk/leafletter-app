@@ -255,7 +255,7 @@
           return;
         } else {
           // Still running — schedule the next poll.
-          pollTimer = setTimeout(poll, 5000);
+          pollTimer = setTimeout(poll, 10000);
         }
       })
       .catch(function () {
@@ -265,7 +265,7 @@
   }
 
   // Start polling immediately.
-  pollTimer = setTimeout(poll, 5000);
+  pollTimer = setTimeout(poll, 10000);
 })();
 </script>
 
