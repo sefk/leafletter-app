@@ -1150,6 +1150,65 @@ class ManagerUITest(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
 
+    # ── Unpublish ─────────────────────────────────────────────────────────────
+
+    def test_unpublish_sets_status_to_draft(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'draft')
+
+    def test_unpublish_redirects_to_detail(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
+
+    def test_unpublished_campaign_public_url_returns_404(self):
+        # After unpublishing, the public URL must return 404
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'draft')
+        # Draft campaigns return 404 on the public URL (same as test_draft_campaign_returns_404)
+        resp = self.client.get(f'/c/{self.campaign.slug}/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unpublish_preserves_campaign_data(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        original_name = self.campaign.name
+        original_cities = self.campaign.cities
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.name, original_name)
+        self.assertEqual(self.campaign.cities, original_cities)
+
+    def test_unpublish_requires_login(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'published')
+
+    def test_unpublish_requires_post(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        resp = self.client.get(f'/manage/{self.campaign.slug}/unpublish/')
+        self.assertEqual(resp.status_code, 405)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'published')
+
     # ── Delete ────────────────────────────────────────────────────────────────
 
     def test_soft_delete_marks_as_deleted(self):

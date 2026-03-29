@@ -414,6 +414,15 @@ def manage_campaign_publish(request, slug):
 
 @_login_required
 @require_POST
+def manage_campaign_unpublish(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    campaign.status = 'draft'
+    campaign.save(update_fields=['status'])
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
 def manage_campaign_delete(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     campaign.status = 'deleted'

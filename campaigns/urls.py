@@ -21,6 +21,7 @@ manage_urlpatterns = [
     path('<slug:slug>/', views.manage_campaign_detail, name='manage_campaign_detail'),
     path('<slug:slug>/edit/', views.manage_campaign_edit, name='manage_campaign_edit'),
     path('<slug:slug>/publish/', views.manage_campaign_publish, name='manage_campaign_publish'),
+    path('<slug:slug>/unpublish/', views.manage_campaign_unpublish, name='manage_campaign_unpublish'),
     path('<slug:slug>/delete/', views.manage_campaign_delete, name='manage_campaign_delete'),
     path('<slug:slug>/fetch-status/', views.manage_campaign_fetch_status, name='manage_campaign_fetch_status'),
     path('<slug:slug>/refetch/', views.manage_campaign_refetch, name='manage_campaign_refetch'),
