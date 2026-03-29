@@ -2036,6 +2036,59 @@ class WatchdogStuckJobsTest(TestCase):
         self.assertIn('Springfield', body)
         self.assertIn('Shelbyville', body)
 
+    # ── Stuck-rendering watchdog ──────────────────────────────────────────────
+
+    def _make_stuck_rendering_campaign(self, minutes_old=None):
+        """Return a campaign stuck in 'rendering' state past the threshold."""
+        if minutes_old is None:
+            minutes_old = STUCK_JOB_THRESHOLD_MINUTES + 10
+        campaign = make_campaign(slug=f'rendering-stuck-{minutes_old}', map_status='rendering')
+        old_time = timezone.now() - timedelta(minutes=minutes_old)
+        Campaign.objects.filter(pk=campaign.pk).update(updated_at=old_time)
+        return campaign
+
+    def test_returns_requeued_rendering_key(self):
+        result = watchdog_stuck_jobs()
+        self.assertIn('requeued_rendering', result)
+
+    def test_no_stuck_rendering_when_clean(self):
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['requeued_rendering'], [])
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_detects_campaign_stuck_in_rendering(self, mock_render):
+        campaign = self._make_stuck_rendering_campaign()
+        result = watchdog_stuck_jobs()
+        self.assertIn(campaign.pk, result['requeued_rendering'])
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_redispatches_render_for_stuck_rendering_campaign(self, mock_render):
+        campaign = self._make_stuck_rendering_campaign()
+        watchdog_stuck_jobs()
+        mock_render.delay.assert_called_once_with(campaign.pk, final_status='ready')
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_recent_rendering_campaign_not_flagged(self, mock_render):
+        """A campaign that just started rendering should not be re-queued."""
+        campaign = make_campaign(slug='rendering-recent', map_status='rendering')
+        # updated_at is auto_now — only seconds old, well within threshold
+        result = watchdog_stuck_jobs()
+        self.assertNotIn(campaign.pk, result['requeued_rendering'])
+        mock_render.delay.assert_not_called()
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_email_sent_for_stuck_rendering_campaign(self, mock_render):
+        self._make_stuck_rendering_campaign()
+        watchdog_stuck_jobs()
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('rendering', mail.outbox[0].subject.lower())
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_email_body_contains_campaign_slug_for_stuck_rendering(self, mock_render):
+        campaign = self._make_stuck_rendering_campaign()
+        watchdog_stuck_jobs()
+        self.assertIn(campaign.slug, mail.outbox[0].body)
+
 
 # ── Task tests: render_campaign_geojson ───────────────────────────────────────
 

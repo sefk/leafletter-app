@@ -497,14 +497,19 @@ STUCK_JOB_THRESHOLD_MINUTES = 30
 @shared_task
 def watchdog_stuck_jobs() -> dict:
     """
-    Periodic task that finds CityFetchJob records stuck in 'generating' status
-    for longer than STUCK_JOB_THRESHOLD_MINUTES and marks them as 'error'.
+    Periodic task that:
+    1. Finds CityFetchJob records stuck in 'generating' status for longer than
+       STUCK_JOB_THRESHOLD_MINUTES and marks them as 'error'.
+    2. Finds Campaign records stuck in 'rendering' status for longer than
+       STUCK_JOB_THRESHOLD_MINUTES and re-dispatches render_campaign_geojson.
 
     Run every 15 minutes via Celery beat (configured in CELERY_BEAT_SCHEDULE).
 
-    Returns a summary dict: {'found': N, 'marked_error': [list of job PKs]}.
+    Returns a summary dict: {'found': N, 'marked_error': [...], 'requeued_rendering': [...]}.
     """
     cutoff = timezone.now() - timedelta(minutes=STUCK_JOB_THRESHOLD_MINUTES)
+
+    # ── Part 1: stuck CityFetchJob records ────────────────────────────────────
     stuck_jobs = CityFetchJob.objects.filter(
         status='generating',
         updated_at__lt=cutoff,
@@ -542,10 +547,37 @@ def watchdog_stuck_jobs() -> dict:
             len(marked), marked,
         )
         _send_watchdog_admin_email(job_details)
-    else:
+
+    # ── Part 2: campaigns stuck in 'rendering' ────────────────────────────────
+    stuck_rendering = list(
+        Campaign.objects.filter(map_status='rendering', updated_at__lt=cutoff)
+    )
+    requeued = []
+    rendering_details = []
+    for campaign in stuck_rendering:
+        logger.warning(
+            'watchdog_stuck_jobs: campaign pk=%d slug=%s stuck in rendering since %s — re-dispatching',
+            campaign.pk, campaign.slug, campaign.updated_at.isoformat(),
+        )
+        render_campaign_geojson.delay(campaign.pk, final_status='ready')
+        requeued.append(campaign.pk)
+        rendering_details.append({
+            'pk': campaign.pk,
+            'campaign_slug': campaign.slug,
+            'stuck_since': campaign.updated_at.isoformat(),
+        })
+
+    if requeued:
+        logger.warning(
+            'watchdog_stuck_jobs: re-dispatched render for %d stuck campaign(s): pks=%s',
+            len(requeued), requeued,
+        )
+        _send_watchdog_rendering_email(rendering_details)
+
+    if not marked and not requeued:
         logger.info('watchdog_stuck_jobs: no stuck jobs found')
 
-    return {'found': len(marked), 'marked_error': marked}
+    return {'found': len(marked), 'marked_error': marked, 'requeued_rendering': requeued}
 
 
 def _send_watchdog_admin_email(job_details: list[dict]) -> None:
@@ -594,6 +626,49 @@ def _send_watchdog_admin_email(job_details: list[dict]) -> None:
         send_mail(subject, message, from_email=None, recipient_list=recipients, fail_silently=False)
     except Exception as exc:
         logger.error('watchdog_stuck_jobs: failed to send admin email: %s', exc)
+
+
+def _send_watchdog_rendering_email(campaign_details: list[dict]) -> None:
+    """
+    Notify superusers that one or more campaigns were found stuck in 'rendering'
+    and have been re-queued by the watchdog.
+    """
+    User = get_user_model()
+    recipients = list(
+        User.objects.filter(is_superuser=True, is_active=True)
+        .exclude(email='')
+        .values_list('email', flat=True)
+    )
+    if not recipients:
+        logger.warning('watchdog_stuck_jobs: no superuser email addresses found; skipping rendering notification')
+        return
+
+    n = len(campaign_details)
+    subject = f'Watchdog: {n} campaign{"s" if n != 1 else ""} stuck in rendering — re-queued'
+
+    lines = [
+        f'{n} campaign{"s were" if n != 1 else " was"} found stuck in "rendering" status '
+        f'for more than {STUCK_JOB_THRESHOLD_MINUTES} minutes. '
+        f'render_campaign_geojson has been re-dispatched for {"each" if n != 1 else "it"}.',
+        '',
+        'Affected campaigns:',
+    ]
+    for d in campaign_details:
+        lines.append(
+            f'  - Campaign pk={d["pk"]}  slug="{d["campaign_slug"]}"'
+            f'  stuck since {d["stuck_since"]}'
+        )
+    lines += [
+        '',
+        f'Threshold: {STUCK_JOB_THRESHOLD_MINUTES} minutes',
+        'The render task has been re-queued. Check worker logs if the problem persists.',
+    ]
+    message = '\n'.join(lines)
+
+    try:
+        send_mail(subject, message, from_email=None, recipient_list=recipients, fail_silently=False)
+    except Exception as exc:
+        logger.error('watchdog_stuck_jobs: failed to send rendering notification email: %s', exc)
 
 
 # ── Backward-compat wrapper ────────────────────────────────────────────────────
