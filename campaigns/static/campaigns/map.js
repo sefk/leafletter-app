@@ -120,7 +120,7 @@
 
   if (viewBounds) {
     map.fitBounds(viewBounds, { padding: [20, 20], animate: false });
-    map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, true));
+    map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, false));
   }
 
   // ── Campaign boundary (red dashed line) ──────────────────────────────────
