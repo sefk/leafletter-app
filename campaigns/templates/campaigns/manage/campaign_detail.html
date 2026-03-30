@@ -58,6 +58,15 @@
     {% if campaign.contact_info %}
     <tr><th>Contact</th><td>{{ campaign.contact_info }}</td></tr>
     {% endif %}
+    {% if campaign.hero_image_effective_url %}
+    <tr>
+      <th style="vertical-align:top;">Hero Image</th>
+      <td>
+        <img src="{{ campaign.hero_image_effective_url }}" alt="{{ campaign.name }}"
+             style="max-width:100%; max-height:220px; border-radius:4px; object-fit:cover; border:1px solid #ddd; display:block;">
+      </td>
+    </tr>
+    {% endif %}
   </table>
 </div>
 
