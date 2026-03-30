@@ -13,7 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm, ImageUploadForm
 from .models import AddressPoint, Campaign, CampaignImage, CityFetchJob, Street, Trip
-from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
 
@@ -609,6 +609,7 @@ def manage_campaign_update_geo_limit(request, slug):
         geo_limit=geo_limit, bbox=bbox, streets_geojson='', map_status='rendering',
     )
     render_campaign_geojson.delay(campaign.pk, final_status='ready')
+    refresh_campaign_address_points.delay(campaign.pk)
     estimated_addresses = AddressPoint.objects.filter(
         campaign=campaign, location__within=geo_limit,
     ).count()

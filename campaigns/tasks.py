@@ -423,6 +423,54 @@ def render_campaign_geojson(self, campaign_id: int, final_status: str = 'ready')
         raise
 
 
+@shared_task
+def refresh_campaign_address_points(campaign_id: int) -> None:
+    """
+    Re-fetch address points for all cities using the campaign's current geo_limit bbox.
+    Called after geo_limit is saved so address counts reflect the new boundary.
+    Best-effort: failures are logged but do not raise.
+    """
+    try:
+        campaign = Campaign.objects.get(pk=campaign_id)
+    except Campaign.DoesNotExist:
+        logger.error('refresh_campaign_address_points: campaign %s not found', campaign_id)
+        return
+
+    ADDRESS_FETCH_BLOCK_LIMIT = 10_000
+    streets_qs = (
+        campaign.streets.filter(geometry__intersects=campaign.geo_limit)
+        if campaign.geo_limit else campaign.streets
+    )
+    if streets_qs.count() > ADDRESS_FETCH_BLOCK_LIMIT:
+        logger.info(
+            'refresh_campaign_address_points: skipping campaign %s — area exceeds block limit (see #119)',
+            campaign_id,
+        )
+        return
+
+    geo_limit_bbox = campaign.geo_limit.extent if campaign.geo_limit else None
+    for city_index, city in enumerate(campaign.cities):
+        try:
+            address_coords = query_overpass_addresses(city, bbox=geo_limit_bbox)
+            AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
+            if address_coords:
+                AddressPoint.objects.bulk_create([
+                    AddressPoint(campaign=campaign, city_index=city_index,
+                                 location=Point(lon, lat, srid=4326))
+                    for lon, lat in address_coords
+                ], batch_size=2000)
+            logger.info(
+                'refresh_campaign_address_points: %d address points for city %d of campaign %s',
+                len(address_coords), city_index, campaign_id,
+            )
+        except Exception as exc:
+            city_label = city if isinstance(city, str) else city.get('name', str(city))
+            logger.warning(
+                'refresh_campaign_address_points: failed for %s (non-fatal): %s',
+                city_label, exc,
+            )
+
+
 def queue_city_fetches(campaign_id: int, city_indices: list[int] | None = None) -> None:
     """
     Create/reset CityFetchJob records and dispatch fetch_city_osm_data for each city.
