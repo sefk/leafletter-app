@@ -249,7 +249,7 @@ class AuthGatingTest(TestCase):
 
 
 class ManageCampaignListAnnotationsTest(TestCase):
-    """manage_campaign_list should annotate downloaded/selected streets and households."""
+    """manage_campaign_list annotates downloaded counts and campaign size (geo_limit boundary)."""
 
     def setUp(self):
         self.user = User.objects.create_user('mgr', password='pw')
@@ -269,27 +269,27 @@ class ManageCampaignListAnnotationsTest(TestCase):
         c = self._get_campaign_from_response()
         self.assertEqual(c.street_count, 3)
 
-    def test_selected_street_count_zero_with_no_trips(self):
+    def test_size_street_count_equals_all_streets_when_no_geo_limit(self):
         c = self._get_campaign_from_response()
-        self.assertEqual(c.selected_street_count, 0)
+        self.assertEqual(c.size_street_count, 3)
 
-    def test_selected_street_count_with_trip(self):
-        make_trip(self.campaign, streets=[self.s1, self.s2])
+    def test_size_street_count_filters_by_geo_limit(self):
+        from django.contrib.gis.geos import Polygon
+        # geo_limit that contains GEOM (bbox around -122.1...-122.15, 37.4...37.45)
+        geo_limit = Polygon.from_bbox((-122.2, 37.3, -122.0, 37.5))
+        self.campaign.geo_limit = geo_limit
+        self.campaign.save()
         c = self._get_campaign_from_response()
-        self.assertEqual(c.selected_street_count, 2)
+        self.assertEqual(c.size_street_count, 3)
 
-    def test_deleted_trip_streets_not_counted_as_selected(self):
-        trip = make_trip(self.campaign, streets=[self.s1])
-        trip.deleted = True
-        trip.save()
+    def test_size_street_count_excludes_streets_outside_geo_limit(self):
+        from django.contrib.gis.geos import Polygon
+        # geo_limit far away from GEOM — no streets inside
+        geo_limit = Polygon.from_bbox((0, 0, 1, 1))
+        self.campaign.geo_limit = geo_limit
+        self.campaign.save()
         c = self._get_campaign_from_response()
-        self.assertEqual(c.selected_street_count, 0)
-
-    def test_selected_street_deduped_across_trips(self):
-        make_trip(self.campaign, streets=[self.s1, self.s2])
-        make_trip(self.campaign, streets=[self.s1, self.s3], worker_name='Bob')
-        c = self._get_campaign_from_response()
-        self.assertEqual(c.selected_street_count, 3)
+        self.assertEqual(c.size_street_count, 0)
 
 
 # ── View tests: streets.geojson ───────────────────────────────────────────────

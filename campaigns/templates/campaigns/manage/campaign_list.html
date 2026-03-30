@@ -12,14 +12,14 @@
 <div class="card" style="border-left:4px solid #e6ac00;">
   <div class="card-title" style="display:flex; align-items:center; gap:10px;">
     <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite;"></span>
-    Street import in progress — {{ inflight|length }} campaign{{ inflight|length|pluralize }} queued
+    Segment import in progress — {{ inflight|length }} campaign{{ inflight|length|pluralize }} queued
   </div>
   <table style="margin:0;">
     <thead>
       <tr>
         <th>Campaign</th>
         <th>Stage</th>
-        <th>Streets so far</th>
+        <th>Segments so far</th>
         <th>Last activity</th>
       </tr>
     </thead>
@@ -51,7 +51,8 @@
       <th>Name</th>
       <th>Status</th>
       <th>Map</th>
-      <th style="text-align:center;">Coverage</th>
+      <th>Campaign Size</th>
+      <th>Downloaded</th>
       <th>Trips</th>
       <th>Start Date</th>
       <th>Public URL</th>
@@ -67,30 +68,12 @@
       <td><span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span></td>
       <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
       <td>
-        <table style="margin:0; font-size:0.8rem; border:none; width:auto;">
-          <thead>
-            <tr>
-              <th style="border:none; padding:0 8px 2px 0; font-weight:600; font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; text-align:right;">Streets</th>
-              <th style="border:none; padding:0 0 2px 0; font-weight:600; font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; text-align:right;">Households</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colspan="2" style="border:none; padding:1px 0; font-size:0.7rem; color:#aaa; text-align:center; text-transform:uppercase; letter-spacing:0.05em;">Downloaded</td>
-            </tr>
-            <tr>
-              <td style="border:none; padding:0 8px 4px 0; text-align:right;">{{ campaign.street_count }}</td>
-              <td style="border:none; padding:0 0 4px 0; text-align:right;">{% if campaign.household_count > 0 %}{{ campaign.household_count }}{% else %}—{% endif %}</td>
-            </tr>
-            <tr>
-              <td colspan="2" style="border:none; padding:1px 0; font-size:0.7rem; color:#aaa; text-align:center; text-transform:uppercase; letter-spacing:0.05em;">Selected</td>
-            </tr>
-            <tr>
-              <td style="border:none; padding:0 8px 0 0; text-align:right;">{{ campaign.selected_street_count }}</td>
-              <td style="border:none; padding:0; text-align:right;">{% if campaign.selected_household_count > 0 %}{{ campaign.selected_household_count }}{% else %}—{% endif %}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div style="font-size:0.9rem;">{{ campaign.size_street_count }} blocks</div>
+        <div style="font-size:0.85rem; color:#666;">{% if campaign.size_household_count > 0 %}{{ campaign.size_household_count }} households{% else %}—{% endif %}</div>
+      </td>
+      <td>
+        <div style="font-size:0.9rem; color:#999;">{{ campaign.street_count }} blocks</div>
+        <div style="font-size:0.85rem; color:#bbb;">{% if campaign.household_count > 0 %}{{ campaign.household_count }} households{% else %}—{% endif %}</div>
       </td>
       <td>{{ campaign.trip_count }}</td>
       <td>{{ campaign.start_date }}</td>
@@ -115,4 +98,6 @@
 {% else %}
   <p style="color:#666;">No campaigns yet. <a href="/manage/new/">Create your first campaign.</a></p>
 {% endif %}
+
+<p style="margin-top:24px; font-size:0.82rem; color:#555;">Because of how our map provider works, a "block" might actually be much smaller than what we normally consider a block. It might even be a driveway.</p>
 {% endblock %}

@@ -273,7 +273,7 @@ def manage_campaign_list(request):
     campaigns = list(Campaign.objects.exclude(status='deleted').order_by('is_test', '-created_at'))
     campaign_pks = [c.pk for c in campaigns]
 
-    # Each metric is a separate simple aggregation query, all bulk by campaign_id.
+    # Bulk counts — each is a separate simple query to avoid JOIN row explosion on MySQL.
     street_counts = dict(
         Street.objects.filter(campaign_id__in=campaign_pks)
         .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
@@ -287,39 +287,22 @@ def manage_campaign_list(request):
         .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
     )
 
-    # Selected streets: streets that appear in at least one non-deleted trip.
-    # Use the M2M through table directly to avoid a cross-join.
-    TripStreet = Trip.streets.through
-    selected_street_counts = dict(
-        TripStreet.objects.filter(
-            trip__campaign_id__in=campaign_pks,
-            trip__deleted=False,
-        ).values('trip__campaign_id').annotate(c=Count('street_id', distinct=True))
-        .values_list('trip__campaign_id', 'c')
-    )
-
-    # Selected households: address_points in city_indices covered by selected streets.
-    selected_pairs = set(
-        Street.objects.filter(
-            campaign_id__in=campaign_pks,
-            trip__deleted=False,
-        ).values_list('campaign_id', 'city_index').distinct()
-    )
-    selected_city_indices_by_campaign = {}
-    for campaign_id, city_index in selected_pairs:
-        selected_city_indices_by_campaign.setdefault(campaign_id, set()).add(city_index)
-    selected_household_counts = {}
-    for campaign_id, city_indices in selected_city_indices_by_campaign.items():
-        selected_household_counts[campaign_id] = AddressPoint.objects.filter(
-            campaign_id=campaign_id, city_index__in=city_indices,
-        ).count()
-
+    # Campaign size = streets/households within the geo_limit boundary (or all if none set).
+    # One spatial query per campaign; there are few campaigns so this is acceptable.
     for c in campaigns:
         c.street_count = street_counts.get(c.pk, 0)
         c.trip_count = trip_counts.get(c.pk, 0)
         c.household_count = household_counts.get(c.pk, 0)
-        c.selected_street_count = selected_street_counts.get(c.pk, 0)
-        c.selected_household_count = selected_household_counts.get(c.pk, 0)
+        if c.geo_limit:
+            c.size_street_count = Street.objects.filter(
+                campaign=c, geometry__intersects=c.geo_limit
+            ).count()
+            c.size_household_count = AddressPoint.objects.filter(
+                campaign=c, location__within=c.geo_limit
+            ).count()
+        else:
+            c.size_street_count = c.street_count
+            c.size_household_count = c.household_count
 
     inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering')]
     inflight.sort(key=lambda c: c.updated_at)
