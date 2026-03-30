@@ -651,7 +651,12 @@
         label.textContent = trip.worker_name;
         var metaSpan = document.createElement('span');
         metaSpan.style.cssText = 'color:#888; font-size:0.8rem; margin-left:2px;';
-        metaSpan.textContent = trip.recorded_at;
+        var d = new Date(trip.recorded_at);
+        var day = String(d.getDate()).padStart(2, '0');
+        var mon = d.toLocaleString(undefined, { month: 'short' });
+        var yr = String(d.getFullYear());
+        var time = d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+        metaSpan.textContent = day + '-' + mon + '-' + yr + ' ' + time;
 
         var btnGroup = document.createElement('span');
         btnGroup.style.cssText = 'margin-left:auto; display:flex; gap:4px;';
