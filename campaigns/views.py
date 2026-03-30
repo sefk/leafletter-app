@@ -5,8 +5,7 @@ import requests
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.gis.geos import Polygon
-from django.db.models import Count, F, Q, Subquery, OuterRef, IntegerField
-from django.db.models.functions import Coalesce
+from django.db.models import Count, F, Q
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
@@ -269,30 +268,61 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
 
 @_login_required
 def manage_campaign_list(request):
-    selected_city_indices_subq = Street.objects.filter(
-        campaign=OuterRef('pk'),
-        trip__deleted=False,
-    ).values('city_index').distinct()
-    selected_household_subq = AddressPoint.objects.filter(
-        campaign=OuterRef('pk'),
-        city_index__in=selected_city_indices_subq,
-    ).values('campaign').annotate(c=Count('id')).values('c')[:1]
+    # Fetch campaigns without any multi-table JOIN annotations — multiple
+    # COUNT DISTINCT JOINs in one query cause a row explosion on MySQL.
+    campaigns = list(Campaign.objects.exclude(status='deleted').order_by('is_test', '-created_at'))
+    campaign_pks = [c.pk for c in campaigns]
 
-    campaigns = Campaign.objects.exclude(status='deleted').annotate(
-        street_count=Count('streets', distinct=True),
-        trip_count=Count('trips', distinct=True),
-        household_count=Count('address_points', distinct=True),
-        selected_street_count=Count(
-            'streets',
-            filter=Q(streets__trip__deleted=False),
-            distinct=True,
-        ),
-        selected_household_count=Coalesce(
-            Subquery(selected_household_subq, output_field=IntegerField()),
-            0,
-        ),
-    ).order_by('is_test', '-created_at')
-    inflight = campaigns.filter(map_status__in=('pending', 'generating', 'rendering')).order_by('updated_at')
+    # Each metric is a separate simple aggregation query, all bulk by campaign_id.
+    street_counts = dict(
+        Street.objects.filter(campaign_id__in=campaign_pks)
+        .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
+    )
+    trip_counts = dict(
+        Trip.objects.filter(campaign_id__in=campaign_pks, deleted=False)
+        .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
+    )
+    household_counts = dict(
+        AddressPoint.objects.filter(campaign_id__in=campaign_pks)
+        .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
+    )
+
+    # Selected streets: streets that appear in at least one non-deleted trip.
+    # Use the M2M through table directly to avoid a cross-join.
+    TripStreet = Trip.streets.through
+    selected_street_counts = dict(
+        TripStreet.objects.filter(
+            trip__campaign_id__in=campaign_pks,
+            trip__deleted=False,
+        ).values('trip__campaign_id').annotate(c=Count('street_id', distinct=True))
+        .values_list('trip__campaign_id', 'c')
+    )
+
+    # Selected households: address_points in city_indices covered by selected streets.
+    selected_pairs = set(
+        Street.objects.filter(
+            campaign_id__in=campaign_pks,
+            trip__deleted=False,
+        ).values_list('campaign_id', 'city_index').distinct()
+    )
+    selected_city_indices_by_campaign = {}
+    for campaign_id, city_index in selected_pairs:
+        selected_city_indices_by_campaign.setdefault(campaign_id, set()).add(city_index)
+    selected_household_counts = {}
+    for campaign_id, city_indices in selected_city_indices_by_campaign.items():
+        selected_household_counts[campaign_id] = AddressPoint.objects.filter(
+            campaign_id=campaign_id, city_index__in=city_indices,
+        ).count()
+
+    for c in campaigns:
+        c.street_count = street_counts.get(c.pk, 0)
+        c.trip_count = trip_counts.get(c.pk, 0)
+        c.household_count = household_counts.get(c.pk, 0)
+        c.selected_street_count = selected_street_counts.get(c.pk, 0)
+        c.selected_household_count = selected_household_counts.get(c.pk, 0)
+
+    inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering')]
+    inflight.sort(key=lambda c: c.updated_at)
     return render(request, 'campaigns/manage/campaign_list.html', {
         'campaigns': campaigns,
         'inflight': inflight,
