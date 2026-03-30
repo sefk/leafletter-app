@@ -28,6 +28,7 @@ manage_urlpatterns = [
     path('<slug:slug>/refetch-city/<int:city_index>/', views.manage_city_refetch, name='manage_city_refetch'),
     path('<slug:slug>/delete-city/<int:city_index>/', views.manage_city_delete, name='manage_city_delete'),
     path('<slug:slug>/update-geo-limit/', views.manage_campaign_update_geo_limit, name='manage_campaign_update_geo_limit'),
+    path('<slug:slug>/address-count/', views.manage_campaign_address_preview, name='manage_campaign_address_preview'),
     path('<slug:slug>/streets.geojson', views.manage_campaign_streets_geojson, name='manage_streets_geojson'),
     path('<slug:slug>/coverage.geojson', views.manage_campaign_coverage_geojson, name='manage_coverage_geojson'),
     path('<slug:slug>/trip/<uuid:trip_id>/delete/', views.manage_trip_delete, name='manage_trip_delete'),

@@ -50,6 +50,14 @@ class Campaign(models.Model):
         except Exception:
             return None
 
+    @property
+    def estimated_addresses(self):
+        """Count address points within geo_limit, or all address points if no geo_limit."""
+        qs = self.address_points.all()
+        if self.geo_limit:
+            qs = qs.filter(location__within=self.geo_limit)
+        return qs.count()
+
     class Meta:
         ordering = ['-created_at']
 
@@ -118,6 +126,20 @@ class CityFetchJob(models.Model):
 
     def __str__(self):
         return f"{self.city_name} (campaign {self.campaign_id}, idx {self.city_index})"
+
+
+class AddressPoint(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='address_points')
+    city_index = models.IntegerField(null=True, blank=True)
+    location = models.PointField(srid=4326)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['campaign', 'city_index'], name='campaigns_addresspoint_idx'),
+        ]
+
+    def __str__(self):
+        return f"AddressPoint for campaign {self.campaign_id} city {self.city_index}"
 
 
 class Trip(models.Model):

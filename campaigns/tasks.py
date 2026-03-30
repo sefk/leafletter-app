@@ -6,12 +6,12 @@ from datetime import timedelta
 import requests
 from celery import shared_task
 from django.contrib.auth import get_user_model
-from django.contrib.gis.geos import LineString
+from django.contrib.gis.geos import LineString, Point
 from django.core.mail import send_mail
 from django.db import connection
 from django.utils import timezone
 
-from .models import Campaign, CityFetchJob, Street
+from .models import AddressPoint, Campaign, CityFetchJob, Street
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,50 @@ out geom;
             'node_ids': element.get('nodes', []),
         })
     return ways
+
+
+def query_overpass_addresses(city) -> list[tuple[float, float]]:
+    """
+    Query Overpass for addr:housenumber nodes and ways within a city area.
+    Returns a list of (lon, lat) tuples (way centroids for ways, coords for nodes).
+    """
+    if isinstance(city, dict) and city.get('osm_type') == 'relation' and 'osm_id' in city:
+        area_id = 3600000000 + city['osm_id']
+        city_label = city.get('name', str(city['osm_id']))
+        area_clause = f'area({area_id})->.searchArea;'
+    else:
+        city_name = city if isinstance(city, str) else city.get('name', str(city))
+        city_label = city_name
+        area_clause = f'area[name="{city_name}"]->.searchArea;'
+
+    query = f"""
+[out:json][timeout:{OVERPASS_SERVER_TIMEOUT}];
+{area_clause}
+(
+  node["addr:housenumber"](area.searchArea);
+  way["addr:housenumber"](area.searchArea);
+);
+out center qt;
+"""
+    logger.info("query_overpass_addresses: fetching address points for %s", city_label)
+    try:
+        resp = requests.post(OVERPASS_URL, data={'data': query}, timeout=OVERPASS_HTTP_TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        logger.error("query_overpass_addresses failed for %s: %s", city_label, exc)
+        raise
+
+    points = []
+    for element in data.get('elements', []):
+        if element.get('type') == 'node':
+            points.append((element['lon'], element['lat']))
+        elif element.get('type') == 'way':
+            center = element.get('center')
+            if center:
+                points.append((center['lon'], center['lat']))
+    logger.info("query_overpass_addresses: %d address points for %s", len(points), city_label)
+    return points
 
 
 def find_intersection_nodes(ways: list[dict]) -> set:
@@ -449,6 +493,29 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
         logger.info("fetch_city_osm_data: imported %d blocks for %s", block_count, city_label)
         if block_count == 0:
             raise ValueError(f'City "{city_label}" was found but no streets were imported')
+
+        # Fetch address points — best-effort, does not fail the city job if it errors.
+        try:
+            address_coords = query_overpass_addresses(city)
+            AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
+            if address_coords:
+                AddressPoint.objects.bulk_create([
+                    AddressPoint(
+                        campaign=campaign,
+                        city_index=city_index,
+                        location=Point(lon, lat, srid=4326),
+                    )
+                    for lon, lat in address_coords
+                ], batch_size=2000)
+            logger.info(
+                "fetch_city_osm_data: imported %d address points for %s",
+                len(address_coords), city_label,
+            )
+        except Exception as exc:
+            logger.warning(
+                "fetch_city_osm_data: address point fetch failed for %s (non-fatal): %s",
+                city_label, exc,
+            )
 
         CityFetchJob.objects.update_or_create(
             campaign=campaign,

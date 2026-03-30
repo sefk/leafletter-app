@@ -140,6 +140,18 @@
       </tfoot>
     </table>
 
+    {% if total_addresses > 0 %}
+    <div style="margin-bottom:12px; font-size:0.9rem; color:#444;">
+      Estimated households in fetched area:
+      <strong id="sm-total-addresses">{{ total_addresses }}</strong>
+      {% if total_addresses_sparse %}
+      <span style="display:inline-block; margin-left:8px; padding:2px 8px; background:#fff3e0; border:1px solid #ffcc80; border-radius:4px; font-size:0.8rem; color:#e65100;">
+        Warning: Low OpenStreetMap address coverage — estimate may be incomplete.
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
       {% csrf_token %}
       <button type="submit" class="btn btn-secondary">Re-fetch All Streets</button>
@@ -253,6 +265,12 @@
         // Update total block count.
         if (totalEl) totalEl.textContent = data.total_blocks;
 
+        // Update total household estimate in Street Management card.
+        var totalAddrEl = document.getElementById('sm-total-addresses');
+        if (totalAddrEl && data.total_addresses !== undefined) {
+          totalAddrEl.textContent = data.total_addresses.toLocaleString();
+        }
+
         // Update per-city rows.
         if (tbody && data.city_fetch_jobs) {
           data.city_fetch_jobs.forEach(updateRow);
@@ -294,6 +312,18 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
+  {% if campaign.geo_limit and estimated_addresses > 0 %}
+  <div id="sm-address-wrap" style="margin-bottom:12px; font-size:0.9rem; color:#444;">
+    Estimated households within boundary:
+    <strong id="sm-estimated-addresses">{{ estimated_addresses }}</strong>
+    {% if estimated_addresses_sparse %}
+    <span style="display:inline-block; margin-left:8px; padding:2px 8px; background:#fff3e0; border:1px solid #ffcc80; border-radius:4px; font-size:0.8rem; color:#e65100;">
+      Warning: Low OpenStreetMap address coverage — estimate may be incomplete.
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
     <button id="btn-edit-bbox" class="btn btn-secondary">Edit Geographical Limit</button>
     <button id="btn-save-bbox" class="btn btn-primary" style="display:none;" disabled>Save Geographical Limit</button>
@@ -308,6 +338,7 @@
     var currentGeoLimit = {{ geo_limit_json|safe }};  // GeoJSON polygon or null
     var streetsUrl = "{% url 'manage_streets_geojson' campaign.slug %}?all=1";
     var updateUrl = "{% url 'manage_campaign_update_geo_limit' campaign.slug %}";
+    var addressCountUrl = "{% url 'manage_campaign_address_preview' campaign.slug %}";
     var csrfToken = "{{ csrf_token }}";
 
     var map = L.map('bbox-map');
@@ -386,6 +417,18 @@
       newPolygon = e.layer.toGeoJSON().geometry;
       btnSave.disabled = false;
       statusEl.textContent = 'Polygon drawn. Draw again to replace, or click Save.';
+      // Show live address count preview for the drawn polygon.
+      fetch(addressCountUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify(newPolygon),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          statusEl.textContent = 'Polygon drawn — ~' + data.count.toLocaleString() +
+            ' addresses in this area. Draw again to replace, or click Save.';
+        })
+        .catch(function() {});
     });
 
     btnSave.addEventListener('click', function() {
@@ -415,6 +458,22 @@
             } else {
               statusEl.textContent = 'Saved!';
               setTimeout(function() { statusEl.textContent = ''; }, 2000);
+            }
+            // Update the household estimate in the Geographical Limit card.
+            if (data.estimated_addresses !== undefined) {
+              var addrEl = document.getElementById('sm-estimated-addresses');
+              if (addrEl) {
+                addrEl.textContent = data.estimated_addresses.toLocaleString();
+              } else if (data.estimated_addresses > 0) {
+                // Block wasn't rendered (no geo_limit before) — inject it above the buttons.
+                var btnRow = document.querySelector('#btn-edit-bbox').closest('div');
+                var wrap = document.createElement('div');
+                wrap.id = 'sm-address-wrap';
+                wrap.style.cssText = 'margin-bottom:12px; font-size:0.9rem; color:#444;';
+                wrap.innerHTML = 'Estimated households within boundary: <strong id="sm-estimated-addresses">' +
+                  data.estimated_addresses.toLocaleString() + '</strong>';
+                btnRow.parentNode.insertBefore(wrap, btnRow);
+              }
             }
             if (window.reloadManageMap) window.reloadManageMap(currentBbox);
           }
