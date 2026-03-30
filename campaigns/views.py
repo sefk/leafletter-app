@@ -5,7 +5,8 @@ import requests
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.gis.geos import Polygon
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Q, Subquery, OuterRef, IntegerField
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
@@ -268,9 +269,28 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
 
 @_login_required
 def manage_campaign_list(request):
+    selected_city_indices_subq = Street.objects.filter(
+        campaign=OuterRef('pk'),
+        trip__deleted=False,
+    ).values('city_index').distinct()
+    selected_household_subq = AddressPoint.objects.filter(
+        campaign=OuterRef('pk'),
+        city_index__in=selected_city_indices_subq,
+    ).values('campaign').annotate(c=Count('id')).values('c')[:1]
+
     campaigns = Campaign.objects.exclude(status='deleted').annotate(
         street_count=Count('streets', distinct=True),
         trip_count=Count('trips', distinct=True),
+        household_count=Count('address_points', distinct=True),
+        selected_street_count=Count(
+            'streets',
+            filter=Q(streets__trip__deleted=False),
+            distinct=True,
+        ),
+        selected_household_count=Coalesce(
+            Subquery(selected_household_subq, output_field=IntegerField()),
+            0,
+        ),
     ).order_by('is_test', '-created_at')
     inflight = campaigns.filter(map_status__in=('pending', 'generating', 'rendering')).order_by('updated_at')
     return render(request, 'campaigns/manage/campaign_list.html', {

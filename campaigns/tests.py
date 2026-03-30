@@ -248,6 +248,50 @@ class AuthGatingTest(TestCase):
         self.assertEqual(resp.status_code, 302)
 
 
+class ManageCampaignListAnnotationsTest(TestCase):
+    """manage_campaign_list should annotate downloaded/selected streets and households."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('mgr', password='pw')
+        self.client = Client()
+        self.client.login(username='mgr', password='pw')
+        self.campaign = make_campaign(slug='list-annot-camp')
+        self.s1 = Street.objects.create(campaign=self.campaign, osm_id=1, name='S1', geometry=GEOM, block_index=0, city_index=0)
+        self.s2 = Street.objects.create(campaign=self.campaign, osm_id=2, name='S2', geometry=GEOM, block_index=1, city_index=0)
+        self.s3 = Street.objects.create(campaign=self.campaign, osm_id=3, name='S3', geometry=GEOM, block_index=2, city_index=1)
+
+    def _get_campaign_from_response(self):
+        resp = self.client.get('/manage/')
+        self.assertEqual(resp.status_code, 200)
+        return next(c for c in resp.context['campaigns'] if c.slug == 'list-annot-camp')
+
+    def test_street_count_matches_downloaded_streets(self):
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.street_count, 3)
+
+    def test_selected_street_count_zero_with_no_trips(self):
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.selected_street_count, 0)
+
+    def test_selected_street_count_with_trip(self):
+        make_trip(self.campaign, streets=[self.s1, self.s2])
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.selected_street_count, 2)
+
+    def test_deleted_trip_streets_not_counted_as_selected(self):
+        trip = make_trip(self.campaign, streets=[self.s1])
+        trip.deleted = True
+        trip.save()
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.selected_street_count, 0)
+
+    def test_selected_street_deduped_across_trips(self):
+        make_trip(self.campaign, streets=[self.s1, self.s2])
+        make_trip(self.campaign, streets=[self.s1, self.s3], worker_name='Bob')
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.selected_street_count, 3)
+
+
 # ── View tests: streets.geojson ───────────────────────────────────────────────
 
 class StreetsGeoJSONViewTest(TestCase):

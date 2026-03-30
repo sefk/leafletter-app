@@ -51,7 +51,7 @@
       <th>Name</th>
       <th>Status</th>
       <th>Map</th>
-      <th>Streets</th>
+      <th style="text-align:center;">Coverage</th>
       <th>Trips</th>
       <th>Start Date</th>
       <th>Public URL</th>
@@ -66,7 +66,32 @@
       </td>
       <td><span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span></td>
       <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
-      <td>{{ campaign.street_count }}</td>
+      <td>
+        <table style="margin:0; font-size:0.8rem; border:none; width:auto;">
+          <thead>
+            <tr>
+              <th style="border:none; padding:0 8px 2px 0; font-weight:600; font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; text-align:right;">Streets</th>
+              <th style="border:none; padding:0 0 2px 0; font-weight:600; font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:0.04em; text-align:right;">Households</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" style="border:none; padding:1px 0; font-size:0.7rem; color:#aaa; text-align:center; text-transform:uppercase; letter-spacing:0.05em;">Downloaded</td>
+            </tr>
+            <tr>
+              <td style="border:none; padding:0 8px 4px 0; text-align:right;">{{ campaign.street_count }}</td>
+              <td style="border:none; padding:0 0 4px 0; text-align:right;">{% if campaign.household_count > 0 %}{{ campaign.household_count }}{% else %}—{% endif %}</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="border:none; padding:1px 0; font-size:0.7rem; color:#aaa; text-align:center; text-transform:uppercase; letter-spacing:0.05em;">Selected</td>
+            </tr>
+            <tr>
+              <td style="border:none; padding:0 8px 0 0; text-align:right;">{{ campaign.selected_street_count }}</td>
+              <td style="border:none; padding:0; text-align:right;">{% if campaign.selected_household_count > 0 %}{{ campaign.selected_household_count }}{% else %}—{% endif %}</td>
+            </tr>
+          </tbody>
+        </table>
+      </td>
       <td>{{ campaign.trip_count }}</td>
       <td>{{ campaign.start_date }}</td>
       <td>
