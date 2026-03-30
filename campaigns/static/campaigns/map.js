@@ -92,12 +92,23 @@
   });
 
   // ── Init map ─────────────────────────────────────────────────────────────
+  // Use geo_limit bounds when available — it may be larger than the streets BBOX.
+  let viewBounds = null;
+  if (window.GEO_LIMIT) {
+    viewBounds = L.geoJSON(window.GEO_LIMIT).getBounds();
+  } else if (window.BBOX) {
+    viewBounds = L.latLngBounds(window.BBOX[0], window.BBOX[1]);
+  }
+
   const mapOptions = { maxBoundsViscosity: 1.0 };
-  if (window.BBOX) {
-    const sw = window.BBOX[0], ne = window.BBOX[1];
-    const latPad = (ne[0] - sw[0]) * 0.25;
-    const lonPad = (ne[1] - sw[1]) * 0.25;
-    mapOptions.maxBounds = [[sw[0] - latPad, sw[1] - lonPad], [ne[0] + latPad, ne[1] + lonPad]];
+  if (viewBounds) {
+    const sw = viewBounds.getSouthWest(), ne = viewBounds.getNorthEast();
+    const latPad = (ne.lat - sw.lat) * 0.25;
+    const lonPad = (ne.lng - sw.lng) * 0.25;
+    mapOptions.maxBounds = [
+      [sw.lat - latPad, sw.lng - lonPad],
+      [ne.lat + latPad, ne.lng + lonPad],
+    ];
   }
   map = L.map('map', mapOptions);
 
@@ -107,9 +118,17 @@
     referrerPolicy: 'origin',
   }).addTo(map);
 
-  if (window.BBOX) {
-    map.fitBounds(window.BBOX, { padding: [20, 20], animate: false });
-    map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, true));
+  if (viewBounds) {
+    map.fitBounds(viewBounds, { padding: [20, 20], animate: false });
+    map.setMinZoom(map.getBoundsZoom(map.options.maxBounds, false));
+  }
+
+  // ── Campaign boundary (red dashed line) ──────────────────────────────────
+  if (window.GEO_LIMIT) {
+    L.geoJSON(window.GEO_LIMIT, {
+      style: { color: '#cc0000', weight: 2.5, fillOpacity: 0, dashArray: '8,5', opacity: 0.85 },
+      interactive: false,
+    }).addTo(map);
   }
 
   // ── Map-not-ready state: disable interaction, show overlay ───────────────

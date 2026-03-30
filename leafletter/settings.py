@@ -9,14 +9,35 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-wti#q9%lysc97#8y%cxo2ucna_kurpg2@gxhm(4-n01)t5=p4s')
 
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+# Default DEBUG=True locally; auto-disable in production (Railway sets RAILWAY_ENVIRONMENT=production).
+# Can always be overridden explicitly via the DEBUG env var.
+_on_railway = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
+DEBUG = os.environ.get('DEBUG', 'False' if _on_railway else 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']
+# In production, restrict ALLOWED_HOSTS to the known Railway domains.
+# DEBUG mode keeps the wildcard so local runserver works without extra config.
+if DEBUG:
+    ALLOWED_HOSTS = ['*']
+else:
+    _public_domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
+    _private_domain = os.environ.get('RAILWAY_PRIVATE_DOMAIN', '')
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+    if _public_domain:
+        ALLOWED_HOSTS.append(_public_domain)
+    if _private_domain:
+        ALLOWED_HOSTS.append(_private_domain)
 
 # Railway terminates SSL at the load balancer and forwards requests to gunicorn over HTTP,
 # setting X-Forwarded-Proto: https. Tell Django to trust that header so request.is_secure()
 # returns True and CSRF referer validation works correctly.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# In production, mark session and CSRF cookies as secure-only (HTTPS).
+# SECURE_SSL_REDIRECT is left False because Railway's load balancer already
+# handles the HTTP→HTTPS redirect; enabling it here would cause redirect loops.
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # Set CSRF_TRUSTED_ORIGINS to a comma-separated list of trusted origins, e.g.
 # "https://web-production-b863b.up.railway.app,https://yourdomain.com"
@@ -33,6 +54,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',
     'django.contrib.gis',
     'django_celery_results',
     'django_celery_beat',

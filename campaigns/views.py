@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm, ImageUploadForm
-from .models import Campaign, CampaignImage, CityFetchJob, Street, Trip
+from .models import AddressPoint, Campaign, CampaignImage, CityFetchJob, Street, Trip
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
@@ -65,9 +65,11 @@ def about(request):
 
 def campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
+    geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
     return render(request, 'campaigns/campaign_detail.html', {
         'campaign': campaign,
         'bbox_json': json.dumps(campaign.bbox),
+        'geo_limit_json': geo_limit_json,
     })
 
 
@@ -232,6 +234,7 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
     for key in removed_keys:
         old_idx = old_key_to_idx[key]
         Street.objects.filter(campaign=campaign, city_index=old_idx).delete()
+        AddressPoint.objects.filter(campaign=campaign, city_index=old_idx).delete()
         CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx).delete()
 
     # Renumber kept cities whose index shifted; use a temp offset to avoid
@@ -242,9 +245,11 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
         TEMP_OFFSET = 10000
         for old_idx, _ in moves:
             Street.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
+            AddressPoint.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
             CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
         for old_idx, new_idx in moves:
             Street.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
+            AddressPoint.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
             CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
 
     if added_keys:
@@ -263,11 +268,44 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
 
 @_login_required
 def manage_campaign_list(request):
-    campaigns = Campaign.objects.exclude(status='deleted').annotate(
-        street_count=Count('streets', distinct=True),
-        trip_count=Count('trips', distinct=True),
-    ).order_by('is_test', '-created_at')
-    inflight = campaigns.filter(map_status__in=('pending', 'generating', 'rendering')).order_by('updated_at')
+    # Fetch campaigns without any multi-table JOIN annotations — multiple
+    # COUNT DISTINCT JOINs in one query cause a row explosion on MySQL.
+    campaigns = list(Campaign.objects.exclude(status='deleted').order_by('is_test', '-created_at'))
+    campaign_pks = [c.pk for c in campaigns]
+
+    # Bulk counts — each is a separate simple query to avoid JOIN row explosion on MySQL.
+    street_counts = dict(
+        Street.objects.filter(campaign_id__in=campaign_pks)
+        .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
+    )
+    trip_counts = dict(
+        Trip.objects.filter(campaign_id__in=campaign_pks, deleted=False)
+        .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
+    )
+    household_counts = dict(
+        AddressPoint.objects.filter(campaign_id__in=campaign_pks)
+        .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
+    )
+
+    # Campaign size = streets/households within the geo_limit boundary (or all if none set).
+    # One spatial query per campaign; there are few campaigns so this is acceptable.
+    for c in campaigns:
+        c.street_count = street_counts.get(c.pk, 0)
+        c.trip_count = trip_counts.get(c.pk, 0)
+        c.household_count = household_counts.get(c.pk, 0)
+        if c.geo_limit:
+            c.size_street_count = Street.objects.filter(
+                campaign=c, geometry__intersects=c.geo_limit
+            ).count()
+            c.size_household_count = AddressPoint.objects.filter(
+                campaign=c, location__within=c.geo_limit
+            ).count()
+        else:
+            c.size_street_count = c.street_count
+            c.size_household_count = c.household_count
+
+    inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering')]
+    inflight.sort(key=lambda c: c.updated_at)
     return render(request, 'campaigns/manage/campaign_list.html', {
         'campaigns': campaigns,
         'inflight': inflight,
@@ -331,6 +369,11 @@ def manage_campaign_detail(request, slug):
         job.block_count = blocks_per_city.get(job.city_index, 0)
     campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
     geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
+    ADDRESS_SPARSE_THRESHOLD = 50  # absolute count below which coverage is considered sparse
+    total_addresses = campaign.address_points.count()
+    total_addresses_sparse = 0 < total_addresses < ADDRESS_SPARSE_THRESHOLD
+    estimated_addresses = campaign.estimated_addresses  # filtered by geo_limit if set
+    estimated_addresses_sparse = 0 < estimated_addresses < ADDRESS_SPARSE_THRESHOLD
     return render(request, 'campaigns/manage/campaign_detail.html', {
         'campaign': campaign,
         'campaign_url': campaign_url,
@@ -339,6 +382,10 @@ def manage_campaign_detail(request, slug):
         'city_fetch_jobs': city_fetch_jobs,
         'bbox_json': json.dumps(campaign.bbox),
         'geo_limit_json': geo_limit_json,
+        'total_addresses': total_addresses,
+        'total_addresses_sparse': total_addresses_sparse,
+        'estimated_addresses': estimated_addresses,
+        'estimated_addresses_sparse': estimated_addresses_sparse,
     })
 
 
@@ -369,6 +416,7 @@ def manage_campaign_fetch_status(request, slug):
         'map_status': campaign.map_status,
         'map_status_display': campaign.get_map_status_display(),
         'total_blocks': campaign.streets.count(),
+        'total_addresses': campaign.address_points.count(),
         'city_fetch_jobs': jobs_data,
     })
 
@@ -408,7 +456,15 @@ def manage_campaign_publish(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     campaign.status = 'published'
     campaign.save(update_fields=['status'])
-    queue_city_fetches(campaign.pk)
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_campaign_unpublish(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    campaign.status = 'draft'
+    campaign.save(update_fields=['status'])
     return redirect('manage_campaign_detail', slug=slug)
 
 
@@ -456,6 +512,7 @@ def manage_city_refetch(request, slug, city_index):
 def manage_city_delete(request, slug, city_index):
     campaign = get_object_or_404(Campaign, slug=slug)
     Street.objects.filter(campaign=campaign, city_index=city_index).delete()
+    AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
     CityFetchJob.objects.filter(campaign=campaign, city_index=city_index).update(status='pending', error='')
     update = {'streets_geojson': ''}
     if not campaign.streets.exists():
@@ -548,7 +605,30 @@ def manage_campaign_update_geo_limit(request, slug):
         geo_limit=geo_limit, bbox=bbox, streets_geojson='', map_status='rendering',
     )
     render_campaign_geojson.delay(campaign.pk, final_status='ready')
-    return JsonResponse({'status': 'rendering', 'bbox': bbox})
+    estimated_addresses = AddressPoint.objects.filter(
+        campaign=campaign, location__within=geo_limit,
+    ).count()
+    return JsonResponse({'status': 'rendering', 'bbox': bbox, 'estimated_addresses': estimated_addresses})
+
+
+@_login_required
+@require_POST
+def manage_campaign_address_preview(request, slug):
+    """
+    Lightweight endpoint: accepts a GeoJSON polygon body and returns the address
+    count within it without saving anything. Used for live preview while drawing.
+    """
+    campaign = get_object_or_404(Campaign, slug=slug)
+    try:
+        body = json.loads(request.body)
+        coords = body['coordinates']
+        poly = Polygon(coords[0], srid=4326)
+        if not poly.valid:
+            raise ValueError('invalid polygon')
+    except (json.JSONDecodeError, KeyError, ValueError, Exception):
+        return HttpResponseBadRequest('Invalid polygon')
+    count = AddressPoint.objects.filter(campaign=campaign, location__within=poly).count()
+    return JsonResponse({'count': count})
 
 
 @_login_required

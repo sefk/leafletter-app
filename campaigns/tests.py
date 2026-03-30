@@ -248,6 +248,50 @@ class AuthGatingTest(TestCase):
         self.assertEqual(resp.status_code, 302)
 
 
+class ManageCampaignListAnnotationsTest(TestCase):
+    """manage_campaign_list annotates downloaded counts and campaign size (geo_limit boundary)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('mgr', password='pw')
+        self.client = Client()
+        self.client.login(username='mgr', password='pw')
+        self.campaign = make_campaign(slug='list-annot-camp')
+        self.s1 = Street.objects.create(campaign=self.campaign, osm_id=1, name='S1', geometry=GEOM, block_index=0, city_index=0)
+        self.s2 = Street.objects.create(campaign=self.campaign, osm_id=2, name='S2', geometry=GEOM, block_index=1, city_index=0)
+        self.s3 = Street.objects.create(campaign=self.campaign, osm_id=3, name='S3', geometry=GEOM, block_index=2, city_index=1)
+
+    def _get_campaign_from_response(self):
+        resp = self.client.get('/manage/')
+        self.assertEqual(resp.status_code, 200)
+        return next(c for c in resp.context['campaigns'] if c.slug == 'list-annot-camp')
+
+    def test_street_count_matches_downloaded_streets(self):
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.street_count, 3)
+
+    def test_size_street_count_equals_all_streets_when_no_geo_limit(self):
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.size_street_count, 3)
+
+    def test_size_street_count_filters_by_geo_limit(self):
+        from django.contrib.gis.geos import Polygon
+        # geo_limit that contains GEOM (bbox around -122.1...-122.15, 37.4...37.45)
+        geo_limit = Polygon.from_bbox((-122.2, 37.3, -122.0, 37.5))
+        self.campaign.geo_limit = geo_limit
+        self.campaign.save()
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.size_street_count, 3)
+
+    def test_size_street_count_excludes_streets_outside_geo_limit(self):
+        from django.contrib.gis.geos import Polygon
+        # geo_limit far away from GEOM — no streets inside
+        geo_limit = Polygon.from_bbox((0, 0, 1, 1))
+        self.campaign.geo_limit = geo_limit
+        self.campaign.save()
+        c = self._get_campaign_from_response()
+        self.assertEqual(c.size_street_count, 0)
+
+
 # ── View tests: streets.geojson ───────────────────────────────────────────────
 
 class StreetsGeoJSONViewTest(TestCase):
@@ -1135,20 +1179,82 @@ class ManagerUITest(TestCase):
 
     # ── Publish ───────────────────────────────────────────────────────────────
 
-    @patch('campaigns.views.queue_city_fetches')
-    def test_publish_sets_status_and_queues_task(self, mock_task):
+    def test_publish_sets_status(self):
         self._login()
         self.client.post(f'/manage/{self.campaign.slug}/publish/')
         self.campaign.refresh_from_db()
         self.assertEqual(self.campaign.status, 'published')
-        mock_task.assert_called_once_with(self.campaign.pk)
 
-    @patch('campaigns.views.queue_city_fetches')
-    def test_publish_redirects_to_detail(self, mock_task):
+    def test_publish_does_not_refetch(self):
+        self._login()
+        with patch('campaigns.views.queue_city_fetches') as mock_task:
+            self.client.post(f'/manage/{self.campaign.slug}/publish/')
+            mock_task.assert_not_called()
+
+    def test_publish_redirects_to_detail(self):
         self._login()
         resp = self.client.post(f'/manage/{self.campaign.slug}/publish/')
         self.assertEqual(resp.status_code, 302)
         self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
+
+    # ── Unpublish ─────────────────────────────────────────────────────────────
+
+    def test_unpublish_sets_status_to_draft(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'draft')
+
+    def test_unpublish_redirects_to_detail(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
+
+    def test_unpublished_campaign_public_url_returns_404(self):
+        # After unpublishing, the public URL must return 404
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'draft')
+        # Draft campaigns return 404 on the public URL (same as test_draft_campaign_returns_404)
+        resp = self.client.get(f'/c/{self.campaign.slug}/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unpublish_preserves_campaign_data(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        original_name = self.campaign.name
+        original_cities = self.campaign.cities
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.name, original_name)
+        self.assertEqual(self.campaign.cities, original_cities)
+
+    def test_unpublish_requires_login(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/unpublish/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'published')
+
+    def test_unpublish_requires_post(self):
+        self.campaign.status = 'published'
+        self.campaign.save()
+        self._login()
+        resp = self.client.get(f'/manage/{self.campaign.slug}/unpublish/')
+        self.assertEqual(resp.status_code, 405)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'published')
 
     # ── Delete ────────────────────────────────────────────────────────────────
 
@@ -2035,6 +2141,59 @@ class WatchdogStuckJobsTest(TestCase):
         body = mail.outbox[0].body
         self.assertIn('Springfield', body)
         self.assertIn('Shelbyville', body)
+
+    # ── Stuck-rendering watchdog ──────────────────────────────────────────────
+
+    def _make_stuck_rendering_campaign(self, minutes_old=None):
+        """Return a campaign stuck in 'rendering' state past the threshold."""
+        if minutes_old is None:
+            minutes_old = STUCK_JOB_THRESHOLD_MINUTES + 10
+        campaign = make_campaign(slug=f'rendering-stuck-{minutes_old}', map_status='rendering')
+        old_time = timezone.now() - timedelta(minutes=minutes_old)
+        Campaign.objects.filter(pk=campaign.pk).update(updated_at=old_time)
+        return campaign
+
+    def test_returns_requeued_rendering_key(self):
+        result = watchdog_stuck_jobs()
+        self.assertIn('requeued_rendering', result)
+
+    def test_no_stuck_rendering_when_clean(self):
+        result = watchdog_stuck_jobs()
+        self.assertEqual(result['requeued_rendering'], [])
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_detects_campaign_stuck_in_rendering(self, mock_render):
+        campaign = self._make_stuck_rendering_campaign()
+        result = watchdog_stuck_jobs()
+        self.assertIn(campaign.pk, result['requeued_rendering'])
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_redispatches_render_for_stuck_rendering_campaign(self, mock_render):
+        campaign = self._make_stuck_rendering_campaign()
+        watchdog_stuck_jobs()
+        mock_render.delay.assert_called_once_with(campaign.pk, final_status='ready')
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_recent_rendering_campaign_not_flagged(self, mock_render):
+        """A campaign that just started rendering should not be re-queued."""
+        campaign = make_campaign(slug='rendering-recent', map_status='rendering')
+        # updated_at is auto_now — only seconds old, well within threshold
+        result = watchdog_stuck_jobs()
+        self.assertNotIn(campaign.pk, result['requeued_rendering'])
+        mock_render.delay.assert_not_called()
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_email_sent_for_stuck_rendering_campaign(self, mock_render):
+        self._make_stuck_rendering_campaign()
+        watchdog_stuck_jobs()
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('rendering', mail.outbox[0].subject.lower())
+
+    @patch('campaigns.tasks.render_campaign_geojson')
+    def test_email_body_contains_campaign_slug_for_stuck_rendering(self, mock_render):
+        campaign = self._make_stuck_rendering_campaign()
+        watchdog_stuck_jobs()
+        self.assertIn(campaign.slug, mail.outbox[0].body)
 
 
 # ── Task tests: render_campaign_geojson ───────────────────────────────────────

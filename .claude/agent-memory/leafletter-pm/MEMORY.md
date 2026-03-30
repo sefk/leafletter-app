@@ -26,7 +26,7 @@ Standard labels in sefk/leafletter-app:
 
 - Never use `$()` command substitution in gh or git commands
 - Always hardcode repo as `sefk/leafletter-app` in all gh commands
-- For multi-line issue bodies, use: `--body "$(cat <<'EOF' ... EOF)"` pattern (heredoc inside subshell is fine per user preference; `--body-file` also works as a fallback)
+- For multi-line issue bodies, write body to a temp file first and pass with `--body-file /tmp/body.md`, OR pipe via stdin. Do NOT use `$(cat <<'EOF'...)` — that is `$()` substitution.
 - For `gh issue comment`, use `--body-file - <<'EOF'` (stdin heredoc) to avoid zsh warnings
 
 ## Known Production Incidents
@@ -44,3 +44,18 @@ Every open issue should have:
 ## Milestone Structure
 
 (To be documented as milestones are created/reviewed)
+
+## Project Board
+
+- Board: "Leafletter dev", project number 1, owner sefk
+- Project ID: `PVT_kwHOAAl7_c4BQfAR`
+- Priority field ID: `PVTSSF_lAHOAAl7_c4BQfARzg-lv4s`
+  - P0 option: `79628723`
+  - P1 option: `0a877460`
+  - P2 option: `da944a9c`
+  - P3 option: `9f826784`
+- Status field ID: `PVTSSF_lAHOAAl7_c4BQfARzg-lv24` (options: Backlog, Ready, Done)
+- New issues ARE auto-added to the board via GHA workflow (merged in #117, 2026-03-29)
+- Priority field is synced from labels by a separate workflow that fires on label changes
+- Issues created before the auto-add workflow existed (#99–#116 range) may have been missing — audit found #101, #103, #104, #108, #109, #113, #115, #116 were missing and were added manually
+- Issues with BLANK priority despite having P-labels are a known debt pattern; fix via `gh project item-edit --single-select-option-id`
