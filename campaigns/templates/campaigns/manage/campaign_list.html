@@ -1,4 +1,5 @@
 {% extends "campaigns/manage/base.html" %}
+{% load humanize %}
 
 {% block title %}Campaigns — Leafletter Manager{% endblock %}
 
@@ -50,9 +51,8 @@
     <tr>
       <th>Name</th>
       <th>Status</th>
-      <th>Map</th>
       <th>Campaign Size</th>
-      <th>Downloaded</th>
+      <th>Downloaded Streets</th>
       <th>Trips</th>
       <th>Start Date</th>
       <th>Public URL</th>
@@ -66,16 +66,16 @@
         {% if campaign.is_test %}<span style="display:inline-block;background:#1a6b3c;color:#fff;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;vertical-align:middle;margin-left:5px;">Test</span>{% endif %}
       </td>
       <td><span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span></td>
-      <td><span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span></td>
       <td>
-        <div style="font-size:0.9rem;">{{ campaign.size_street_count }} blocks</div>
-        <div style="font-size:0.85rem; color:#666;">{% if campaign.size_household_count > 0 %}{{ campaign.size_household_count }} households{% else %}—{% endif %}</div>
+        <div style="font-size:0.9rem;">{{ campaign.size_street_count|intcomma }} blocks</div>
+        <div style="font-size:0.9rem; color:#666;">{% if campaign.size_household_count > 0 %}{{ campaign.size_household_count|intcomma }} houses{% else %}—{% endif %}</div>
       </td>
       <td>
-        <div style="font-size:0.9rem; color:#999;">{{ campaign.street_count }} blocks</div>
-        <div style="font-size:0.85rem; color:#bbb;">{% if campaign.household_count > 0 %}{{ campaign.household_count }} households{% else %}—{% endif %}</div>
+        <span class="badge badge-{{ campaign.map_status }}">{{ campaign.get_map_status_display }}</span>
+        <div style="font-size:0.9rem; margin-top:4px;">{{ campaign.street_count|intcomma }} blocks</div>
+        <div style="font-size:0.9rem;">{% if campaign.household_count > 0 %}{{ campaign.household_count|intcomma }} houses{% else %}—{% endif %}</div>
       </td>
-      <td>{{ campaign.trip_count }}</td>
+      <td>{{ campaign.trip_count|intcomma }}</td>
       <td>{{ campaign.start_date }}</td>
       <td>
         {% if campaign.status == 'published' %}
