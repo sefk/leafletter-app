@@ -511,11 +511,12 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
         # Skip entirely for very large campaigns — reliable fetching requires a parallel
         # tile-based workflow that isn't implemented yet (see #119).
         ADDRESS_FETCH_BLOCK_LIMIT = 10_000
-        total_campaign_blocks = campaign.streets.count()
-        if total_campaign_blocks > ADDRESS_FETCH_BLOCK_LIMIT:
+        streets_qs = campaign.streets.filter(geometry__intersects=campaign.geo_limit) if campaign.geo_limit else campaign.streets
+        blocks_in_area = streets_qs.count()
+        if blocks_in_area > ADDRESS_FETCH_BLOCK_LIMIT:
             logger.info(
-                "fetch_city_osm_data: skipping address fetch for %s — %d blocks exceeds limit of %d (see #119)",
-                city_label, total_campaign_blocks, ADDRESS_FETCH_BLOCK_LIMIT,
+                "fetch_city_osm_data: skipping address fetch for %s — %d blocks in area exceeds limit of %d (see #119)",
+                city_label, blocks_in_area, ADDRESS_FETCH_BLOCK_LIMIT,
             )
         else:
             try:
