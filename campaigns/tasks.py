@@ -116,26 +116,37 @@ out geom;
     return ways
 
 
-def query_overpass_addresses(city) -> list[tuple[float, float]]:
+def query_overpass_addresses(city, bbox=None) -> list[tuple[float, float]]:
     """
     Query Overpass for addr:housenumber nodes and ways within a city area.
     Returns a list of (lon, lat) tuples (way centroids for ways, coords for nodes).
+
+    If bbox is provided as (west, south, east, north), use it as the spatial filter
+    instead of the city area. This avoids timeouts for large city/county areas.
     """
-    if isinstance(city, dict) and city.get('osm_type') == 'relation' and 'osm_id' in city:
+    if bbox is not None:
+        west, south, east, north = bbox
+        area_clause = ''
+        filter_clause = f'({south},{west},{north},{east})'
+        city_label = city if isinstance(city, str) else city.get('name', str(city))
+        city_label = f'{city_label} (bbox)'
+    elif isinstance(city, dict) and city.get('osm_type') == 'relation' and 'osm_id' in city:
         area_id = 3600000000 + city['osm_id']
         city_label = city.get('name', str(city['osm_id']))
         area_clause = f'area({area_id})->.searchArea;'
+        filter_clause = '(area.searchArea)'
     else:
         city_name = city if isinstance(city, str) else city.get('name', str(city))
         city_label = city_name
         area_clause = f'area[name="{city_name}"]->.searchArea;'
+        filter_clause = '(area.searchArea)'
 
     query = f"""
 [out:json][timeout:{OVERPASS_SERVER_TIMEOUT}];
 {area_clause}
 (
-  node["addr:housenumber"](area.searchArea);
-  way["addr:housenumber"](area.searchArea);
+  node["addr:housenumber"]{filter_clause};
+  way["addr:housenumber"]{filter_clause};
 );
 out center qt;
 """
@@ -495,8 +506,11 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
             raise ValueError(f'City "{city_label}" was found but no streets were imported')
 
         # Fetch address points — best-effort, does not fail the city job if it errors.
+        # If a geo_limit polygon is set, restrict the query to its bounding box to avoid
+        # timeouts when the city is large (e.g. a county).
         try:
-            address_coords = query_overpass_addresses(city)
+            geo_limit_bbox = campaign.geo_limit.extent if campaign.geo_limit else None
+            address_coords = query_overpass_addresses(city, bbox=geo_limit_bbox)
             AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
             if address_coords:
                 AddressPoint.objects.bulk_create([

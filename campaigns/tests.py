@@ -24,7 +24,8 @@ from django.utils import timezone
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
 from .models import Campaign, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
-                    lookup_city, queue_city_fetches, query_overpass, render_campaign_geojson,
+                    lookup_city, queue_city_fetches, query_overpass, query_overpass_addresses,
+                    render_campaign_geojson,
                     split_way_at_intersections, _sync_campaign_map_status,
                     _write_streets_geojson_chunked,
                     watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES)
@@ -588,6 +589,57 @@ class QueryOverpassTest(TestCase):
         self.assertEqual(oak['node_ids'], [1001, 1002])
 
 
+# ── Task tests: query_overpass_addresses ─────────────────────────────────────
+
+ADDRESS_RESPONSE = {
+    'elements': [
+        {'type': 'node', 'id': 1, 'lon': -122.1, 'lat': 37.4},
+        {'type': 'way', 'id': 2, 'center': {'lon': -122.2, 'lat': 37.5}},
+        {'type': 'way', 'id': 3},  # way with no center — should be skipped
+    ]
+}
+
+
+class QueryOverpassAddressesTest(TestCase):
+
+    @patch('campaigns.tasks.requests.post')
+    def test_returns_node_and_way_center_coords(self, mock_post):
+        mock_post.return_value = _make_overpass_response(data=ADDRESS_RESPONSE)
+        points = query_overpass_addresses('Palo Alto')
+        self.assertEqual(len(points), 2)
+        self.assertIn((-122.1, 37.4), points)
+        self.assertIn((-122.2, 37.5), points)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_way_without_center_is_skipped(self, mock_post):
+        mock_post.return_value = _make_overpass_response(data=ADDRESS_RESPONSE)
+        points = query_overpass_addresses('Palo Alto')
+        self.assertEqual(len(points), 2)  # 3rd element has no center
+
+    @patch('campaigns.tasks.requests.post')
+    def test_bbox_uses_bbox_filter_in_query(self, mock_post):
+        mock_post.return_value = _make_overpass_response(data={'elements': []})
+        query_overpass_addresses('San Mateo County', bbox=(-122.5, 37.3, -121.9, 37.7))
+        call_data = mock_post.call_args[1]['data']['data']
+        # Overpass bbox syntax: (south,west,north,east)
+        self.assertIn('(37.3,-122.5,37.7,-121.9)', call_data)
+        # Should not reference area filter
+        self.assertNotIn('area.searchArea', call_data)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_no_bbox_uses_area_filter(self, mock_post):
+        mock_post.return_value = _make_overpass_response(data={'elements': []})
+        query_overpass_addresses('Palo Alto')
+        call_data = mock_post.call_args[1]['data']['data']
+        self.assertIn('area.searchArea', call_data)
+
+    @patch('campaigns.tasks.requests.post')
+    def test_raises_on_http_error(self, mock_post):
+        mock_post.return_value = _make_overpass_response(status_code=504)
+        with self.assertRaises(Exception):
+            query_overpass_addresses('Anywhere')
+
+
 # ── Task tests: find_intersection_nodes ───────────────────────────────────────
 
 class FindIntersectionNodesTest(TestCase):
@@ -806,6 +858,35 @@ class FetchOSMSegmentsTaskTest(TestCase):
         fetch_osm_segments(self.campaign.pk)
         self.campaign.refresh_from_db()
         self.assertIsNone(self.campaign.bbox)
+
+    @patch('campaigns.tasks.query_overpass_addresses')
+    @patch('campaigns.tasks.query_overpass')
+    def test_address_fetch_uses_geo_limit_bbox(self, mock_qo, mock_qa):
+        from django.contrib.gis.geos import Polygon
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+        mock_qa.return_value = []
+        geo_limit = Polygon.from_bbox((-122.3, 37.3, -122.0, 37.6))
+        geo_limit.srid = 4326
+        self.campaign.geo_limit = geo_limit
+        self.campaign.save(update_fields=['geo_limit'])
+        fetch_osm_segments(self.campaign.pk)
+        mock_qa.assert_called_once()
+        _, kwargs = mock_qa.call_args
+        self.assertIsNotNone(kwargs.get('bbox'))
+
+    @patch('campaigns.tasks.query_overpass_addresses')
+    @patch('campaigns.tasks.query_overpass')
+    def test_address_fetch_uses_no_bbox_without_geo_limit(self, mock_qo, mock_qa):
+        mock_qo.return_value = [
+            {'osm_id': 10, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+        mock_qa.return_value = []
+        fetch_osm_segments(self.campaign.pk)
+        mock_qa.assert_called_once()
+        _, kwargs = mock_qa.call_args
+        self.assertIsNone(kwargs.get('bbox'))
 
 
 # ── Admin tests ───────────────────────────────────────────────────────────────

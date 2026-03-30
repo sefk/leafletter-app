@@ -465,6 +465,26 @@
               // Show the inflight banner so the user knows polling is active.
               var inflightBanner = document.getElementById('sm-inflight-banner');
               if (inflightBanner) inflightBanner.style.display = 'flex';
+              // The top-level poller may have already exited (if map_status was
+              // 'ready' on page load). Start a dedicated render-completion poller.
+              var statusCard = document.querySelector('[data-fetch-status-url]');
+              if (statusCard) {
+                var renderPollUrl = statusCard.dataset.fetchStatusUrl;
+                (function pollRender() {
+                  setTimeout(function() {
+                    fetch(renderPollUrl, { credentials: 'same-origin' })
+                      .then(function(r) { return r.json(); })
+                      .then(function(d) {
+                        if (d.map_status === 'ready' || d.map_status === 'warning' || d.map_status === 'error') {
+                          location.reload();
+                        } else {
+                          pollRender();
+                        }
+                      })
+                      .catch(pollRender);
+                  }, 10000);
+                })();
+              }
             } else {
               statusEl.textContent = 'Saved!';
               setTimeout(function() { statusEl.textContent = ''; }, 2000);
