@@ -370,10 +370,12 @@ def manage_campaign_detail(request, slug):
     campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
     geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
     ADDRESS_SPARSE_THRESHOLD = 50  # absolute count below which coverage is considered sparse
+    ADDRESS_FETCH_BLOCK_LIMIT = 10_000  # campaigns larger than this skip address fetch (see #119)
     total_addresses = campaign.address_points.count()
     total_addresses_sparse = 0 < total_addresses < ADDRESS_SPARSE_THRESHOLD
     estimated_addresses = campaign.estimated_addresses  # filtered by geo_limit if set
     estimated_addresses_sparse = 0 < estimated_addresses < ADDRESS_SPARSE_THRESHOLD
+    address_fetch_too_large = total_blocks > ADDRESS_FETCH_BLOCK_LIMIT
     return render(request, 'campaigns/manage/campaign_detail.html', {
         'campaign': campaign,
         'campaign_url': campaign_url,
@@ -386,6 +388,7 @@ def manage_campaign_detail(request, slug):
         'total_addresses_sparse': total_addresses_sparse,
         'estimated_addresses': estimated_addresses,
         'estimated_addresses_sparse': estimated_addresses_sparse,
+        'address_fetch_too_large': address_fetch_too_large,
     })
 
 

@@ -150,7 +150,11 @@
       </tfoot>
     </table>
 
-    {% if total_addresses > 0 %}
+    {% if address_fetch_too_large %}
+    <div style="margin-bottom:12px; font-size:0.9rem; color:#888;">
+      Household count not available for campaigns this large.
+    </div>
+    {% elif total_addresses > 0 %}
     <div style="margin-bottom:12px; font-size:0.9rem; color:#444;">
       Estimated houses in fetched area:
       <strong id="sm-total-addresses">{{ total_addresses|intcomma }}</strong>
@@ -322,7 +326,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
-  {% if campaign.geo_limit and estimated_addresses > 0 %}
+  {% if campaign.geo_limit and not address_fetch_too_large and estimated_addresses > 0 %}
   <div id="sm-address-wrap" style="margin-bottom:12px; font-size:0.9rem; color:#444;">
     Estimated houses within boundary:
     <strong id="sm-estimated-addresses">{{ estimated_addresses|intcomma }}</strong>

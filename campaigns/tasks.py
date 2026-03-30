@@ -508,28 +508,38 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
         # Fetch address points — best-effort, does not fail the city job if it errors.
         # If a geo_limit polygon is set, restrict the query to its bounding box to avoid
         # timeouts when the city is large (e.g. a county).
-        try:
-            geo_limit_bbox = campaign.geo_limit.extent if campaign.geo_limit else None
-            address_coords = query_overpass_addresses(city, bbox=geo_limit_bbox)
-            AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
-            if address_coords:
-                AddressPoint.objects.bulk_create([
-                    AddressPoint(
-                        campaign=campaign,
-                        city_index=city_index,
-                        location=Point(lon, lat, srid=4326),
-                    )
-                    for lon, lat in address_coords
-                ], batch_size=2000)
+        # Skip entirely for very large campaigns — reliable fetching requires a parallel
+        # tile-based workflow that isn't implemented yet (see #119).
+        ADDRESS_FETCH_BLOCK_LIMIT = 10_000
+        total_campaign_blocks = campaign.streets.count()
+        if total_campaign_blocks > ADDRESS_FETCH_BLOCK_LIMIT:
             logger.info(
-                "fetch_city_osm_data: imported %d address points for %s",
-                len(address_coords), city_label,
+                "fetch_city_osm_data: skipping address fetch for %s — %d blocks exceeds limit of %d (see #119)",
+                city_label, total_campaign_blocks, ADDRESS_FETCH_BLOCK_LIMIT,
             )
-        except Exception as exc:
-            logger.warning(
-                "fetch_city_osm_data: address point fetch failed for %s (non-fatal): %s",
-                city_label, exc,
-            )
+        else:
+            try:
+                geo_limit_bbox = campaign.geo_limit.extent if campaign.geo_limit else None
+                address_coords = query_overpass_addresses(city, bbox=geo_limit_bbox)
+                AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
+                if address_coords:
+                    AddressPoint.objects.bulk_create([
+                        AddressPoint(
+                            campaign=campaign,
+                            city_index=city_index,
+                            location=Point(lon, lat, srid=4326),
+                        )
+                        for lon, lat in address_coords
+                    ], batch_size=2000)
+                logger.info(
+                    "fetch_city_osm_data: imported %d address points for %s",
+                    len(address_coords), city_label,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "fetch_city_osm_data: address point fetch failed for %s (non-fatal): %s",
+                    city_label, exc,
+                )
 
         CityFetchJob.objects.update_or_create(
             campaign=campaign,
