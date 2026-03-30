@@ -408,7 +408,6 @@ def manage_campaign_publish(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     campaign.status = 'published'
     campaign.save(update_fields=['status'])
-    queue_city_fetches(campaign.pk)
     return redirect('manage_campaign_detail', slug=slug)
 
 

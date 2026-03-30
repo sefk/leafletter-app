@@ -1135,16 +1135,19 @@ class ManagerUITest(TestCase):
 
     # ── Publish ───────────────────────────────────────────────────────────────
 
-    @patch('campaigns.views.queue_city_fetches')
-    def test_publish_sets_status_and_queues_task(self, mock_task):
+    def test_publish_sets_status(self):
         self._login()
         self.client.post(f'/manage/{self.campaign.slug}/publish/')
         self.campaign.refresh_from_db()
         self.assertEqual(self.campaign.status, 'published')
-        mock_task.assert_called_once_with(self.campaign.pk)
 
-    @patch('campaigns.views.queue_city_fetches')
-    def test_publish_redirects_to_detail(self, mock_task):
+    def test_publish_does_not_refetch(self):
+        self._login()
+        with patch('campaigns.views.queue_city_fetches') as mock_task:
+            self.client.post(f'/manage/{self.campaign.slug}/publish/')
+            mock_task.assert_not_called()
+
+    def test_publish_redirects_to_detail(self):
         self._login()
         resp = self.client.post(f'/manage/{self.campaign.slug}/publish/')
         self.assertEqual(resp.status_code, 302)
