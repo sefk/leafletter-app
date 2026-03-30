@@ -537,6 +537,7 @@
     var streetsUrl = "{% url 'manage_streets_geojson' campaign.slug %}";
     var coverageUrl = "{% url 'manage_coverage_geojson' campaign.slug %}";
     var bbox = {{ bbox_json }};
+    var geoLimit = {{ geo_limit_json|safe }};
     var csrfToken = "{{ csrf_token }}";
 
     // Server-side trip data (all trips, including deleted)
@@ -621,6 +622,12 @@
           }
           currentStreetsLayer = L.geoJSON(geojson, { style: { color: '#888', weight: 2, opacity: 0.7 } }).addTo(map);
           if (!bbox) map.fitBounds(currentStreetsLayer.getBounds(), { padding: [20, 20] });
+          if (geoLimit) {
+            L.geoJSON(geoLimit, {
+              style: { color: '#cc0000', weight: 2.5, fillOpacity: 0, dashArray: '8,5', opacity: 0.85 },
+              interactive: false,
+            }).addTo(map);
+          }
           if (loadingTextEl) loadingTextEl.textContent = 'Loading coverage… 0%';
           loadCoverage();
         })

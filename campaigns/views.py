@@ -65,9 +65,11 @@ def about(request):
 
 def campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
+    geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
     return render(request, 'campaigns/campaign_detail.html', {
         'campaign': campaign,
         'bbox_json': json.dumps(campaign.bbox),
+        'geo_limit_json': geo_limit_json,
     })
 
 
