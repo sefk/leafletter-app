@@ -9,7 +9,50 @@ struct CampaignListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            let regular = campaigns.filter { !$0.isTest }
+            let test = campaigns.filter { $0.isTest }
+            List {
+                Section {
+                    ForEach(regular) { campaign in
+                        ZStack(alignment: .leading) {
+                            NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
+                                .opacity(0)
+                            CampaignRow(campaign: campaign)
+                                .contentShape(Rectangle())
+                        }
+                        .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
+                        .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
+                    }
+                } header: {
+                    BannerView(onAbout: { navigateToAbout = true })
+                        .textCase(nil)
+                        .listRowInsets(EdgeInsets())
+                }
+
+                if !test.isEmpty {
+                    Section {
+                        ForEach(test) { campaign in
+                            ZStack(alignment: .leading) {
+                                NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
+                                    .opacity(0)
+                                CampaignRow(campaign: campaign)
+                                    .contentShape(Rectangle())
+                            }
+                            .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
+                            .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
+                        }
+                    } header: {
+                        Text("Test Campaigns")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                            .textCase(nil)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .refreshable { await load() }
+            .overlay {
                 if isLoading {
                     ProgressView("Loading campaigns…")
                 } else if let error = errorMessage {
@@ -21,50 +64,6 @@ struct CampaignListView: View {
                         }
                 } else if campaigns.isEmpty {
                     ContentUnavailableView("No Active Campaigns", systemImage: "mappin.slash")
-                } else {
-                    let regular = campaigns.filter { !$0.isTest }
-                    let test = campaigns.filter { $0.isTest }
-                    List {
-                        Section {
-                            ForEach(regular) { campaign in
-                                ZStack(alignment: .leading) {
-                                    NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
-                                        .opacity(0)
-                                    CampaignRow(campaign: campaign)
-                                        .contentShape(Rectangle())
-                                }
-                                .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
-                                .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
-                            }
-                        } header: {
-                            BannerView(onAbout: { navigateToAbout = true })
-                                .textCase(nil)
-                                .listRowInsets(EdgeInsets())
-                        }
-
-                        if !test.isEmpty {
-                            Section {
-                                ForEach(test) { campaign in
-                                    ZStack(alignment: .leading) {
-                                        NavigationLink(destination: CampaignDetailView(campaign: campaign)) { EmptyView() }
-                                            .opacity(0)
-                                        CampaignRow(campaign: campaign)
-                                            .contentShape(Rectangle())
-                                    }
-                                    .listRowInsets(campaign.heroImageUrl != nil ? EdgeInsets() : nil)
-                                    .listRowSeparator(campaign.heroImageUrl != nil ? .hidden : .automatic)
-                                }
-                            } header: {
-                                Text("Test Campaigns")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.primary)
-                                    .textCase(nil)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                    .refreshable { await load() }
                 }
             }
             .navigationTitle("Leafletter")
@@ -149,12 +148,39 @@ private struct BetaBannerView: View {
 struct AboutWebView: View {
     let returnSlug: String?
     @Environment(\.dismiss) private var dismiss
+    @State private var tapCount = 0
+    @State private var showingServerAlert = false
 
     var body: some View {
         AboutWKWebViewRepresentable(onNavigateBack: { dismiss() }, returnSlug: returnSlug)
             .ignoresSafeArea(edges: .bottom)
-            .navigationTitle("About")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("About")
+                        .font(.headline)
+                        .onTapGesture {
+                            tapCount += 1
+                            if tapCount >= 3 {
+                                tapCount = 0
+                                showingServerAlert = true
+                            }
+                        }
+                }
+            }
+            .alert(
+                Config.isStaging ? "Using Staging Server" : "Using Production Server",
+                isPresented: $showingServerAlert
+            ) {
+                Button(Config.isStaging ? "Switch to Production" : "Switch to Staging") {
+                    Config.toggleStaging()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(Config.isStaging
+                     ? "Currently pointing to \(Config.stagingURL). Switch back to production?"
+                     : "Switch to \(Config.stagingURL)? Changes take effect on next app launch.")
+            }
     }
 }
 
@@ -167,7 +193,7 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
 
     private let url = URL(string: Config.baseURL + "/about/")!
 
-    private static var buildInfo: String {
+    static var buildInfo: String {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = info["CFBundleShortVersionString"] as? String ?? "?"
         let build = info["CFBundleVersion"] as? String ?? "?"

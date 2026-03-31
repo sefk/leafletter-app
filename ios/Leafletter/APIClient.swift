@@ -15,11 +15,10 @@ enum APIError: LocalizedError {
 actor APIClient {
     static let shared = APIClient()
 
-    private let baseURL: String
+    private var baseURL: String { Config.baseURL }
     private let session: URLSession
 
-    init(baseURL: String = Config.baseURL) {
-        self.baseURL = baseURL
+    init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config)
