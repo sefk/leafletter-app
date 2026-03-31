@@ -5,6 +5,7 @@ Run with:
     python manage.py test campaigns
 """
 import json
+import subprocess
 import uuid
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
@@ -28,7 +29,9 @@ from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_n
                     render_campaign_geojson,
                     split_way_at_intersections, _sync_campaign_map_status,
                     _write_streets_geojson_chunked,
-                    watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES)
+                    watchdog_stuck_jobs, STUCK_JOB_THRESHOLD_MINUTES,
+                    MAX_CAMPAIGN_BLOCKS,
+                    backup_database, _run_backup, _prune_old_backups)
 from .forms import ImageUploadForm
 from .views import _apply_city_list_changes
 
@@ -1557,6 +1560,113 @@ class FetchOSMErrorHandlingTest(TestCase):
         self.assertEqual(self.campaign.map_status, 'ready')
 
 
+# ── Task tests: block limit (issue #71) ──────────────────────────────────────
+
+class FetchOSMBlockLimitTest(TestCase):
+    """Tests for the MAX_CAMPAIGN_BLOCKS guard in fetch_city_osm_data."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='block-limit-camp')
+        self.lookup_patcher = patch('campaigns.tasks.lookup_city')
+        self.lookup_patcher.start()
+        self.overpass_patcher = patch('campaigns.tasks.query_overpass')
+        self.mock_overpass = self.overpass_patcher.start()
+        # Suppress address fetch to keep tests fast
+        self.addr_patcher = patch('campaigns.tasks.query_overpass_addresses', return_value=[])
+        self.addr_patcher.start()
+
+    def tearDown(self):
+        self.lookup_patcher.stop()
+        self.overpass_patcher.stop()
+        self.addr_patcher.stop()
+
+    def _run_task(self):
+        task = fetch_city_osm_data
+        task.push_request(retries=0)
+        try:
+            return task(self.campaign.pk, 0)
+        finally:
+            task.pop_request()
+
+    def test_normal_import_succeeds_under_limit(self):
+        """A small import well under MAX_CAMPAIGN_BLOCKS should succeed."""
+        self.mock_overpass.return_value = [
+            {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+        self._run_task()
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.map_status, 'ready')
+        self.assertEqual(self.campaign.streets.count(), 1)
+
+    @patch('campaigns.tasks.MAX_CAMPAIGN_BLOCKS', 2)
+    def test_import_stops_at_block_limit_during_import(self):
+        """
+        When the running total hits MAX_CAMPAIGN_BLOCKS mid-import,
+        the task errors and the city job records the limit message.
+        """
+        # 3 ways would create 3 blocks; limit is 2
+        self.mock_overpass.return_value = [
+            {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+            {'osm_id': 2, 'name': 'B St', 'coords': [(-122.3, 37.6), (-122.4, 37.7)]},
+            {'osm_id': 3, 'name': 'C St', 'coords': [(-122.5, 37.8), (-122.6, 37.9)]},
+        ]
+        self._run_task()
+        job = CityFetchJob.objects.get(campaign=self.campaign, city_index=0)
+        self.assertEqual(job.status, 'error')
+        self.assertIn('Block limit', job.error)
+        self.assertIn('2', job.error)
+
+    @patch('campaigns.tasks.MAX_CAMPAIGN_BLOCKS', 1)
+    def test_existing_blocks_over_limit_is_rejected_before_import(self):
+        """
+        When other-city blocks already exceed MAX_CAMPAIGN_BLOCKS, the task
+        rejects this city immediately without writing any streets.
+        """
+        # Add a block from a different city (city_index=1)
+        self.campaign.cities = ['City A', 'City B']
+        self.campaign.save(update_fields=['cities'])
+        Street.objects.create(campaign=self.campaign, osm_id=999, name='X St', geometry=GEOM, block_index=0, city_index=1)
+
+        self.mock_overpass.return_value = [
+            {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+        ]
+
+        task = fetch_city_osm_data
+        task.push_request(retries=0)
+        try:
+            task(self.campaign.pk, 0)  # city_index=0, city B already has 1 block
+        finally:
+            task.pop_request()
+
+        job = CityFetchJob.objects.get(campaign=self.campaign, city_index=0)
+        self.assertEqual(job.status, 'error')
+        self.assertIn('already has', job.error)
+        # No streets should have been created for city_index=0
+        self.assertEqual(self.campaign.streets.filter(city_index=0).count(), 0)
+
+    @patch('campaigns.tasks.MAX_CAMPAIGN_BLOCKS', 3)
+    def test_refetch_does_not_double_count_existing_blocks(self):
+        """
+        A re-fetch of a city should not count that city's own existing blocks
+        against the limit (they'll be replaced).
+        """
+        # Pre-populate 3 existing blocks for city_index=0
+        for i in range(3):
+            Street.objects.create(campaign=self.campaign, osm_id=100 + i, name='Old St', geometry=GEOM, block_index=i, city_index=0)
+
+        # Overpass returns 2 blocks — should succeed because the 3 existing
+        # blocks for this city are excluded from the pre-check.
+        self.mock_overpass.return_value = [
+            {'osm_id': 200, 'name': 'New St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
+            {'osm_id': 201, 'name': 'New St 2', 'coords': [(-122.3, 37.6), (-122.4, 37.7)]},
+        ]
+        self._run_task()
+        self.campaign.refresh_from_db()
+        # Should not have errored on the limit
+        job = CityFetchJob.objects.get(campaign=self.campaign, city_index=0)
+        self.assertEqual(job.status, 'ready')
+
+
 # ── Task tests: retry on transient errors ─────────────────────────────────────
 
 class FetchOSMRetryTest(TestCase):
@@ -2682,3 +2792,201 @@ class ImageUploadFormTest(TestCase):
         f = self._make_file('exact.jpg', 2 * 1024 * 1024)
         form = ImageUploadForm(data=self._valid_data(), files={'image': f})
         self.assertTrue(form.is_valid())
+
+
+# ── Database backup tests ──────────────────────────────────────────────────────
+
+class BackupDatabaseTaskTest(TestCase):
+    """Tests for the backup_database Celery task and helpers (issue #109)."""
+
+    def setUp(self):
+        self.superuser = User.objects.create_superuser(
+            username='backupadmin',
+            email='backupadmin@example.com',
+            password='secret',
+        )
+
+    # ── _run_backup: happy path ──────────────────────────────────────────────
+
+    @patch('campaigns.tasks.boto3.client')
+    @patch('campaigns.tasks.subprocess.run')
+    def test_run_backup_uploads_to_s3(self, mock_run, mock_boto_client):
+        """_run_backup should call put_object with a gzip-compressed SQL dump."""
+        mock_run.return_value = MagicMock(stdout=b'-- SQL dump content --', returncode=0)
+        mock_s3 = MagicMock()
+        mock_boto_client.return_value = mock_s3
+        mock_s3.get_paginator.return_value.paginate.return_value = [{'Contents': []}]
+
+        result = _run_backup()
+
+        self.assertIn('key', result)
+        self.assertTrue(result['key'].startswith('backups/leafletter-'))
+        self.assertTrue(result['key'].endswith('.sql.gz'))
+        mock_s3.put_object.assert_called_once()
+        call_kwargs = mock_s3.put_object.call_args[1]
+        self.assertEqual(call_kwargs['ContentType'], 'application/gzip')
+
+    @patch('campaigns.tasks.boto3.client')
+    @patch('campaigns.tasks.subprocess.run')
+    def test_run_backup_body_is_gzip(self, mock_run, mock_boto_client):
+        """Uploaded body must be valid gzip data."""
+        import gzip as gz_module
+        sql_content = b'SELECT 1;'
+        mock_run.return_value = MagicMock(stdout=sql_content, returncode=0)
+        mock_s3 = MagicMock()
+        mock_boto_client.return_value = mock_s3
+        mock_s3.get_paginator.return_value.paginate.return_value = [{'Contents': []}]
+
+        _run_backup()
+
+        body = mock_s3.put_object.call_args[1]['Body']
+        decompressed = gz_module.decompress(body)
+        self.assertEqual(decompressed, sql_content)
+
+    @patch('campaigns.tasks.boto3.client')
+    @patch('campaigns.tasks.subprocess.run')
+    def test_run_backup_uses_backup_bucket_env(self, mock_run, mock_boto_client):
+        """BACKUP_S3_BUCKET env var should override default bucket name."""
+        mock_run.return_value = MagicMock(stdout=b'-- dump --', returncode=0)
+        mock_s3 = MagicMock()
+        mock_boto_client.return_value = mock_s3
+        mock_s3.get_paginator.return_value.paginate.return_value = [{'Contents': []}]
+
+        with patch.dict('os.environ', {'BACKUP_S3_BUCKET': 'my-backup-bucket'}):
+            _run_backup()
+
+        call_kwargs = mock_s3.put_object.call_args[1]
+        self.assertEqual(call_kwargs['Bucket'], 'my-backup-bucket')
+
+    @patch('campaigns.tasks.boto3.client')
+    @patch('campaigns.tasks.subprocess.run')
+    def test_run_backup_returns_pruned_count(self, mock_run, mock_boto_client):
+        """Result dict should include the count of pruned old backups."""
+        mock_run.return_value = MagicMock(stdout=b'-- dump --', returncode=0)
+        mock_s3 = MagicMock()
+        mock_boto_client.return_value = mock_s3
+        mock_s3.get_paginator.return_value.paginate.return_value = [{'Contents': []}]
+
+        result = _run_backup()
+
+        self.assertIn('pruned', result)
+        self.assertIsInstance(result['pruned'], int)
+
+    # ── _run_backup: mysqldump failure ───────────────────────────────────────
+
+    @patch('campaigns.tasks.subprocess.run')
+    def test_run_backup_raises_on_mysqldump_failure(self, mock_run):
+        """If mysqldump exits non-zero, _run_backup should propagate the exception."""
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'mysqldump', stderr=b'Access denied')
+        with self.assertRaises(subprocess.CalledProcessError):
+            _run_backup()
+
+    # ── backup_database task: failure → email, no re-raise ──────────────────
+
+    @patch('campaigns.tasks._run_backup')
+    def test_task_emails_superusers_on_failure(self, mock_run_backup):
+        """On _run_backup failure the task should email superusers and not re-raise."""
+        mock_run_backup.side_effect = RuntimeError('S3 unreachable')
+
+        result = backup_database()
+
+        self.assertIn('error', result)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('backupadmin@example.com', mail.outbox[0].to)
+
+    @patch('campaigns.tasks._run_backup')
+    def test_task_does_not_raise_on_failure(self, mock_run_backup):
+        """backup_database must never propagate exceptions."""
+        mock_run_backup.side_effect = Exception('boom')
+        # Should not raise:
+        result = backup_database()
+        self.assertIn('error', result)
+
+    @patch('campaigns.tasks._run_backup')
+    def test_task_no_email_on_success(self, mock_run_backup):
+        """No email should be sent when the backup succeeds."""
+        mock_run_backup.return_value = {'key': 'backups/leafletter-2026-01-01-020000.sql.gz', 'pruned': 0}
+
+        backup_database()
+
+        self.assertEqual(len(mail.outbox), 0)
+
+    @patch('campaigns.tasks._run_backup')
+    def test_task_no_email_when_no_superuser_has_email(self, mock_run_backup):
+        """Failure notification silently skipped when no superuser has an email."""
+        self.superuser.email = ''
+        self.superuser.save(update_fields=['email'])
+        mock_run_backup.side_effect = RuntimeError('boom')
+
+        backup_database()
+
+        self.assertEqual(len(mail.outbox), 0)
+
+    # ── _prune_old_backups ────────────────────────────────────────────────────
+
+    def test_prune_deletes_old_objects(self):
+        """Objects older than retention_days should be deleted."""
+        from datetime import datetime, timezone as dt_timezone
+        mock_s3 = MagicMock()
+        old_time = datetime(2020, 1, 1, tzinfo=dt_timezone.utc)
+        mock_s3.get_paginator.return_value.paginate.return_value = [{
+            'Contents': [
+                {'Key': 'backups/old.sql.gz', 'LastModified': old_time},
+            ]
+        }]
+
+        count = _prune_old_backups(mock_s3, 'test-bucket', retention_days=30)
+
+        self.assertEqual(count, 1)
+        mock_s3.delete_objects.assert_called_once()
+        deleted_keys = mock_s3.delete_objects.call_args[1]['Delete']['Objects']
+        self.assertEqual(deleted_keys, [{'Key': 'backups/old.sql.gz'}])
+
+    def test_prune_keeps_recent_objects(self):
+        """Objects newer than retention_days must not be deleted."""
+        from datetime import datetime, timezone as dt_timezone
+        mock_s3 = MagicMock()
+        recent_time = datetime.now(dt_timezone.utc)
+        mock_s3.get_paginator.return_value.paginate.return_value = [{
+            'Contents': [
+                {'Key': 'backups/recent.sql.gz', 'LastModified': recent_time},
+            ]
+        }]
+
+        count = _prune_old_backups(mock_s3, 'test-bucket', retention_days=30)
+
+        self.assertEqual(count, 0)
+        mock_s3.delete_objects.assert_not_called()
+
+    def test_prune_returns_zero_when_nothing_to_delete(self):
+        mock_s3 = MagicMock()
+        mock_s3.get_paginator.return_value.paginate.return_value = [{'Contents': []}]
+
+        count = _prune_old_backups(mock_s3, 'test-bucket', retention_days=30)
+
+        self.assertEqual(count, 0)
+
+    # ── Management command ────────────────────────────────────────────────────
+
+    @patch('campaigns.tasks._run_backup')
+    def test_management_command_success(self, mock_run_backup):
+        """backup_database management command should succeed and print the key."""
+        from django.core.management import call_command
+        import io as _io
+        mock_run_backup.return_value = {
+            'key': 'backups/leafletter-2026-01-01-020000.sql.gz',
+            'pruned': 2,
+        }
+        out = _io.StringIO()
+        call_command('backup_database', stdout=out)
+        output = out.getvalue()
+        self.assertIn('backups/leafletter', output)
+        self.assertIn('2', output)  # pruned count
+
+    @patch('campaigns.tasks._run_backup')
+    def test_management_command_failure_exits_nonzero(self, mock_run_backup):
+        """backup_database management command should exit with SystemExit on failure."""
+        from django.core.management import call_command
+        mock_run_backup.side_effect = RuntimeError('connection refused')
+        with self.assertRaises(SystemExit):
+            call_command('backup_database')

@@ -199,4 +199,16 @@ CELERY_BEAT_SCHEDULE = {
         # Run every 15 minutes; detects jobs stuck in 'generating' for >30 min.
         'schedule': crontab(minute='*/15'),
     },
+    'backup-database-daily': {
+        'task': 'campaigns.tasks.backup_database',
+        # Run daily at 02:00 UTC, off-peak for Railway/Tigris.
+        'schedule': crontab(hour=2, minute=0),
+    },
 }
+
+# S3 bucket for database backups.  Defaults to the main media bucket so no
+# extra bucket is required; set BACKUP_S3_BUCKET to use a dedicated bucket.
+BACKUP_S3_BUCKET = os.environ.get(
+    'BACKUP_S3_BUCKET',
+    os.environ.get('AWS_STORAGE_BUCKET_NAME', 'leafletter'),
+)

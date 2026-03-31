@@ -177,6 +177,28 @@ watchmedo auto-restart --directory=. --pattern='*.py' --recursive -- \
   celery -A leafletter worker -l debug
 ```
 
+## Deployment / Branch Strategy
+
+This app runs on [Railway](https://railway.app/) with two environments:
+
+| Environment | Branch | Purpose |
+|---|---|---|
+| `staging` | `main` | Auto-deploys on every push to `main`; used for testing |
+| `production` | `prod` | Deploys only when `prod` is updated manually; stable releases |
+
+**To release to production:** fast-forward `prod` to `main` (or whichever commit you want to ship) and push it:
+
+```bash
+git checkout prod
+git merge --ff-only main
+git push origin prod
+git checkout main
+```
+
+Railway will pick up the push to `prod` and deploy to the production environment automatically.
+
+---
+
 ## URLs
 
 | URL | Description |

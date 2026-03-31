@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gdal-bin \
         libgdal-dev \
         default-libmysqlclient-dev \
+        default-mysql-client \
         pkg-config \
         build-essential \
     && rm -rf /var/lib/apt/lists/*

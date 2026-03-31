@@ -1,3 +1,10 @@
+## Deploy / Branch Strategy
+
+- `main` branch → Railway `staging` environment (auto-deploys on push)
+- `prod` branch → Railway `production` environment (manual: fast-forward `prod` to `main` and push)
+- Never push directly to `prod` without reviewing on staging first
+- To release: `git checkout prod && git merge --ff-only main && git push origin prod && git checkout main`
+
 ## iOS Development
 
 Before committing any iOS changes, the Xcode build must pass without errors:

@@ -1,9 +1,15 @@
+import gzip
+import io
 import json
 import logging
+import os
+import subprocess
 from collections import Counter
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone as dt_timezone
 
+import boto3
 import requests
+from botocore.exceptions import BotoCoreError, ClientError
 from celery import shared_task
 from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import LineString, Point
@@ -25,6 +31,11 @@ CITY_TYPES = {'city', 'town', 'village', 'municipality', 'borough'}
 # silent empty-result failures. See GitHub issue #70.
 OVERPASS_SERVER_TIMEOUT = 180  # seconds, embedded as [timeout:N] in query
 OVERPASS_HTTP_TIMEOUT = 240    # seconds, passed to requests.post(timeout=)
+
+# Maximum total blocks (Street records) allowed across all cities in one campaign.
+# Cook County (Chicago) has ~400k blocks, so 1M is a safe upper bound for any
+# realistic leafletting campaign.  See GitHub issue #71.
+MAX_CAMPAIGN_BLOCKS = 1_000_000
 
 # Highway types to include (exclude footways, paths, etc.)
 HIGHWAY_INCLUDE = {
@@ -530,11 +541,28 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
 
         ways = query_overpass(city)
         intersection_nodes = find_intersection_nodes(ways)
+
+        # Guard: check existing block total before importing this city.
+        # We exclude blocks already associated with this city_index so that
+        # a re-fetch doesn't double-count streets being replaced.
+        existing_blocks = Street.objects.filter(campaign=campaign).exclude(city_index=city_index).count()
+        if existing_blocks >= MAX_CAMPAIGN_BLOCKS:
+            raise ValueError(
+                f'Campaign already has {existing_blocks:,} blocks (limit {MAX_CAMPAIGN_BLOCKS:,}); '
+                f'skipping city "{city_label}". Remove some cities to stay within the limit.'
+            )
+
         block_count = 0
         for way in ways:
             for block in split_way_at_intersections(way, intersection_nodes):
                 if len(block['coords']) < 2:
                     continue
+                if existing_blocks + block_count >= MAX_CAMPAIGN_BLOCKS:
+                    raise ValueError(
+                        f'Block limit of {MAX_CAMPAIGN_BLOCKS:,} reached while importing city '
+                        f'"{city_label}". Import stopped at {existing_blocks + block_count:,} total blocks. '
+                        f'Use a more specific city or draw a tighter geo boundary.'
+                    )
                 Street.objects.update_or_create(
                     campaign=campaign,
                     osm_id=way['osm_id'],
@@ -836,3 +864,156 @@ def fetch_osm_segments(self, campaign_id: int) -> None:
             defaults={'status': 'pending', 'error': '', 'city_name': city_name},
         )
         fetch_city_osm_data(campaign_id, idx)
+
+
+# ── Database backup ────────────────────────────────────────────────────────────
+
+BACKUP_RETENTION_DAYS = 30
+
+
+@shared_task
+def backup_database() -> dict:
+    """
+    Dump the MySQL database, compress it with gzip, and upload to S3.
+
+    Key format: backups/leafletter-YYYY-MM-DD-HHMMSS.sql.gz
+    Prunes objects under the backups/ prefix older than BACKUP_RETENTION_DAYS.
+    On any failure, emails active superusers and does NOT re-raise, so the
+    task is marked successful in Celery rather than endlessly retried.
+
+    Returns a dict with 'key' (uploaded S3 key) and 'pruned' (count deleted).
+    """
+    try:
+        return _run_backup()
+    except Exception as exc:
+        logger.error('backup_database: failed: %s', exc, exc_info=True)
+        _send_backup_failure_email(exc)
+        return {'error': str(exc)}
+
+
+def _run_backup() -> dict:
+    """Core logic for backup_database, separated so the task wrapper can catch all exceptions."""
+    # ── Build mysqldump command ──────────────────────────────────────────────
+    db_name = os.environ.get('MYSQL_DATABASE', 'leafletter')
+    db_user = os.environ.get('MYSQL_USER', 'leafletter')
+    db_password = os.environ.get('MYSQL_PASSWORD', 'leafletter')
+    db_host = os.environ.get('MYSQL_HOST', 'localhost')
+    db_port = os.environ.get('MYSQL_PORT', '3306')
+
+    cmd = [
+        'mysqldump',
+        f'--host={db_host}',
+        f'--port={db_port}',
+        f'--user={db_user}',
+        f'--password={db_password}',
+        '--single-transaction',
+        '--routines',
+        '--triggers',
+        db_name,
+    ]
+
+    logger.info('backup_database: starting mysqldump for database %s on %s', db_name, db_host)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        check=True,
+    )
+    sql_bytes = result.stdout
+    logger.info('backup_database: dump complete, %d bytes raw', len(sql_bytes))
+
+    # ── Compress ─────────────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode='wb') as gz:
+        gz.write(sql_bytes)
+    compressed = buf.getvalue()
+    logger.info('backup_database: compressed to %d bytes', len(compressed))
+
+    # ── Build S3 key ─────────────────────────────────────────────────────────
+    timestamp = datetime.now(dt_timezone.utc).strftime('%Y-%m-%d-%H%M%S')
+    key = f'backups/leafletter-{timestamp}.sql.gz'
+
+    # ── S3 client ─────────────────────────────────────────────────────────────
+    bucket = os.environ.get(
+        'BACKUP_S3_BUCKET',
+        os.environ.get('AWS_STORAGE_BUCKET_NAME', 'leafletter'),
+    )
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+        endpoint_url=os.environ.get('AWS_S3_ENDPOINT_URL') or None,
+        region_name=os.environ.get('AWS_S3_REGION_NAME') or None,
+    )
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    s3.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=compressed,
+        ContentType='application/gzip',
+    )
+    logger.info('backup_database: uploaded s3://%s/%s', bucket, key)
+
+    # ── Prune old backups ─────────────────────────────────────────────────────
+    pruned = _prune_old_backups(s3, bucket, retention_days=BACKUP_RETENTION_DAYS)
+
+    return {'key': key, 'pruned': pruned}
+
+
+def _prune_old_backups(s3_client, bucket: str, retention_days: int) -> int:
+    """
+    Delete objects under the backups/ prefix in *bucket* that are older than
+    *retention_days*.  Returns the number of objects deleted.
+    """
+    cutoff = datetime.now(dt_timezone.utc) - timedelta(days=retention_days)
+    paginator = s3_client.get_paginator('list_objects_v2')
+    to_delete = []
+    for page in paginator.paginate(Bucket=bucket, Prefix='backups/'):
+        for obj in page.get('Contents', []):
+            if obj['LastModified'] < cutoff:
+                to_delete.append({'Key': obj['Key']})
+
+    if not to_delete:
+        logger.info('backup_database: no old backups to prune (cutoff=%s)', cutoff.date())
+        return 0
+
+    # S3 delete_objects accepts up to 1000 keys per call
+    deleted = 0
+    for i in range(0, len(to_delete), 1000):
+        batch = to_delete[i:i + 1000]
+        s3_client.delete_objects(Bucket=bucket, Delete={'Objects': batch})
+        deleted += len(batch)
+
+    logger.info('backup_database: pruned %d old backup(s) (older than %s)', deleted, cutoff.date())
+    return deleted
+
+
+def _send_backup_failure_email(exc: Exception) -> None:
+    """
+    Email active superusers when the database backup fails.
+    Failures are logged but not re-raised.
+    """
+    User = get_user_model()
+    recipients = list(
+        User.objects.filter(is_superuser=True, is_active=True)
+        .exclude(email='')
+        .values_list('email', flat=True)
+    )
+    if not recipients:
+        logger.warning('backup_database: no superuser email addresses found; skipping failure notification')
+        return
+
+    subject = 'Leafletter: database backup failed'
+    message = '\n'.join([
+        'The scheduled database backup task failed with the following error:',
+        '',
+        f'  {type(exc).__name__}: {exc}',
+        '',
+        'Check the Celery worker logs for a full traceback.',
+        'No backup was uploaded for this run.',
+    ])
+
+    try:
+        send_mail(subject, message, from_email=None, recipient_list=recipients, fail_silently=False)
+    except Exception as mail_exc:
+        logger.error('backup_database: failed to send failure notification email: %s', mail_exc)
