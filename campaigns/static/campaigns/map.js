@@ -72,7 +72,9 @@
 
   // ── Spacebar panning (hold Space to temporarily pan while in selection mode)
   document.addEventListener('keydown', e => {
-    if (e.code === 'Space' && selectionMode && !spacebarPanning) {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (e.code === 'Space' && selectionMode && !spacebarPanning &&
+        tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
       e.preventDefault();
       spacebarPanning = true;
       if (lasso) lasso.disable();
