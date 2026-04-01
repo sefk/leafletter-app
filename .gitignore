@@ -29,8 +29,7 @@ android/local.properties
 # iOS
 **/*.xcuserstate
 
-# Claude
+# Development junk
 .claude/settings.local.json
-
-# Dev environment
+.tmp/
 media
