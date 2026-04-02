@@ -547,4 +547,41 @@
 })();
 </script>
 
+<script>
+(function () {
+  var formDirty = false;
+
+  // Mark dirty on any standard input/select/textarea change in the form
+  var form = document.getElementById('campaign-form');
+  form.addEventListener('input', function () { formDirty = true; });
+  form.addEventListener('change', function () { formDirty = true; });
+
+  // Mark dirty when Quill content changes — Quill instance is created after this script,
+  // so we poll for it briefly then hook into text-change.
+  var quillPollInterval = setInterval(function () {
+    var editorEl = document.querySelector('#quill-editor .ql-editor');
+    if (editorEl) {
+      clearInterval(quillPollInterval);
+      editorEl.addEventListener('input', function () { formDirty = true; });
+    }
+  }, 100);
+
+  // Clear dirty flag on form submit so the warning doesn't fire after a save
+  form.addEventListener('submit', function () { formDirty = false; });
+
+  // Cancel links should not trigger the warning
+  document.querySelectorAll('a.btn-secondary').forEach(function (a) {
+    a.addEventListener('click', function () { formDirty = false; });
+  });
+
+  window.addEventListener('beforeunload', function (e) {
+    if (formDirty) {
+      e.preventDefault();
+      // Most browsers show their own generic message; setting returnValue triggers the dialog.
+      e.returnValue = '';
+    }
+  });
+})();
+</script>
+
 {% endblock %}
