@@ -3226,3 +3226,152 @@ class BackupDatabaseTaskTest(TestCase):
         mock_run_backup.side_effect = RuntimeError('connection refused')
         with self.assertRaises(SystemExit):
             call_command('backup_database')
+
+
+# ── Password Reset Flow ────────────────────────────────────────────────────────
+
+class PasswordResetFlowTest(TestCase):
+    """Tests for the self-service password reset flow at /manage/password-reset/."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username='resetuser',
+            email='reset@example.com',
+            password='oldpassword123',
+        )
+
+    # ── Request form ──────────────────────────────────────────────────────────
+
+    def test_password_reset_page_loads(self):
+        resp = self.client.get('/manage/password-reset/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Reset Password')
+
+    def test_password_reset_page_has_email_field(self):
+        resp = self.client.get('/manage/password-reset/')
+        self.assertContains(resp, 'type="email"')
+
+    def test_password_reset_page_links_back_to_login(self):
+        resp = self.client.get('/manage/password-reset/')
+        self.assertContains(resp, '/manage/login/')
+
+    def test_login_page_has_forgot_password_link(self):
+        resp = self.client.get('/manage/login/')
+        self.assertContains(resp, '/manage/password-reset/')
+        self.assertContains(resp, 'Forgot')
+
+    # ── Email sending ─────────────────────────────────────────────────────────
+
+    def test_post_with_known_email_sends_email(self):
+        resp = self.client.post('/manage/password-reset/', {'email': 'reset@example.com'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('reset@example.com', mail.outbox[0].to)
+
+    def test_email_contains_reset_link(self):
+        self.client.post('/manage/password-reset/', {'email': 'reset@example.com'})
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        self.assertIn('/manage/password-reset/confirm/', body)
+
+    def test_post_with_unknown_email_sends_no_email(self):
+        """Django silently ignores unknown emails to prevent user enumeration."""
+        resp = self.client.post('/manage/password-reset/', {'email': 'nobody@example.com'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_post_with_known_email_redirects_to_done(self):
+        resp = self.client.post('/manage/password-reset/', {'email': 'reset@example.com'})
+        self.assertRedirects(resp, '/manage/password-reset/sent/', fetch_redirect_response=False)
+
+    # ── Done page ─────────────────────────────────────────────────────────────
+
+    def test_password_reset_done_page_loads(self):
+        resp = self.client.get('/manage/password-reset/sent/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Check Your Email')
+
+    def test_password_reset_done_page_links_back_to_login(self):
+        resp = self.client.get('/manage/password-reset/sent/')
+        self.assertContains(resp, '/manage/login/')
+
+    # ── Confirm / set new password ────────────────────────────────────────────
+
+    def _get_reset_url(self):
+        """Trigger an email and extract the confirm URL from it."""
+        self.client.post('/manage/password-reset/', {'email': 'reset@example.com'})
+        body = mail.outbox[0].body
+        # The URL looks like: http://testserver/manage/password-reset/confirm/<uidb64>/<token>/
+        import re
+        match = re.search(r'/manage/password-reset/confirm/[^/]+/[^/\s]+/', body)
+        self.assertIsNotNone(match, 'No confirm URL found in email body')
+        return match.group(0)
+
+    def test_confirm_page_loads_with_valid_link(self):
+        url = self._get_reset_url()
+        resp = self.client.get(url)
+        # Django 4.1+ uses a GET redirect to a session-stored token; follow it.
+        if resp.status_code == 302:
+            resp = self.client.get(resp['Location'])
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Set New Password')
+
+    def test_confirm_page_shows_error_for_invalid_token(self):
+        resp = self.client.get('/manage/password-reset/confirm/bad-uid/bad-token/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'invalid or has expired')
+
+    def test_setting_new_password_works(self):
+        url = self._get_reset_url()
+        # Follow the Django 4.1+ redirect that stores the token in session.
+        resp = self.client.get(url)
+        if resp.status_code == 302:
+            set_url = resp['Location']
+        else:
+            set_url = url
+        resp = self.client.post(set_url, {
+            'new_password1': 'newStrongPass99!',
+            'new_password2': 'newStrongPass99!',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('newStrongPass99!'))
+
+    def test_setting_new_password_redirects_to_complete(self):
+        url = self._get_reset_url()
+        resp = self.client.get(url)
+        if resp.status_code == 302:
+            set_url = resp['Location']
+        else:
+            set_url = url
+        resp = self.client.post(set_url, {
+            'new_password1': 'newStrongPass99!',
+            'new_password2': 'newStrongPass99!',
+        })
+        self.assertRedirects(resp, '/manage/password-reset/complete/', fetch_redirect_response=False)
+
+    def test_mismatched_passwords_show_error(self):
+        url = self._get_reset_url()
+        resp = self.client.get(url)
+        if resp.status_code == 302:
+            set_url = resp['Location']
+        else:
+            set_url = url
+        resp = self.client.post(set_url, {
+            'new_password1': 'newStrongPass99!',
+            'new_password2': 'different-password',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(self.user.check_password('newStrongPass99!'))
+
+    # ── Complete page ─────────────────────────────────────────────────────────
+
+    def test_password_reset_complete_page_loads(self):
+        resp = self.client.get('/manage/password-reset/complete/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Password Reset Complete')
+
+    def test_password_reset_complete_page_has_sign_in_link(self):
+        resp = self.client.get('/manage/password-reset/complete/')
+        self.assertContains(resp, '/manage/login/')
