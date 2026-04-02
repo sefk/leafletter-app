@@ -186,6 +186,17 @@
     return;
   }
 
+  // ── Restore coverage-mode from URL param ─────────────────────────────────
+  // Do this before loading streets so applyCoverageMode() picks up the right value.
+  (function initCoverageMode() {
+    const stored = new URLSearchParams(location.search).get('view');
+    if (stored === 'detail' || stored === 'summary' || stored === 'hidden') {
+      coverageMode = stored;
+      const sel = document.getElementById('coverage-mode');
+      if (sel) sel.value = coverageMode;
+    }
+  })();
+
   setLoadingStatus('Loading streets… 0%');
 
   // ── Load streets ─────────────────────────────────────────────────────────
@@ -649,8 +660,13 @@
     updateUndoButton();
   });
 
+  // ── Coverage-mode select: persist choice in URL param ────────────────────
   document.getElementById('coverage-mode').addEventListener('change', function () {
     coverageMode = this.value;
+    // Push the new choice into the URL without adding a history entry
+    const params = new URLSearchParams(location.search);
+    params.set('view', coverageMode);
+    history.replaceState(null, '', '?' + params.toString());
     applyCoverageMode();
     const legendEl = document.getElementById('trip-legend');
     if (legendEl) legendEl.style.display = coverageMode === 'detail' && tripMeta.size > 0 ? 'block' : 'none';
