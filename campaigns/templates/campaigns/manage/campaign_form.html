@@ -40,6 +40,13 @@
         {{ form.slug.label }}
       </label>
       {{ form.slug }}
+      <div style="font-size:0.8rem; color:#777; margin-top:4px;">
+        The slug is the short identifier used in the public URL for this campaign
+        (e.g. <code>/c/your-slug/</code>).
+        {% if action == 'Create' %}
+        <strong style="color:#b45309;">This cannot be changed later</strong>, so make sure you're happy with it before saving.
+        {% endif %}
+      </div>
       {% if form.slug.help_text %}
         <div style="font-size:0.8rem; color:#777; margin-top:4px;">{{ form.slug.help_text }}</div>
       {% endif %}
