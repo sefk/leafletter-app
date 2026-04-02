@@ -64,12 +64,17 @@ def about(request):
 
 
 def campaign_detail(request, slug):
-    campaign = get_object_or_404(Campaign, slug=slug, status='published')
+    campaign = get_object_or_404(Campaign, slug=slug)
+    if campaign.status == 'deleted':
+        from django.http import Http404
+        raise Http404
     geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
+    is_preview = (campaign.status != 'published')
     return render(request, 'campaigns/campaign_detail.html', {
         'campaign': campaign,
         'bbox_json': json.dumps(campaign.bbox),
         'geo_limit_json': geo_limit_json,
+        'is_preview': is_preview,
     })
 
 

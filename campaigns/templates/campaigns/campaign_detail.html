@@ -194,6 +194,59 @@
     }
     .trip-legend-label { color: #333; }
     .trip-legend-meta { color: #888; font-size: 0.8rem; margin-left: 2px; }
+
+    /* Preview banner (signed-in managers viewing unpublished campaign) */
+    .preview-banner {
+      background: #c62828;
+      color: #fff;
+      text-align: center;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .preview-banner a { color: #ffcdd2; }
+    .preview-banner a:hover { color: #fff; }
+
+    /* Modal overlay (signed-out visitors on unpublished campaign) */
+    .unpublished-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 9000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .unpublished-modal {
+      background: #fff;
+      border-radius: 10px;
+      padding: 32px 28px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+    .unpublished-modal h2 {
+      font-size: 1.3rem;
+      color: #333;
+      margin-bottom: 12px;
+    }
+    .unpublished-modal p {
+      font-size: 0.95rem;
+      color: #555;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    .unpublished-modal .contact {
+      font-size: 0.9rem;
+      color: #444;
+      background: #f5f5f5;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-top: 14px;
+    }
   </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-STEDJ3HETF"></script>
@@ -205,6 +258,30 @@
   </script>
 </head>
 <body>
+
+{% if is_preview %}
+  {% if user.is_authenticated %}
+    <!-- Signed-in manager: red preview banner -->
+    <div class="preview-banner">
+      Preview only — this campaign is not published yet. Visitors cannot see this page.
+      <a href="/manage/{{ campaign.slug }}/">Manage campaign</a>
+    </div>
+  {% else %}
+    <!-- Signed-out visitor: modal overlay -->
+    <div class="unpublished-modal-overlay" id="unpublished-modal">
+      <div class="unpublished-modal">
+        <h2>Not Published Yet</h2>
+        <p>This campaign hasn't been made public yet. Check back soon.</p>
+        {% if campaign.contact_info %}
+        <div class="contact">
+          For more information, contact: <strong>{{ campaign.contact_info }}</strong>
+        </div>
+        {% endif %}
+        <p style="margin-top:16px;"><a href="/" style="color:#1a6b3c;">Return to campaign list</a></p>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}
 
 <div class="header">
   <div class="header-text">

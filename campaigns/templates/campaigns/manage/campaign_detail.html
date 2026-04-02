@@ -36,14 +36,14 @@
           <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#1a6b3c; word-break:break-all;">{{ campaign_url }}</a>
         </div>
         <form method="post" action="/manage/{{ campaign.slug }}/unpublish/" style="display:inline-block; margin-left:8px;"
-              onsubmit="return confirm('Unpublish this campaign? The public URL will return a 404 until republished. All data is kept intact.');">
+              onsubmit="return confirm('Unpublish this campaign? Visitors will see a &quot;not published yet&quot; message instead of the map. All data is kept intact.');">
           {% csrf_token %}
           <button type="submit" class="btn btn-secondary">Unpublish</button>
         </form>
         {% else %}
         <div style="padding:8px 12px; background:#fce4ec; border:1px solid #f48fb1; border-radius:6px; display:inline-block;">
           <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#880e4f; word-break:break-all;">{{ campaign_url }}</a>
-          <div style="font-size:0.8rem; color:#880e4f; margin-top:4px;">Unpublished! Can be edited but not publicly visible yet.</div>
+          <div style="font-size:0.8rem; color:#880e4f; margin-top:4px;">Not published yet. The URL is accessible but visitors will see a "not published yet" message instead of the map.</div>
         </div>
         <form method="post" action="/manage/{{ campaign.slug }}/publish/" style="display:inline-block; margin-top:8px;">
           {% csrf_token %}

@@ -87,7 +87,7 @@
         <div style="padding:6px 10px; background:#fce4ec; border:1px solid #f48fb1; border-radius:6px; display:inline-block; font-size:0.82rem;">
           <a href="{% url 'campaigns:campaign_detail' campaign.slug %}" target="_blank"
              style="color:#880e4f; word-break:break-all;">{{ request.get_host }}/c/{{ campaign.slug }}/</a>
-          <div style="font-size:0.78rem; color:#880e4f; margin-top:2px;">Unpublished! Can be edited but not publicly visible yet.</div>
+          <div style="font-size:0.78rem; color:#880e4f; margin-top:2px;">Not published yet. Visitors see a "not published yet" message.</div>
         </div>
         {% endif %}
       </td>
