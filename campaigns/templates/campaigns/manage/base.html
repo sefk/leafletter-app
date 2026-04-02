@@ -88,6 +88,27 @@
     .stat-label { font-size: 0.8rem; color: #666; margin-top: 2px; }
 
     .action-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+
+    /* Hamburger menu (mobile only) */
+    .hamburger-btn {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      color: rgba(255,255,255,0.9);
+      flex-shrink: 0;
+    }
+    @media (max-width: 600px) {
+      .hamburger-btn { display: block; }
+      .navbar .nav-right { display: none; }
+      .navbar .nav-right.open { display: flex; flex-direction: column; position: absolute; top: 100%; right: 0; background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); min-width: 180px; z-index: 1000; gap: 0; }
+      .navbar .nav-right.open a,
+      .navbar .nav-right.open span,
+      .navbar .nav-right.open button { color: #222; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 0.95rem; width: 100%; text-align: left; }
+      .navbar .nav-right.open > *:last-child { border-bottom: none; }
+    }
+    .navbar { position: relative; }
   </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-STEDJ3HETF"></script>
@@ -102,14 +123,24 @@
 
 <nav class="navbar">
   <a href="/" style="display:flex;align-items:center;gap:8px"><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="36" height="36">Leafletter</a>
-  <div class="nav-right">
+  <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu" aria-expanded="false" aria-controls="nav-right">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+  <div class="nav-right" id="nav-right">
     {% if user.is_authenticated %}<span>{{ user.username }}</span>{% endif %}
     <a href="/manage/">List</a>
+    <a href="/about/">About</a>
     {% if user.is_authenticated %}
       <form method="post" action="/manage/logout/" style="display:inline">
         {% csrf_token %}
         <button type="submit" style="background:none;border:none;padding:0;color:#fff;font:inherit;cursor:pointer;font-weight:600;text-decoration:none;">Logout</button>
       </form>
+    {% else %}
+      <a href="/manage/login/">Login</a>
     {% endif %}
   </div>
 </nav>
@@ -126,5 +157,23 @@
   {% block content %}{% endblock %}
 </div>
 
+<script>
+  // Hamburger menu toggle (mobile only)
+  (function() {
+    var btn = document.getElementById('hamburger-btn');
+    var nav = document.getElementById('nav-right');
+    if (!btn || !nav) return;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var open = nav.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.addEventListener('click', function() {
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    nav.addEventListener('click', function(e) { e.stopPropagation(); });
+  })();
+</script>
 </body>
 </html>

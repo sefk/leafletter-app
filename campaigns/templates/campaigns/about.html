@@ -62,6 +62,53 @@
       margin-top: 32px;
     }
     .beta-banner a { color: #1a6b3c; }
+
+    /* Hamburger menu */
+    .header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .header-brand { flex: 1; }
+    .hamburger-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      color: #fff;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+    .hamburger-btn svg { display: block; }
+    .hamburger-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      min-width: 180px;
+      z-index: 1000;
+      overflow: hidden;
+    }
+    .hamburger-menu.open { display: block; }
+    .hamburger-menu a,
+    .hamburger-menu button {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      text-align: left;
+      text-decoration: none;
+      color: #222;
+      font-size: 0.95rem;
+      background: none;
+      border: none;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+    }
+    .hamburger-menu a:last-child,
+    .hamburger-menu button:last-child { border-bottom: none; }
+    .hamburger-menu a:hover,
+    .hamburger-menu button:hover { background: #f5f5f5; }
   </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-STEDJ3HETF"></script>
@@ -75,8 +122,31 @@
 <body>
 
 <div class="header">
-  <h1><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="44" height="44" style="vertical-align:middle;margin-right:8px;margin-bottom:2px">Leafletter</h1>
-  <p><a href="/">&#8592; Back to campaigns</a></p>
+  <div class="header-brand">
+    <h1><img src="{% static 'campaigns/leafletter-icon.png' %}" alt="" width="44" height="44" style="vertical-align:middle;margin-right:8px;margin-bottom:2px">Leafletter</h1>
+    <p><a href="/">&#8592; Back to campaigns</a></p>
+  </div>
+  <div style="position:relative;">
+    <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu" aria-expanded="false" aria-controls="hamburger-menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <nav class="hamburger-menu" id="hamburger-menu" role="menu">
+      <a href="/" role="menuitem">Home</a>
+      <a href="/manage/" role="menuitem">Manage campaigns</a>
+      {% if user.is_authenticated %}
+        <form method="post" action="/manage/logout/">
+          {% csrf_token %}
+          <button type="submit" role="menuitem">Logout ({{ user.username }})</button>
+        </form>
+      {% else %}
+        <a href="/manage/login/" role="menuitem">Login</a>
+      {% endif %}
+    </nav>
+  </div>
 </div>
 
 <div class="content">
@@ -204,5 +274,23 @@
   or <a href="https://sef.kloninger.com/">contact the owner</a>.
 </div>
 
+<script>
+  // Hamburger menu toggle
+  (function() {
+    var btn = document.getElementById('hamburger-btn');
+    var menu = document.getElementById('hamburger-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var open = menu.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.addEventListener('click', function() {
+      menu.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    menu.addEventListener('click', function(e) { e.stopPropagation(); });
+  })();
+</script>
 </body>
 </html>
