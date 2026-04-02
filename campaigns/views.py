@@ -347,6 +347,10 @@ def _resize_hero_image(uploaded_file, max_width=1920, max_height=1080):
 
     original_format = (img.format or '').upper()
 
+    # Apply EXIF orientation so the image displays correctly after re-encoding.
+    from PIL import ImageOps
+    img = ImageOps.exif_transpose(img) or img
+
     # Convert palette / RGBA modes that don't survive JPEG encoding.
     if img.mode not in ('RGB', 'RGBA', 'L'):
         img = img.convert('RGBA' if img.mode == 'PA' or 'A' in img.mode else 'RGB')
