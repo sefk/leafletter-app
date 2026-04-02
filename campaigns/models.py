@@ -88,20 +88,43 @@ class CampaignImage(models.Model):
 
 
 class Street(models.Model):
-    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='streets')
+    city_name = models.CharField(max_length=200, db_index=True)  # canonical city identifier
     osm_id = models.BigIntegerField()
     name = models.CharField(max_length=200, blank=True)
     geometry = models.LineStringField(srid=4326)
     block_index = models.PositiveSmallIntegerField(default=0)
-    city_index = models.IntegerField(null=True, blank=True)  # index in campaign.cities list
     start_node_id = models.BigIntegerField(null=True, blank=True)
     end_node_id = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
-        unique_together = ('campaign', 'osm_id', 'block_index')
+        unique_together = ('city_name', 'osm_id', 'block_index')
 
     def __str__(self):
         return f"{self.name or 'Unnamed'} ({self.osm_id} block {self.block_index})"
+
+
+class CampaignStreet(models.Model):
+    """Through table for the Campaign ↔ Street M2M, tracking per-campaign city_index."""
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='campaign_streets')
+    street = models.ForeignKey(Street, on_delete=models.CASCADE, related_name='campaign_streets')
+    city_index = models.IntegerField(null=True, blank=True)  # index in campaign.cities list
+
+    class Meta:
+        unique_together = ('campaign', 'street')
+        indexes = [
+            models.Index(fields=['campaign', 'city_index'], name='campaigns_campaignstreet_idx'),
+        ]
+
+    def __str__(self):
+        return f"Campaign {self.campaign_id} - Street {self.street_id} (city_index={self.city_index})"
+
+
+# Add the streets M2M to Campaign here, after CampaignStreet is defined,
+# so we can reference it directly without string indirection.
+Campaign.add_to_class(
+    'streets',
+    models.ManyToManyField(Street, through=CampaignStreet, related_name='campaigns'),
+)
 
 
 class CityFetchJob(models.Model):

@@ -3,7 +3,7 @@ from django.http import HttpResponseRedirect
 from django.utils.html import format_html
 from django.utils.text import slugify
 
-from .models import Campaign, CampaignImage, CityFetchJob, Street, Trip
+from .models import Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
 from .tasks import queue_city_fetches
 
 
@@ -148,10 +148,16 @@ class CityFetchJobAdmin(admin.ModelAdmin):
 
 @admin.register(Street)
 class StreetAdmin(admin.ModelAdmin):
-    list_display = ('name', 'osm_id', 'campaign')
-    list_filter = ('campaign',)
-    search_fields = ('name', 'osm_id')
-    raw_id_fields = ('campaign',)
+    list_display = ('name', 'osm_id', 'city_name')
+    list_filter = ('city_name',)
+    search_fields = ('name', 'osm_id', 'city_name')
+
+
+@admin.register(CampaignStreet)
+class CampaignStreetAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'street', 'city_index')
+    list_filter = ('campaign', 'city_index')
+    raw_id_fields = ('campaign', 'street')
 
 
 @admin.register(Trip)

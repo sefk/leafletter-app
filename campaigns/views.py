@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm, ImageUploadForm
-from .models import AddressPoint, Campaign, CampaignImage, CityFetchJob, Street, Trip
+from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
@@ -159,8 +159,8 @@ def log_trip(request, slug):
     if not segment_ids:
         return HttpResponseBadRequest('No segments selected')
 
-    # Validate segments belong to this campaign
-    streets = Street.objects.filter(campaign=campaign, pk__in=segment_ids)
+    # Validate segments belong to this campaign (via M2M through CampaignStreet)
+    streets = campaign.streets.filter(pk__in=segment_ids)
     if not streets.exists():
         return HttpResponseBadRequest('No valid segments found')
 
@@ -217,9 +217,10 @@ def _city_key(c):
 def _apply_city_list_changes(old_cities: list, campaign) -> None:
     """
     Reconcile city list changes without unnecessary refetches.
-    - Removed cities: delete their streets and fetch jobs
-    - Kept cities whose index shifted: renumber city_index on streets and jobs
-    - New cities: queue fetches only for those
+    - Removed cities: unlink their streets from the campaign (via M2M) and delete fetch jobs.
+      Street objects themselves are NOT deleted — they are shared across campaigns.
+    - Kept cities whose index shifted: renumber city_index on CampaignStreet and jobs.
+    - New cities: queue fetches only for those.
     """
     new_cities = campaign.cities
     old_key_to_idx = {_city_key(c): i for i, c in enumerate(old_cities)}
@@ -233,7 +234,8 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
 
     for key in removed_keys:
         old_idx = old_key_to_idx[key]
-        Street.objects.filter(campaign=campaign, city_index=old_idx).delete()
+        # Unlink streets from this campaign (do not delete Street objects).
+        CampaignStreet.objects.filter(campaign=campaign, city_index=old_idx).delete()
         AddressPoint.objects.filter(campaign=campaign, city_index=old_idx).delete()
         CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx).delete()
 
@@ -244,11 +246,11 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
     if moves:
         TEMP_OFFSET = 10000
         for old_idx, _ in moves:
-            Street.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
+            CampaignStreet.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
             AddressPoint.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
             CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx).update(city_index=old_idx + TEMP_OFFSET)
         for old_idx, new_idx in moves:
-            Street.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
+            CampaignStreet.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
             AddressPoint.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
             CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
 
@@ -275,7 +277,7 @@ def manage_campaign_list(request):
 
     # Bulk counts — each is a separate simple query to avoid JOIN row explosion on MySQL.
     street_counts = dict(
-        Street.objects.filter(campaign_id__in=campaign_pks)
+        CampaignStreet.objects.filter(campaign_id__in=campaign_pks)
         .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
     )
     trip_counts = dict(
@@ -294,8 +296,8 @@ def manage_campaign_list(request):
         c.trip_count = trip_counts.get(c.pk, 0)
         c.household_count = household_counts.get(c.pk, 0)
         if c.geo_limit:
-            c.size_street_count = Street.objects.filter(
-                campaign=c, geometry__intersects=c.geo_limit
+            c.size_street_count = c.streets.filter(
+                geometry__intersects=c.geo_limit
             ).count()
             c.size_household_count = AddressPoint.objects.filter(
                 campaign=c, location__within=c.geo_limit
@@ -363,7 +365,7 @@ def manage_campaign_detail(request, slug):
     all_trips = campaign.trips.prefetch_related('streets').all()
     city_fetch_jobs = list(campaign.city_fetch_jobs.all())
     blocks_per_city = dict(
-        campaign.streets.values('city_index').annotate(c=Count('id')).values_list('city_index', 'c')
+        campaign.campaign_streets.values('city_index').annotate(c=Count('id')).values_list('city_index', 'c')
     )
     for job in city_fetch_jobs:
         job.block_count = blocks_per_city.get(job.city_index, 0)
@@ -404,7 +406,7 @@ def manage_campaign_fetch_status(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
     city_fetch_jobs = list(campaign.city_fetch_jobs.all())
     blocks_per_city = dict(
-        campaign.streets.values('city_index').annotate(c=Count('id')).values_list('city_index', 'c')
+        campaign.campaign_streets.values('city_index').annotate(c=Count('id')).values_list('city_index', 'c')
     )
     jobs_data = []
     for job in city_fetch_jobs:
@@ -515,7 +517,8 @@ def manage_city_refetch(request, slug, city_index):
 @require_POST
 def manage_city_delete(request, slug, city_index):
     campaign = get_object_or_404(Campaign, slug=slug)
-    Street.objects.filter(campaign=campaign, city_index=city_index).delete()
+    # Unlink streets from this campaign (Street objects persist for re-use).
+    CampaignStreet.objects.filter(campaign=campaign, city_index=city_index).delete()
     AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
     CityFetchJob.objects.filter(campaign=campaign, city_index=city_index).update(status='pending', error='')
     update = {'streets_geojson': ''}

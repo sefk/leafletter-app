@@ -23,7 +23,7 @@ from django.test import Client, RequestFactory, TestCase
 from django.utils import timezone
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
-from .models import Campaign, CityFetchJob, Street, Trip
+from .models import Campaign, CampaignStreet, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
                     lookup_city, queue_city_fetches, query_overpass, query_overpass_addresses,
                     render_campaign_geojson,
@@ -54,14 +54,25 @@ def make_campaign(slug='test-campaign', status='published', **kwargs):
     return Campaign.objects.create(**defaults)
 
 
-def make_street(campaign, osm_id=1001, name='Main St', geometry=None, block_index=0):
-    return Street.objects.create(
-        campaign=campaign,
+def make_street(campaign, osm_id=1001, name='Main St', geometry=None, block_index=0,
+                city_name=None, city_index=None):
+    """
+    Create a Street and link it to the campaign via CampaignStreet.
+    city_name defaults to 'test-city-<campaign.slug>' if not provided.
+    """
+    if city_name is None:
+        city_name = f'test-city-{campaign.slug}'
+    street, _ = Street.objects.get_or_create(
+        city_name=city_name,
         osm_id=osm_id,
-        name=name,
-        geometry=geometry or GEOM,
         block_index=block_index,
+        defaults={'name': name, 'geometry': geometry or GEOM},
     )
+    CampaignStreet.objects.get_or_create(
+        campaign=campaign, street=street,
+        defaults={'city_index': city_index},
+    )
+    return street
 
 
 def make_trip(campaign, streets=None, worker_name='Alice'):
@@ -108,28 +119,29 @@ class StreetModelTest(TestCase):
         self.campaign = make_campaign()
 
     def test_str_with_name(self):
-        s = Street(campaign=self.campaign, osm_id=123, name='Oak Ave', geometry=GEOM)
+        s = Street(city_name='Springfield', osm_id=123, name='Oak Ave', geometry=GEOM)
         self.assertEqual(str(s), 'Oak Ave (123 block 0)')
 
     def test_str_without_name(self):
-        s = Street(campaign=self.campaign, osm_id=456, name='', geometry=GEOM)
+        s = Street(city_name='Springfield', osm_id=456, name='', geometry=GEOM)
         self.assertEqual(str(s), 'Unnamed (456 block 0)')
 
-    def test_unique_together_campaign_osm_id_block_index(self):
-        make_street(self.campaign, osm_id=999, block_index=0)
+    def test_unique_together_city_name_osm_id_block_index(self):
+        # Same city_name + osm_id + block_index must be unique
+        Street.objects.create(city_name='CityA', osm_id=999, block_index=0, geometry=GEOM)
         with self.assertRaises(IntegrityError):
-            make_street(self.campaign, osm_id=999, block_index=0)
+            Street.objects.create(city_name='CityA', osm_id=999, block_index=0, geometry=GEOM)
 
     def test_multiple_blocks_same_osm_id_allowed(self):
-        make_street(self.campaign, osm_id=999, block_index=0)
-        # Different block_index for same osm_id should not raise
-        make_street(self.campaign, osm_id=999, block_index=1, geometry=GEOM2)
+        # Different block_index for same city+osm_id should not raise
+        Street.objects.create(city_name='CityA', osm_id=999, block_index=0, geometry=GEOM)
+        Street.objects.create(city_name='CityA', osm_id=999, block_index=1, geometry=GEOM2)
 
-    def test_same_osm_id_allowed_across_campaigns(self):
-        other = make_campaign(slug='other-camp')
-        make_street(self.campaign, osm_id=777)
+    def test_same_osm_id_allowed_in_different_cities(self):
+        # Same osm_id in different city_name must be allowed
+        Street.objects.create(city_name='CityA', osm_id=777, block_index=0, geometry=GEOM)
         # Should not raise:
-        make_street(other, osm_id=777)
+        Street.objects.create(city_name='CityB', osm_id=777, block_index=0, geometry=GEOM)
 
 
 class TripModelTest(TestCase):
@@ -260,9 +272,9 @@ class ManageCampaignListAnnotationsTest(TestCase):
         self.client = Client()
         self.client.login(username='mgr', password='pw')
         self.campaign = make_campaign(slug='list-annot-camp')
-        self.s1 = Street.objects.create(campaign=self.campaign, osm_id=1, name='S1', geometry=GEOM, block_index=0, city_index=0)
-        self.s2 = Street.objects.create(campaign=self.campaign, osm_id=2, name='S2', geometry=GEOM, block_index=1, city_index=0)
-        self.s3 = Street.objects.create(campaign=self.campaign, osm_id=3, name='S3', geometry=GEOM, block_index=2, city_index=1)
+        self.s1 = make_street(self.campaign, osm_id=1, name='S1', city_index=0)
+        self.s2 = make_street(self.campaign, osm_id=2, name='S2', block_index=1, city_index=0)
+        self.s3 = make_street(self.campaign, osm_id=3, name='S3', block_index=2, city_index=1)
 
     def _get_campaign_from_response(self):
         resp = self.client.get('/manage/')
@@ -1625,7 +1637,7 @@ class FetchOSMBlockLimitTest(TestCase):
         # Add a block from a different city (city_index=1)
         self.campaign.cities = ['City A', 'City B']
         self.campaign.save(update_fields=['cities'])
-        Street.objects.create(campaign=self.campaign, osm_id=999, name='X St', geometry=GEOM, block_index=0, city_index=1)
+        make_street(self.campaign, osm_id=999, city_name='City B', city_index=1)
 
         self.mock_overpass.return_value = [
             {'osm_id': 1, 'name': 'A St', 'coords': [(-122.1, 37.4), (-122.2, 37.5)]},
@@ -1641,8 +1653,10 @@ class FetchOSMBlockLimitTest(TestCase):
         job = CityFetchJob.objects.get(campaign=self.campaign, city_index=0)
         self.assertEqual(job.status, 'error')
         self.assertIn('already has', job.error)
-        # No streets should have been created for city_index=0
-        self.assertEqual(self.campaign.streets.filter(city_index=0).count(), 0)
+        # No streets should have been linked for city_index=0
+        self.assertEqual(
+            CampaignStreet.objects.filter(campaign=self.campaign, city_index=0).count(), 0
+        )
 
     @patch('campaigns.tasks.MAX_CAMPAIGN_BLOCKS', 3)
     def test_refetch_does_not_double_count_existing_blocks(self):
@@ -1651,8 +1665,9 @@ class FetchOSMBlockLimitTest(TestCase):
         against the limit (they'll be replaced).
         """
         # Pre-populate 3 existing blocks for city_index=0
+        city_label = 'Palo Alto'  # matches self.campaign.cities[0] set in FetchCityOSMDataTest.setUp
         for i in range(3):
-            Street.objects.create(campaign=self.campaign, osm_id=100 + i, name='Old St', geometry=GEOM, block_index=i, city_index=0)
+            make_street(self.campaign, osm_id=100 + i, city_name=city_label, city_index=0, block_index=i)
 
         # Overpass returns 2 blocks — should succeed because the 3 existing
         # blocks for this city are excluded from the pre-check.
@@ -1864,12 +1879,11 @@ class ApplyCityListChangesTest(TestCase):
         return campaign
 
     def _make_street(self, campaign, osm_id, city_index):
-        return Street.objects.create(
-            campaign=campaign, osm_id=osm_id, name='St', geometry=GEOM,
-            block_index=0, city_index=city_index,
-        )
+        return make_street(campaign, osm_id=osm_id, city_index=city_index)
 
-    def test_removing_middle_city_deletes_its_streets(self):
+    def test_removing_middle_city_unlinks_its_streets(self):
+        """Removing a city unlinks streets from the campaign (M2M removed) but does
+        not delete the Street objects themselves — they persist for re-use."""
         cities = [_make_city('A', 1), _make_city('B', 2), _make_city('C', 3)]
         campaign = self._make_campaign_with_cities(cities)
         street_a = self._make_street(campaign, 101, 0)
@@ -1884,9 +1898,14 @@ class ApplyCityListChangesTest(TestCase):
         campaign.save()
         _apply_city_list_changes(cities, campaign)
 
+        # Street objects persist — only the M2M link is removed
         self.assertTrue(Street.objects.filter(pk=street_a.pk).exists())
-        self.assertFalse(Street.objects.filter(pk=street_b.pk).exists())
+        self.assertTrue(Street.objects.filter(pk=street_b.pk).exists())
         self.assertTrue(Street.objects.filter(pk=street_c.pk).exists())
+        # CampaignStreet for B (city_index=1) removed; A and C still linked
+        self.assertTrue(CampaignStreet.objects.filter(campaign=campaign, street=street_a).exists())
+        self.assertFalse(CampaignStreet.objects.filter(campaign=campaign, street=street_b).exists())
+        self.assertTrue(CampaignStreet.objects.filter(campaign=campaign, street=street_c).exists())
 
     def test_removing_middle_city_deletes_its_fetch_job(self):
         cities = [_make_city('A', 1), _make_city('B', 2), _make_city('C', 3)]
@@ -1918,10 +1937,10 @@ class ApplyCityListChangesTest(TestCase):
         _apply_city_list_changes(cities, campaign)
 
         # C moves from index 2 to index 1
-        self.assertTrue(Street.objects.filter(campaign=campaign, city_index=1, osm_id=103).exists())
+        self.assertTrue(CampaignStreet.objects.filter(campaign=campaign, city_index=1, street__osm_id=103).exists())
         self.assertTrue(CityFetchJob.objects.filter(campaign=campaign, city_index=1, city_name='C').exists())
         # Old index 2 should be gone
-        self.assertFalse(Street.objects.filter(campaign=campaign, city_index=2).exists())
+        self.assertFalse(CampaignStreet.objects.filter(campaign=campaign, city_index=2).exists())
 
     @patch('campaigns.views.queue_city_fetches')
     def test_removing_city_does_not_trigger_refetch(self, mock_queue):
@@ -1965,8 +1984,9 @@ class ApplyCityListChangesTest(TestCase):
         campaign.save()
         _apply_city_list_changes(cities, campaign)
 
-        # B's street should be deleted
-        self.assertFalse(Street.objects.filter(campaign=campaign, osm_id=102).exists())
+        # B's street should be unlinked from this campaign (but Street object persists)
+        self.assertFalse(CampaignStreet.objects.filter(campaign=campaign, street__osm_id=102).exists())
+        self.assertTrue(Street.objects.filter(osm_id=102).exists())
         # Only C (new index 1) should be queued
         mock_queue.assert_called_once_with(campaign.pk, city_indices=[1])
 
@@ -2074,14 +2094,7 @@ class FetchStatusEndpointTest(TestCase):
         )
         # Create 3 streets tagged to city_index=0.
         for i in range(3):
-            Street.objects.create(
-                campaign=self.campaign,
-                osm_id=1000 + i,
-                name=f'Street {i}',
-                geometry=GEOM,
-                block_index=i,
-                city_index=0,
-            )
+            make_street(self.campaign, osm_id=1000 + i, name=f'Street {i}', block_index=i, city_index=0)
         self._login()
         data = self.client.get(self._url()).json()
         self.assertEqual(data['total_blocks'], 3)

@@ -17,7 +17,7 @@ from django.core.mail import send_mail
 from django.db import connection
 from django.utils import timezone
 
-from .models import AddressPoint, Campaign, CityFetchJob, Street
+from .models import AddressPoint, Campaign, CampaignStreet, CityFetchJob, Street
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ def build_streets_geojson(campaign_id: int, bbox=None, geo_limit=None) -> str:
     Otherwise, if bbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]], filter by that rectangle.
     """
     from django.contrib.gis.geos import Polygon as GeosPoly
-    qs = Street.objects.filter(campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
+    qs = Street.objects.filter(campaign_streets__campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
     if geo_limit is not None:
         qs = qs.filter(geometry__intersects=geo_limit)
     elif bbox:
@@ -279,7 +279,7 @@ def _write_streets_geojson_chunked(campaign_id: int, geo_limit=None, chunk_size:
     """
     from django.contrib.gis.geos import Polygon as GeosPoly
 
-    qs = Street.objects.filter(campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
+    qs = Street.objects.filter(campaign_streets__campaign_id=campaign_id).only('pk', 'osm_id', 'name', 'geometry')
     if geo_limit is not None:
         qs = qs.filter(geometry__intersects=geo_limit)
 
@@ -391,7 +391,7 @@ def _sync_campaign_map_status(campaign_id: int) -> None:
         else:
             min_lon = min_lat = float('inf')
             max_lon = max_lat = float('-inf')
-            for street in Street.objects.filter(campaign_id=campaign_id).only('geometry'):
+            for street in Street.objects.filter(campaign_streets__campaign_id=campaign_id).only('geometry'):
                 xmin, ymin, xmax, ymax = street.geometry.extent
                 min_lon = min(min_lon, xmin)
                 min_lat = min(min_lat, ymin)
@@ -545,7 +545,11 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
         # Guard: check existing block total before importing this city.
         # We exclude blocks already associated with this city_index so that
         # a re-fetch doesn't double-count streets being replaced.
-        existing_blocks = Street.objects.filter(campaign=campaign).exclude(city_index=city_index).count()
+        existing_blocks = (
+            campaign.streets
+            .exclude(campaign_streets__city_index=city_index)
+            .count()
+        )
         if existing_blocks >= MAX_CAMPAIGN_BLOCKS:
             raise ValueError(
                 f'Campaign already has {existing_blocks:,} blocks (limit {MAX_CAMPAIGN_BLOCKS:,}); '
@@ -563,17 +567,23 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
                         f'"{city_label}". Import stopped at {existing_blocks + block_count:,} total blocks. '
                         f'Use a more specific city or draw a tighter geo boundary.'
                     )
-                Street.objects.update_or_create(
-                    campaign=campaign,
+                # Upsert the Street keyed by city_name + osm_id + block_index
+                street, _ = Street.objects.update_or_create(
+                    city_name=city_label,
                     osm_id=way['osm_id'],
                     block_index=block['block_index'],
                     defaults={
                         'name': way['name'],
                         'geometry': LineString(block['coords']),
-                        'city_index': city_index,
                         'start_node_id': block['start_node_id'],
                         'end_node_id': block['end_node_id'],
                     },
+                )
+                # Link street to this campaign (upsert; update city_index if it changed)
+                CampaignStreet.objects.update_or_create(
+                    campaign=campaign,
+                    street=street,
+                    defaults={'city_index': city_index},
                 )
                 block_count += 1
 
