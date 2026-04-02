@@ -232,6 +232,49 @@ def split_way_at_intersections(way: dict, intersection_nodes: set) -> list[dict]
     return segments or [{'coords': coords, 'start_node_id': node_ids[0], 'end_node_id': node_ids[-1], 'block_index': 0}]
 
 
+# ── Campaign size cache ────────────────────────────────────────────────────────
+
+def update_campaign_size_cache(campaign_id: int) -> None:
+    """
+    Recompute cached_size_street_count and cached_size_household_count for a
+    campaign and store them on the Campaign row.
+
+    These are the counts of streets/addresses within geo_limit (or all
+    streets/addresses when geo_limit is not set).  Computing them requires
+    spatial queries, so we cache the result on the model and refresh it
+    whenever streets or address points change, keeping the manage list page
+    fast (no per-campaign spatial work at render time).
+    """
+    try:
+        campaign = Campaign.objects.only('geo_limit').get(pk=campaign_id)
+    except Campaign.DoesNotExist:
+        logger.error('update_campaign_size_cache: campaign %s not found', campaign_id)
+        return
+
+    if campaign.geo_limit:
+        size_street_count = (
+            Street.objects
+            .filter(campaign_streets__campaign_id=campaign_id,
+                    geometry__intersects=campaign.geo_limit)
+            .count()
+        )
+        size_household_count = AddressPoint.objects.filter(
+            campaign_id=campaign_id, location__within=campaign.geo_limit,
+        ).count()
+    else:
+        size_street_count = CampaignStreet.objects.filter(campaign_id=campaign_id).count()
+        size_household_count = AddressPoint.objects.filter(campaign_id=campaign_id).count()
+
+    Campaign.objects.filter(pk=campaign_id).update(
+        cached_size_street_count=size_street_count,
+        cached_size_household_count=size_household_count,
+    )
+    logger.info(
+        'update_campaign_size_cache: campaign %s streets=%d households=%d',
+        campaign_id, size_street_count, size_household_count,
+    )
+
+
 # ── Per-city helpers ───────────────────────────────────────────────────────────
 
 def build_streets_geojson(campaign_id: int, bbox=None, geo_limit=None) -> str:
@@ -420,6 +463,7 @@ def render_campaign_geojson(self, campaign_id: int, final_status: str = 'ready')
         # paginated API endpoint in views.py (returns to client, no DB write).
         _write_streets_geojson_chunked(campaign_id, geo_limit=campaign.geo_limit)
         Campaign.objects.filter(pk=campaign_id).update(map_status=final_status)
+        update_campaign_size_cache(campaign_id)
         logger.info(
             'render_campaign_geojson: campaign %s rendered, final_status=%s',
             campaign_id, final_status,
@@ -480,6 +524,8 @@ def refresh_campaign_address_points(campaign_id: int) -> None:
                 'refresh_campaign_address_points: failed for %s (non-fatal): %s',
                 city_label, exc,
             )
+
+    update_campaign_size_cache(campaign_id)
 
 
 def queue_city_fetches(campaign_id: int, city_indices: list[int] | None = None) -> None:

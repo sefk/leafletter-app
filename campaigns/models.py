@@ -33,6 +33,11 @@ class Campaign(models.Model):
     bbox = models.JSONField(null=True, blank=True)  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
     geo_limit = models.PolygonField(srid=4326, null=True, blank=True)  # free-form campaign boundary
     is_test = models.BooleanField(default=False)
+    # Cached counts — recomputed whenever streets or address points change, so
+    # the manage list page never needs to run per-campaign spatial queries.
+    # NULL means "not yet computed"; 0 means "computed and genuinely zero".
+    cached_size_street_count = models.IntegerField(null=True, blank=True, default=None)
+    cached_size_household_count = models.IntegerField(null=True, blank=True, default=None)
     hero_image_url = models.URLField(blank=True, default='')  # optional campaign hero image (landscape/16:9 recommended)
     streets_geojson = models.TextField(blank=True, default='')  # pre-rendered GeoJSON FeatureCollection
     created_at = models.DateTimeField(auto_now_add=True)

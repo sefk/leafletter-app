@@ -14,7 +14,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm, ImageUploadForm
 from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
-from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, update_campaign_size_cache, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
 _login_required = login_required(login_url='/manage/login/')
 
@@ -295,22 +295,27 @@ def manage_campaign_list(request):
         .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
     )
 
-    # Campaign size = streets/households within the geo_limit boundary (or all if none set).
-    # One spatial query per campaign; there are few campaigns so this is acceptable.
+    # Annotate each campaign object with counts.  size_street_count and
+    # size_household_count normally come from pre-cached fields so no
+    # per-campaign spatial queries are needed (see cached_size_street_count /
+    # cached_size_household_count on Campaign, updated by update_campaign_size_cache).
+    #
+    # When a campaign has NULL cached counts (not yet populated — e.g. right
+    # after the migration that added the fields, or in tests that create streets
+    # without going through a task), we fall back to the live spatial query and
+    # also persist the result so the next request is fast.
+    campaigns_needing_cache = [c for c in campaigns if c.cached_size_street_count is None]
+    for c in campaigns_needing_cache:
+        update_campaign_size_cache(c.pk)
+        # Re-read the freshly written values.
+        c.refresh_from_db(fields=['cached_size_street_count', 'cached_size_household_count'])
+
     for c in campaigns:
         c.street_count = street_counts.get(c.pk, 0)
         c.trip_count = trip_counts.get(c.pk, 0)
         c.household_count = household_counts.get(c.pk, 0)
-        if c.geo_limit:
-            c.size_street_count = c.streets.filter(
-                geometry__intersects=c.geo_limit
-            ).count()
-            c.size_household_count = AddressPoint.objects.filter(
-                campaign=c, location__within=c.geo_limit
-            ).count()
-        else:
-            c.size_street_count = c.street_count
-            c.size_household_count = c.household_count
+        c.size_street_count = c.cached_size_street_count
+        c.size_household_count = c.cached_size_household_count
 
     inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering')]
     inflight.sort(key=lambda c: c.updated_at)
@@ -700,6 +705,9 @@ def manage_campaign_update_geo_limit(request, slug):
     Campaign.objects.filter(pk=campaign.pk).update(
         geo_limit=geo_limit, bbox=bbox, streets_geojson='', map_status='rendering',
     )
+    # Eagerly refresh the size cache so the manage list shows updated counts
+    # as soon as the geo_limit is saved, before the async renders complete.
+    update_campaign_size_cache(campaign.pk)
     render_campaign_geojson.delay(campaign.pk, final_status='ready')
     refresh_campaign_address_points.delay(campaign.pk)
     estimated_addresses = AddressPoint.objects.filter(
