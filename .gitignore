@@ -28,6 +28,7 @@ android/local.properties
 
 # iOS
 **/*.xcuserstate
+**/xcuserdata/
 
 # Development junk
 .claude/settings.local.json
