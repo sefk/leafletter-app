@@ -41,6 +41,10 @@ Every open issue should have:
 - At least one label
 - Milestone or backlog designation for substantial work
 
+## Board Audit History
+
+- **2026-04-01**: Full audit — 34 open issues, all present on board. All closed issues correctly marked Done. No corrections needed; board was fully in sync.
+
 ## Milestone Structure
 
 (To be documented as milestones are created/reviewed)
