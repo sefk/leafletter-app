@@ -15,10 +15,14 @@ enum Config {
         if let override = ProcessInfo.processInfo.environment["LEAFLETTER_BASE_URL"] {
             return override
         }
+        #if DEBUG
+        return "http://10.10.0.200:8000"
+        #else
         if let override = UserDefaults.standard.string(forKey: userOverrideKey) {
             return override
         }
-        return isDebuggerAttached ? "http://10.10.0.200:8000" : productionURL
+        return productionURL
+        #endif
     }
 
     static var isStaging: Bool {
