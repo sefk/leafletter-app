@@ -1941,6 +1941,58 @@ class CitySearchViewTest(TestCase):
         self.assertIn('error', resp.json())
 
 
+class CitiesPrefetchedViewTest(TestCase):
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='prefetchuser', password='pass123')
+
+    def _login(self):
+        self.client.login(username='prefetchuser', password='pass123')
+
+    def test_unauthenticated_redirects_to_login(self):
+        resp = self.client.get('/manage/cities/prefetched/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+
+    def _make_campaign_with_city(self, city_name, osm_id):
+        from datetime import date
+        return Campaign.objects.create(
+            name=city_name,
+            slug=f'test-{osm_id}',
+            cities=[{'name': city_name, 'osm_id': osm_id, 'osm_type': 'relation',
+                     'display_name': city_name}],
+            start_date=date.today(),
+        )
+
+    def test_returns_empty_when_no_streets(self):
+        self._login()
+        resp = self.client.get('/manage/cities/prefetched/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {'osm_ids': []})
+
+    def test_returns_osm_ids_for_cached_cities(self):
+        Street.objects.create(city_name='Springfield', osm_id=100, block_index=0, geometry=GEOM)
+        Street.objects.create(city_name='Springfield', osm_id=100, block_index=1, geometry=GEOM2)
+        self._make_campaign_with_city('Springfield', osm_id=555)
+        self._login()
+        resp = self.client.get('/manage/cities/prefetched/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('osm_ids', data)
+        self.assertIn(555, data['osm_ids'])
+
+    def test_does_not_badge_same_name_different_osm_id(self):
+        # Fresno CA is cached; Fresno TX (different osm_id) should NOT be in the set
+        Street.objects.create(city_name='Fresno', osm_id=1, block_index=0, geometry=GEOM)
+        self._make_campaign_with_city('Fresno', osm_id=111)  # Fresno CA
+        self._login()
+        resp = self.client.get('/manage/cities/prefetched/')
+        data = resp.json()
+        self.assertIn(111, data['osm_ids'])
+        self.assertNotIn(999, data['osm_ids'])  # Fresno TX osm_id — not cached
+
+
 # ── _apply_city_list_changes tests ───────────────────────────────────────────
 
 def _make_city(name, osm_id):

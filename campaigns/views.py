@@ -672,6 +672,21 @@ def manage_trip_edit(request, slug, trip_id):
 
 @_login_required
 @require_GET
+def cities_prefetched(request):
+    cached_names = set(Street.objects.values_list('city_name', flat=True).distinct())
+    osm_ids = set()
+    for campaign in Campaign.objects.only('cities'):
+        for city in campaign.cities:
+            if isinstance(city, dict):
+                name = city.get('name', '')
+                osm_id = city.get('osm_id')
+                if name in cached_names and osm_id:
+                    osm_ids.add(osm_id)
+    return JsonResponse({'osm_ids': list(osm_ids)})
+
+
+@_login_required
+@require_GET
 def city_search(request):
     q = request.GET.get('q', '').strip()
     if not q:

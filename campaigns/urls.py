@@ -18,6 +18,7 @@ manage_urlpatterns = [
     path('', views.manage_campaign_list, name='manage_campaign_list'),
     path('new/', views.manage_campaign_create, name='manage_campaign_create'),
     path('city-search/', views.city_search, name='city_search'),
+    path('cities/prefetched/', views.cities_prefetched, name='cities_prefetched'),
     path('<slug:slug>/', views.manage_campaign_detail, name='manage_campaign_detail'),
     path('<slug:slug>/edit/', views.manage_campaign_edit, name='manage_campaign_edit'),
     path('<slug:slug>/publish/', views.manage_campaign_publish, name='manage_campaign_publish'),
