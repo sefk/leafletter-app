@@ -27,6 +27,8 @@ class CampaignForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['slug'].required = False
+        if self.instance and self.instance.pk:
+            self.fields['slug'].disabled = True
         if self.instance and self.instance.pk and self.instance.cities:
             self.initial['cities_json'] = json.dumps(self.instance.cities)
 
