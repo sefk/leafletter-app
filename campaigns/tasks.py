@@ -536,60 +536,89 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
     logger.info("fetch_city_osm_data: starting city %s (index %d) for campaign %s", city_label, city_index, campaign_id)
 
     try:
-        if isinstance(city, str):
-            lookup_city(city)
-
-        ways = query_overpass(city)
-        intersection_nodes = find_intersection_nodes(ways)
-
-        # Guard: check existing block total before importing this city.
-        # We exclude blocks already associated with this city_index so that
-        # a re-fetch doesn't double-count streets being replaced.
-        existing_blocks = (
-            campaign.streets
-            .exclude(campaign_streets__city_index=city_index)
-            .count()
-        )
-        if existing_blocks >= MAX_CAMPAIGN_BLOCKS:
-            raise ValueError(
-                f'Campaign already has {existing_blocks:,} blocks (limit {MAX_CAMPAIGN_BLOCKS:,}); '
-                f'skipping city "{city_label}". Remove some cities to stay within the limit.'
+        # ── Fast path: streets already exist globally for this city ───────────
+        # Since streets are keyed globally by city_name (issue #128), a city
+        # fetched for any campaign is available to all campaigns.  Skip the
+        # Overpass fetch and just link the existing rows.
+        city_street_count = Street.objects.filter(city_name=city_label).count()
+        if city_street_count > 0:
+            existing_blocks = (
+                campaign.streets
+                .exclude(campaign_streets__city_index=city_index)
+                .count()
             )
+            if existing_blocks + city_street_count > MAX_CAMPAIGN_BLOCKS:
+                raise ValueError(
+                    f'Campaign already has {existing_blocks:,} blocks (limit {MAX_CAMPAIGN_BLOCKS:,}); '
+                    f'skipping city "{city_label}". Remove some cities to stay within the limit.'
+                )
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT IGNORE INTO campaigns_campaignstreet (campaign_id, street_id, city_index)
+                    SELECT %s, id, %s FROM campaigns_street WHERE city_name = %s
+                """, [campaign.pk, city_index, city_label])
+            logger.info(
+                "fetch_city_osm_data: city %s already in DB (%d blocks) — "
+                "linked to campaign %s without Overpass re-fetch",
+                city_label, city_street_count, campaign_id,
+            )
+            block_count = city_street_count
+        else:
+            # ── Full fetch path: hit Overpass and import streets ───────────────
+            if isinstance(city, str):
+                lookup_city(city)
 
-        block_count = 0
-        for way in ways:
-            for block in split_way_at_intersections(way, intersection_nodes):
-                if len(block['coords']) < 2:
-                    continue
-                if existing_blocks + block_count >= MAX_CAMPAIGN_BLOCKS:
-                    raise ValueError(
-                        f'Block limit of {MAX_CAMPAIGN_BLOCKS:,} reached while importing city '
-                        f'"{city_label}". Import stopped at {existing_blocks + block_count:,} total blocks. '
-                        f'Use a more specific city or draw a tighter geo boundary.'
+            ways = query_overpass(city)
+            intersection_nodes = find_intersection_nodes(ways)
+
+            # Guard: check existing block total before importing this city.
+            # We exclude blocks already associated with this city_index so that
+            # a re-fetch doesn't double-count streets being replaced.
+            existing_blocks = (
+                campaign.streets
+                .exclude(campaign_streets__city_index=city_index)
+                .count()
+            )
+            if existing_blocks >= MAX_CAMPAIGN_BLOCKS:
+                raise ValueError(
+                    f'Campaign already has {existing_blocks:,} blocks (limit {MAX_CAMPAIGN_BLOCKS:,}); '
+                    f'skipping city "{city_label}". Remove some cities to stay within the limit.'
+                )
+
+            block_count = 0
+            for way in ways:
+                for block in split_way_at_intersections(way, intersection_nodes):
+                    if len(block['coords']) < 2:
+                        continue
+                    if existing_blocks + block_count >= MAX_CAMPAIGN_BLOCKS:
+                        raise ValueError(
+                            f'Block limit of {MAX_CAMPAIGN_BLOCKS:,} reached while importing city '
+                            f'"{city_label}". Import stopped at {existing_blocks + block_count:,} total blocks. '
+                            f'Use a more specific city or draw a tighter geo boundary.'
+                        )
+                    # Upsert the Street keyed by city_name + osm_id + block_index
+                    street, _ = Street.objects.update_or_create(
+                        city_name=city_label,
+                        osm_id=way['osm_id'],
+                        block_index=block['block_index'],
+                        defaults={
+                            'name': way['name'],
+                            'geometry': LineString(block['coords']),
+                            'start_node_id': block['start_node_id'],
+                            'end_node_id': block['end_node_id'],
+                        },
                     )
-                # Upsert the Street keyed by city_name + osm_id + block_index
-                street, _ = Street.objects.update_or_create(
-                    city_name=city_label,
-                    osm_id=way['osm_id'],
-                    block_index=block['block_index'],
-                    defaults={
-                        'name': way['name'],
-                        'geometry': LineString(block['coords']),
-                        'start_node_id': block['start_node_id'],
-                        'end_node_id': block['end_node_id'],
-                    },
-                )
-                # Link street to this campaign (upsert; update city_index if it changed)
-                CampaignStreet.objects.update_or_create(
-                    campaign=campaign,
-                    street=street,
-                    defaults={'city_index': city_index},
-                )
-                block_count += 1
+                    # Link street to this campaign (upsert; update city_index if it changed)
+                    CampaignStreet.objects.update_or_create(
+                        campaign=campaign,
+                        street=street,
+                        defaults={'city_index': city_index},
+                    )
+                    block_count += 1
 
-        logger.info("fetch_city_osm_data: imported %d blocks for %s", block_count, city_label)
-        if block_count == 0:
-            raise ValueError(f'City "{city_label}" was found but no streets were imported')
+            logger.info("fetch_city_osm_data: imported %d blocks for %s", block_count, city_label)
+            if block_count == 0:
+                raise ValueError(f'City "{city_label}" was found but no streets were imported')
 
         # Fetch address points — best-effort, does not fail the city job if it errors.
         # If a geo_limit polygon is set, restrict the query to its bounding box to avoid

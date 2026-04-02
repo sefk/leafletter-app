@@ -1682,6 +1682,89 @@ class FetchOSMBlockLimitTest(TestCase):
         self.assertEqual(job.status, 'ready')
 
 
+# ── Task tests: reuse existing streets (issue #141) ──────────────────────────
+
+class FetchOSMReuseExistingStreetsTest(TestCase):
+    """
+    When streets for a city already exist globally, fetch_city_osm_data must
+    link them to the new campaign without hitting Overpass.
+    """
+
+    def setUp(self):
+        self.campaign_a = make_campaign(slug='city-reuse-a', cities=['Palo Alto'])
+        self.campaign_b = make_campaign(slug='city-reuse-b', cities=['Palo Alto'])
+        self.overpass_patcher = patch('campaigns.tasks.query_overpass')
+        self.mock_overpass = self.overpass_patcher.start()
+        self.addr_patcher = patch('campaigns.tasks.query_overpass_addresses', return_value=[])
+        self.addr_patcher.start()
+
+    def tearDown(self):
+        self.overpass_patcher.stop()
+        self.addr_patcher.stop()
+
+    def test_skips_overpass_when_streets_exist(self):
+        """Second campaign for the same city must not call query_overpass."""
+        # Pre-populate streets for 'Palo Alto' (as if campaign_a already fetched them)
+        for i in range(3):
+            make_street(self.campaign_a, osm_id=100 + i, city_name='Palo Alto', city_index=0, block_index=i)
+
+        fetch_city_osm_data(self.campaign_b.pk, 0)
+
+        self.mock_overpass.assert_not_called()
+
+    def test_links_existing_streets_to_new_campaign(self):
+        """All streets for the city must be linked to the new campaign."""
+        streets = [
+            make_street(self.campaign_a, osm_id=200 + i, city_name='Palo Alto', city_index=0, block_index=i)
+            for i in range(3)
+        ]
+
+        fetch_city_osm_data(self.campaign_b.pk, 0)
+
+        for street in streets:
+            self.assertTrue(
+                CampaignStreet.objects.filter(campaign=self.campaign_b, street=street).exists(),
+                f"Street {street.pk} not linked to campaign_b",
+            )
+
+    def test_job_marked_ready(self):
+        """CityFetchJob must be marked ready after the fast-path link."""
+        make_street(self.campaign_a, osm_id=300, city_name='Palo Alto', city_index=0)
+        CityFetchJob.objects.create(campaign=self.campaign_b, city_index=0, city_name='Palo Alto', status='pending')
+
+        fetch_city_osm_data(self.campaign_b.pk, 0)
+
+        job = CityFetchJob.objects.get(campaign=self.campaign_b, city_index=0)
+        self.assertEqual(job.status, 'ready')
+
+    def test_does_not_duplicate_existing_link(self):
+        """If the campaign already has a CampaignStreet for the city, no duplicate is created."""
+        street = make_street(self.campaign_a, osm_id=400, city_name='Palo Alto', city_index=0)
+        # Pre-link the street to campaign_b
+        CampaignStreet.objects.create(campaign=self.campaign_b, street=street, city_index=0)
+
+        fetch_city_osm_data(self.campaign_b.pk, 0)
+
+        self.assertEqual(
+            CampaignStreet.objects.filter(campaign=self.campaign_b, street=street).count(), 1
+        )
+
+    @patch('campaigns.tasks.MAX_CAMPAIGN_BLOCKS', 2)
+    def test_block_limit_respected_on_fast_path(self):
+        """Fast-path must still enforce the per-campaign block limit."""
+        # campaign_b already has 2 blocks from another city
+        other_street = make_street(self.campaign_b, osm_id=500, city_name='Other City', city_index=1)
+        make_street(self.campaign_b, osm_id=501, city_name='Other City', city_index=1, block_index=1)
+        # 'Palo Alto' has 1 street globally
+        make_street(self.campaign_a, osm_id=600, city_name='Palo Alto', city_index=0)
+
+        fetch_city_osm_data(self.campaign_b.pk, 0)
+
+        job = CityFetchJob.objects.get(campaign=self.campaign_b, city_index=0)
+        self.assertEqual(job.status, 'error')
+        self.assertIn('already has', job.error)
+
+
 # ── Task tests: retry on transient errors ─────────────────────────────────────
 
 class FetchOSMRetryTest(TestCase):
