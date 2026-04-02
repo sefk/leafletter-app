@@ -11,7 +11,9 @@ enum Config {
     // Adjust the dev URL to your machine's LAN IP if running on a real device.
     // A UserDefaults override (set via the secret 3-tap gesture on the About
     // page version footer) takes precedence over the default production URL.
-    static var baseURL: String {
+    // nonisolated(unsafe) so callers on non-main actors (e.g. APIClient) can
+    // read it directly. UserDefaults reads are internally thread-safe.
+    nonisolated(unsafe) static var baseURL: String {
         if let override = ProcessInfo.processInfo.environment["LEAFLETTER_BASE_URL"] {
             return override
         }

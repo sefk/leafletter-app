@@ -770,16 +770,14 @@ def manage_trip_edit(request, slug, trip_id):
 @_login_required
 @require_GET
 def cities_prefetched(request):
-    cached_names = set(Street.objects.values_list('city_name', flat=True).distinct())
-    osm_ids = set()
-    for campaign in Campaign.objects.only('cities'):
-        for city in campaign.cities:
-            if isinstance(city, dict):
-                name = city.get('name', '')
-                osm_id = city.get('osm_id')
-                if name in cached_names and osm_id:
-                    osm_ids.add(osm_id)
-    return JsonResponse({'osm_ids': list(osm_ids)})
+    """Return city names that already have streets downloaded (Street table, keyed by city_name).
+
+    Since streets are now decoupled from campaigns (issue #128), we query Street.city_name
+    directly rather than going through campaign city lists.  The frontend uses these names
+    to mark downloaded cities in both the search results and the selected-cities tag list.
+    """
+    city_names = list(Street.objects.values_list('city_name', flat=True).distinct())
+    return JsonResponse({'city_names': city_names})
 
 
 @_login_required

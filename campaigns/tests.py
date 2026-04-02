@@ -1957,6 +1957,14 @@ class CitySearchViewTest(TestCase):
 
 
 class CitiesPrefetchedViewTest(TestCase):
+    """
+    Tests for /manage/cities/prefetched/.
+
+    Since streets are now decoupled from campaigns (issue #128), the endpoint
+    returns city_names directly from the Street table rather than cross-referencing
+    campaign city lists.  The frontend uses these names to bold selected cities and
+    badge search results.
+    """
 
     def setUp(self):
         self.client = Client()
@@ -1970,42 +1978,40 @@ class CitiesPrefetchedViewTest(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/manage/login/', resp['Location'])
 
-    def _make_campaign_with_city(self, city_name, osm_id):
-        from datetime import date
-        return Campaign.objects.create(
-            name=city_name,
-            slug=f'test-{osm_id}',
-            cities=[{'name': city_name, 'osm_id': osm_id, 'osm_type': 'relation',
-                     'display_name': city_name}],
-            start_date=date.today(),
-        )
-
     def test_returns_empty_when_no_streets(self):
         self._login()
         resp = self.client.get('/manage/cities/prefetched/')
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {'osm_ids': []})
+        self.assertEqual(resp.json(), {'city_names': []})
 
-    def test_returns_osm_ids_for_cached_cities(self):
+    def test_returns_city_names_from_street_table(self):
+        # Two streets for the same city — should appear only once.
         Street.objects.create(city_name='Springfield', osm_id=100, block_index=0, geometry=GEOM)
         Street.objects.create(city_name='Springfield', osm_id=100, block_index=1, geometry=GEOM2)
-        self._make_campaign_with_city('Springfield', osm_id=555)
         self._login()
         resp = self.client.get('/manage/cities/prefetched/')
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertIn('osm_ids', data)
-        self.assertIn(555, data['osm_ids'])
+        self.assertIn('city_names', data)
+        self.assertIn('Springfield', data['city_names'])
+        self.assertEqual(data['city_names'].count('Springfield'), 1)  # deduplicated
 
-    def test_does_not_badge_same_name_different_osm_id(self):
-        # Fresno CA is cached; Fresno TX (different osm_id) should NOT be in the set
+    def test_returns_multiple_distinct_city_names(self):
         Street.objects.create(city_name='Fresno', osm_id=1, block_index=0, geometry=GEOM)
-        self._make_campaign_with_city('Fresno', osm_id=111)  # Fresno CA
+        Street.objects.create(city_name='Clovis', osm_id=2, block_index=0, geometry=GEOM2)
         self._login()
         resp = self.client.get('/manage/cities/prefetched/')
         data = resp.json()
-        self.assertIn(111, data['osm_ids'])
-        self.assertNotIn(999, data['osm_ids'])  # Fresno TX osm_id — not cached
+        self.assertIn('Fresno', data['city_names'])
+        self.assertIn('Clovis', data['city_names'])
+
+    def test_does_not_require_campaign_to_report_city(self):
+        # Streets exist for a city but no campaign references it — still returned.
+        Street.objects.create(city_name='Orphan City', osm_id=42, block_index=0, geometry=GEOM)
+        self._login()
+        resp = self.client.get('/manage/cities/prefetched/')
+        data = resp.json()
+        self.assertIn('Orphan City', data['city_names'])
 
 
 # ── _apply_city_list_changes tests ───────────────────────────────────────────

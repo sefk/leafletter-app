@@ -300,11 +300,17 @@
   var resultsDiv  = document.getElementById('city-results');
   var listEl      = document.getElementById('city-list');
 
-  var prefetchedOsmIds = new Set();
+  // Set of city_name strings already downloaded (Street table).
+  // Used to bold selected cities and badge search results.
+  var prefetchedNames = new Set();
   fetch('/manage/cities/prefetched/')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      if (data.osm_ids) { data.osm_ids.forEach(function (id) { prefetchedOsmIds.add(id); }); }
+      if (data.city_names) {
+        data.city_names.forEach(function (n) { prefetchedNames.add(n); });
+        // Re-render tags now that we know which are downloaded.
+        renderTags();
+      }
     })
     .catch(function () {});
 
@@ -315,6 +321,11 @@
       li.className = 'city-list-item';
       var name = document.createElement('span');
       name.textContent = city.display_name || city.name;
+      // Bold cities whose streets are already in the database.
+      if (prefetchedNames.has(city.name)) {
+        name.style.fontWeight = 'bold';
+        name.title = 'Streets already downloaded';
+      }
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.textContent = '\u00d7';
@@ -357,9 +368,9 @@
           var label = document.createElement('span');
           label.textContent = city.display_name || city.name;
           item.appendChild(label);
-          if (prefetchedOsmIds.has(city.osm_id)) {
+          if (prefetchedNames.has(city.name)) {
             var badge = document.createElement('span');
-            badge.textContent = '✓ cached';
+            badge.textContent = '✓ downloaded';
             badge.style.cssText = 'margin-left:8px; font-size:0.75rem; color:#1a6b3c; background:#e8f5e9; padding:1px 6px; border-radius:10px; white-space:nowrap;';
             item.appendChild(badge);
           }

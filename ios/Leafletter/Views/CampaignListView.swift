@@ -99,21 +99,28 @@ struct CampaignListView: View {
 private struct BannerView: View {
     let onAbout: () -> Void
 
+    // Build an AttributedString so we can style the "About this app" run
+    // differently without using the deprecated Text(+)Text concatenation.
+    private var bannerText: AttributedString {
+        var intro = AttributedString("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
+        intro.font = .footnote
+        intro.foregroundColor = .white.opacity(0.9)
+
+        var link = AttributedString("About this app")
+        link.font = .footnote.bold()
+        link.foregroundColor = .white
+        link.underlineStyle = .single
+
+        return intro + link
+    }
+
     var body: some View {
-        Group {
-            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.9))
-            + Text("About this app")
-                .font(.footnote.bold())
-                .foregroundStyle(.white)
-                .underline()
-        }
-        .onTapGesture { onAbout() }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+        Text(bannerText)
+            .onTapGesture { onAbout() }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(red: 0.10, green: 0.42, blue: 0.24))
     }
 }
 
