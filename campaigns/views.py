@@ -1,3 +1,4 @@
+import io
 import json
 from datetime import date
 
@@ -319,6 +320,84 @@ def manage_campaign_list(request):
     })
 
 
+def _resize_hero_image(uploaded_file, max_width=1920, max_height=1080):
+    """
+    Downscale uploaded_file so it fits within max_width x max_height while
+    preserving aspect ratio.  Images already within the limit are returned
+    as-is (no re-encoding).  Returns a Django InMemoryUploadedFile.
+
+    Output format:
+      - JPEG/JPG  → JPEG (quality 85)
+      - WebP      → WebP (quality 85)
+      - PNG       → PNG
+      - GIF       → PNG (first frame only; GIF animation is not preserved)
+    """
+    from PIL import Image
+    from django.core.files.uploadedfile import InMemoryUploadedFile
+
+    uploaded_file.seek(0)
+    try:
+        img = Image.open(uploaded_file)
+        img.load()
+    except Exception:
+        # If Pillow can't open it, return the original and let the DB store
+        # whatever the user provided.
+        uploaded_file.seek(0)
+        return uploaded_file
+
+    original_format = (img.format or '').upper()
+
+    # Convert palette / RGBA modes that don't survive JPEG encoding.
+    if img.mode not in ('RGB', 'RGBA', 'L'):
+        img = img.convert('RGBA' if img.mode == 'PA' or 'A' in img.mode else 'RGB')
+
+    # Decide output format and content-type.
+    ext_map = {'JPEG': ('jpeg', 'image/jpeg'), 'WEBP': ('webp', 'image/webp'), 'PNG': ('png', 'image/png')}
+    out_format, content_type = ext_map.get(original_format, ('jpeg', 'image/jpeg'))
+
+    # JPEG does not support transparency — flatten onto white background.
+    if out_format == 'jpeg' and img.mode in ('RGBA', 'LA'):
+        background = Image.new('RGB', img.size, (255, 255, 255))
+        background.paste(img, mask=img.split()[-1])
+        img = background
+    elif out_format == 'jpeg' and img.mode != 'RGB':
+        img = img.convert('RGB')
+
+    w, h = img.size
+    if w <= max_width and h <= max_height:
+        # Already fits; still re-encode to strip EXIF / reduce weight.
+        needs_resize = False
+    else:
+        needs_resize = True
+        ratio = min(max_width / w, max_height / h)
+        new_w = max(1, int(w * ratio))
+        new_h = max(1, int(h * ratio))
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    save_kwargs = {}
+    if out_format == 'jpeg':
+        save_kwargs = {'quality': 85, 'optimize': True}
+    elif out_format == 'webp':
+        save_kwargs = {'quality': 85}
+    img.save(buf, format=out_format.upper(), **save_kwargs)
+    buf.seek(0)
+
+    # Build a new filename with the correct extension.
+    import os
+    base = os.path.splitext(uploaded_file.name)[0]
+    new_name = f'{base}.{ext_map[out_format.upper()][0]}' if out_format.upper() in ext_map else uploaded_file.name
+
+    return InMemoryUploadedFile(
+        buf,
+        field_name='image',
+        name=new_name,
+        content_type=content_type,
+        size=buf.getbuffer().nbytes,
+        charset=None,
+    )
+
+
 def _save_campaign_image(image_form, campaign, user):
     """Create or replace CampaignImage from a validated ImageUploadForm."""
     if campaign.hero_image_url:
@@ -331,11 +410,12 @@ def _save_campaign_image(image_form, campaign, user):
     except CampaignImage.DoesNotExist:
         pass
     uploaded_file = image_form.cleaned_data['image']
+    resized_file = _resize_hero_image(uploaded_file)
     CampaignImage.objects.create(
         campaign=campaign,
-        image=uploaded_file,
+        image=resized_file,
         original_filename=uploaded_file.name,
-        content_type=uploaded_file.content_type or '',
+        content_type=resized_file.content_type or '',
         uploaded_by=user,
     )
 

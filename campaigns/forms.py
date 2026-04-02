@@ -82,10 +82,8 @@ class ImageUploadForm(forms.Form):
             raise forms.ValidationError(
                 f'Unsupported file type ".{ext}". Allowed: {", ".join(ALLOWED_IMAGE_EXTENSIONS)}.'
             )
-        if f.size > 2 * 1024 * 1024:
+        if f.size > 20 * 1024 * 1024:
             raise forms.ValidationError(
-                'Image exceeds the 2 MB size limit. Please resize and try again. '
-                'If you need support for larger images, please add an upvote comment to issue #98 at '
-                'https://github.com/sefk/leafletter-app/issues/98'
+                'Image exceeds the 20 MB size limit. Please use a smaller source file.'
             )
         return f

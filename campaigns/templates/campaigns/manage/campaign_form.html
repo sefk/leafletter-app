@@ -169,7 +169,7 @@
         <div id="upload-form-area">
           <label style="display:block; font-size:0.82rem; color:#666; margin-bottom:6px;">
             Upload a JPEG, PNG, GIF, or WebP image. Landscape orientation (16:9 or wider) recommended.
-            Maximum file size: 2 MB.
+            Images are automatically resized to fit within 1920&times;1080. Maximum file size: 20 MB.
           </label>
           <input type="file" id="hero-image-file" name="image" accept=".jpg,.jpeg,.png,.gif,.webp"
                  style="display:block; margin-bottom:10px;" onchange="previewHeroImage(this)">
@@ -506,10 +506,10 @@
     const previewImg = document.getElementById('upload-preview-img');
     if (!input.files.length) { previewDiv.style.display = 'none'; return; }
     const file = input.files[0];
-    if (file.size > 2 * 1024 * 1024) {
+    if (file.size > 20 * 1024 * 1024) {
       previewDiv.style.display = '';
       previewImg.style.display = 'none';
-      status.innerHTML = 'Image exceeds the 2 MB size limit. Please resize and try again. If you need support for larger images, please add an upvote comment to <a href="https://github.com/sefk/leafletter-app/issues/98">issue #98</a>.';
+      status.textContent = 'Image exceeds the 20 MB size limit. Please use a smaller source file.';
       return;
     }
     const reader = new FileReader();
@@ -517,7 +517,7 @@
       previewImg.src = e.target.result;
       previewImg.style.display = '';
       previewDiv.style.display = '';
-      status.textContent = 'Image will be uploaded when you save.';
+      status.textContent = 'Image will be resized and uploaded when you save.';
     };
     reader.readAsDataURL(file);
   };

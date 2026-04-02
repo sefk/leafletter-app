@@ -33,7 +33,7 @@ from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_n
                     MAX_CAMPAIGN_BLOCKS,
                     backup_database, _run_backup, _prune_old_backups)
 from .forms import ImageUploadForm
-from .views import _apply_city_list_changes
+from .views import _apply_city_list_changes, _resize_hero_image
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
 
@@ -2939,22 +2939,95 @@ class ImageUploadFormTest(TestCase):
         form = ImageUploadForm(data=self._valid_data(), files={'image': f})
         self.assertTrue(form.is_valid())
 
-    def test_rejects_image_over_2mb(self):
-        f = self._make_file('big.jpg', 3 * 1024 * 1024)
-        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
-        self.assertFalse(form.is_valid())
-        self.assertIn('2 MB', str(form.errors['image']))
-        self.assertIn('issue #98', str(form.errors['image']))
-
-    def test_rejects_exactly_1mb_plus_one(self):
-        f = self._make_file('edge.jpg', 2 * 1024 * 1024 + 1)
-        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
-        self.assertFalse(form.is_valid())
-
-    def test_accepts_exactly_1mb(self):
-        f = self._make_file('exact.jpg', 2 * 1024 * 1024)
+    def test_accepts_image_previously_over_old_2mb_limit(self):
+        """Images up to 20 MB are now accepted (server-side resize handles large uploads)."""
+        f = self._make_file('medium.jpg', 5 * 1024 * 1024)
         form = ImageUploadForm(data=self._valid_data(), files={'image': f})
         self.assertTrue(form.is_valid())
+
+    def test_rejects_image_over_20mb(self):
+        f = self._make_file('huge.jpg', 21 * 1024 * 1024)
+        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
+        self.assertFalse(form.is_valid())
+        self.assertIn('20 MB', str(form.errors['image']))
+
+    def test_accepts_exactly_20mb(self):
+        f = self._make_file('exact.jpg', 20 * 1024 * 1024)
+        form = ImageUploadForm(data=self._valid_data(), files={'image': f})
+        self.assertTrue(form.is_valid())
+
+
+# ── _resize_hero_image ─────────────────────────────────────────────────────────
+
+class ResizeHeroImageTest(TestCase):
+    """Tests for _resize_hero_image() in views.py."""
+
+    def _make_jpeg(self, width, height):
+        """Return an InMemoryUploadedFile containing a real JPEG of the given size."""
+        from PIL import Image
+        from django.core.files.uploadedfile import InMemoryUploadedFile
+        import io as _io
+        img = Image.new('RGB', (width, height), color=(100, 150, 200))
+        buf = _io.BytesIO()
+        img.save(buf, format='JPEG', quality=80)
+        buf.seek(0)
+        return InMemoryUploadedFile(buf, 'image', 'test.jpg', 'image/jpeg', buf.getbuffer().nbytes, None)
+
+    def _make_png_rgba(self, width, height):
+        from PIL import Image
+        from django.core.files.uploadedfile import InMemoryUploadedFile
+        import io as _io
+        img = Image.new('RGBA', (width, height), color=(100, 150, 200, 128))
+        buf = _io.BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        return InMemoryUploadedFile(buf, 'image', 'test.png', 'image/png', buf.getbuffer().nbytes, None)
+
+    def _open_result(self, result):
+        from PIL import Image
+        result.seek(0)
+        return Image.open(result)
+
+    def test_small_image_passes_through(self):
+        f = self._make_jpeg(800, 600)
+        result = _resize_hero_image(f)
+        img = self._open_result(result)
+        self.assertEqual(img.size, (800, 600))
+
+    def test_wide_image_is_resized_to_max_width(self):
+        f = self._make_jpeg(3840, 2160)
+        result = _resize_hero_image(f)
+        img = self._open_result(result)
+        self.assertLessEqual(img.width, 1920)
+        self.assertLessEqual(img.height, 1080)
+
+    def test_aspect_ratio_preserved(self):
+        # 4:3 image that is too wide
+        f = self._make_jpeg(2400, 1800)
+        result = _resize_hero_image(f)
+        img = self._open_result(result)
+        self.assertAlmostEqual(img.width / img.height, 4 / 3, delta=0.02)
+
+    def test_tall_image_bounded_by_height(self):
+        # Taller than max_height, not wider than max_width
+        f = self._make_jpeg(800, 2200)
+        result = _resize_hero_image(f)
+        img = self._open_result(result)
+        self.assertLessEqual(img.height, 1080)
+
+    def test_png_rgba_output_is_png(self):
+        f = self._make_png_rgba(100, 100)
+        result = _resize_hero_image(f)
+        result.seek(0)
+        from PIL import Image
+        img = Image.open(result)
+        self.assertEqual(img.format, 'PNG')
+
+    def test_returns_inmemory_file(self):
+        from django.core.files.uploadedfile import InMemoryUploadedFile
+        f = self._make_jpeg(3000, 2000)
+        result = _resize_hero_image(f)
+        self.assertIsInstance(result, InMemoryUploadedFile)
 
 
 # ── Database backup tests ──────────────────────────────────────────────────────
