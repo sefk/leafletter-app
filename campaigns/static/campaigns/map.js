@@ -6,6 +6,22 @@
   // ── Debug mode (append ?debug=1 to URL) ──────────────────────────────────
   const DEBUG_MODE = new URLSearchParams(location.search).get('debug') === '1';
 
+  // ── beforeunload guard (active while trip-logging mode is on) ────────────
+  function beforeUnloadHandler(e) {
+    e.preventDefault();
+    // Most browsers show their own generic message; returning a string is
+    // required by older spec but ignored by modern browsers.
+    e.returnValue = '';
+  }
+
+  function enableBeforeUnloadGuard() {
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+  }
+
+  function disableBeforeUnloadGuard() {
+    window.removeEventListener('beforeunload', beforeUnloadHandler);
+  }
+
   // ── State ────────────────────────────────────────────────────────────────
   const selectedIds = new Set();
   const selectionStack = [];        // undo stack: each entry is an id (click) or id[] (lasso batch)
@@ -463,6 +479,11 @@
 
   function setSelectionMode(active) {
     selectionMode = active;
+    if (active) {
+      enableBeforeUnloadGuard();
+    } else {
+      disableBeforeUnloadGuard();
+    }
     document.getElementById('btn-log-trip').style.display = active ? 'none' : '';
     document.getElementById('btn-done').style.display = active ? '' : 'none';
     document.getElementById('btn-cancel').style.display = active ? '' : 'none';
