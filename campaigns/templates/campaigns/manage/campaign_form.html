@@ -250,13 +250,16 @@
   <div id="city-results" style="display:none; border:1px solid #ccc; border-radius:4px; background:#fff; max-height:200px; overflow-y:auto;"></div>
 </div>
 
-<div style="display:flex; gap:10px; margin-top:16px;">
-  <button type="submit" form="campaign-form" class="btn btn-primary">Save</button>
+<div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
+  <button type="submit" form="campaign-form" class="btn btn-primary" id="save-btn">Save</button>
   {% if campaign %}
     <a href="/manage/{{ campaign.slug }}/" class="btn btn-secondary">Cancel</a>
   {% else %}
     <a href="/manage/" class="btn btn-secondary">Cancel</a>
   {% endif %}
+  <span id="save-blocked-msg" style="display:none; font-size:0.82rem; color:#c62828; margin-left:4px;">
+    Please check both image attestation boxes before saving.
+  </span>
 </div>
 
 <style>
@@ -581,6 +584,29 @@
       e.returnValue = '';
     }
   });
+
+  // Disable Save when an image is attached but attestation checkboxes are unchecked
+  var fileInput = document.getElementById('hero-image-file');
+  var attestRights = document.getElementById('attest-rights');
+  var attestContent = document.getElementById('attest-content');
+  var saveBtn = document.getElementById('save-btn');
+  var saveMsg = document.getElementById('save-blocked-msg');
+
+  function updateSaveState() {
+    var hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+    var bothChecked = attestRights && attestContent && attestRights.checked && attestContent.checked;
+    var blocked = hasFile && !bothChecked;
+    saveBtn.disabled = blocked;
+    saveBtn.style.opacity = blocked ? '0.5' : '';
+    saveMsg.style.display = blocked ? 'inline' : 'none';
+  }
+
+  if (fileInput && attestRights && attestContent) {
+    fileInput.addEventListener('change', updateSaveState);
+    attestRights.addEventListener('change', updateSaveState);
+    attestContent.addEventListener('change', updateSaveState);
+    updateSaveState();
+  }
 })();
 </script>
 
