@@ -5,6 +5,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ campaign.name }} — Leafletter</title>
+  <meta property="og:title" content="{{ campaign.name }} — Leafletter">
+  <meta property="og:description" content="Track leaflet distribution for {{ campaign.name }}.">
+  <meta property="og:url" content="{{ request.build_absolute_uri }}">
+  <meta property="og:type" content="website">
+  {% if campaign.hero_image_effective_url %}<meta property="og:image" content="{{ campaign.hero_image_effective_url }}">{% endif %}
   <link rel="icon" href="{% static 'campaigns/leafletter-icon.png' %}" type="image/png">
 
   <!-- Leaflet CSS -->
