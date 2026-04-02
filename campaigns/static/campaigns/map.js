@@ -40,7 +40,7 @@
   // Per-trip coverage state
   const tripLayers = new Map();   // trip_id → Leaflet layer group
   const tripVisible = new Map();  // trip_id → boolean
-  const tripMeta = new Map();     // trip_id → {worker_name, recorded_at, color}
+  const tripMeta = new Map();     // trip_id → {recorded_at, color}
 
   // Style helpers
   const STYLE_DEFAULT = { color: '#888', weight: 2, opacity: 0.7 };
@@ -362,7 +362,6 @@
           const first = features[0].properties;
           const color = tripColorMap.get(tid);
           tripMeta.set(tid, {
-            worker_name: first.worker_name,
             recorded_at: first.recorded_at,
             color,
           });
@@ -412,7 +411,9 @@
       return;
     }
 
+    let tripNum = 0;
     tripMeta.forEach((meta, tid) => {
+      tripNum++;
       const item = document.createElement('label');
       item.className = 'trip-legend-item';
 
@@ -437,7 +438,7 @@
 
       const labelText = document.createElement('span');
       labelText.className = 'trip-legend-label';
-      labelText.textContent = meta.worker_name || 'Anonymous';
+      labelText.textContent = `Trip ${tripNum}`;
 
       const metaSpan = document.createElement('span');
       metaSpan.className = 'trip-legend-meta';

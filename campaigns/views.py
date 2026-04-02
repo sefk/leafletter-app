@@ -121,6 +121,9 @@ def campaign_coverage_geojson(request, slug):
     Return GeoJSON of all street segments covered, tagged with trip metadata.
     Each (trip, street) pair becomes a separate feature so the frontend can
     color-code and toggle trips individually.
+
+    Worker names and notes are intentionally omitted — they are confidential
+    and visible only to campaign managers via the manage interface.
     """
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
 
@@ -135,7 +138,6 @@ def campaign_coverage_geojson(request, slug):
                 'geometry': json.loads(street.geometry.geojson),
                 'properties': {
                     'trip_id': str(trip.pk),
-                    'worker_name': trip.worker_name,
                     'recorded_at': trip.recorded_at.isoformat(),
                     'street_name': street.name,
                     'osm_id': street.osm_id,
