@@ -404,16 +404,49 @@
     var btnCancel = document.getElementById('btn-cancel-bbox');
     var statusEl  = document.getElementById('bbox-status');
 
+    // ── Spacebar panning: hold Space to pan while draw tool is active ─────
+    var inEditMode = false;
+    var spacebarPanning = false;
+
+    function onBboxKeyDown(e) {
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (e.code === 'Space' && inEditMode && !spacebarPanning &&
+          tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+        e.preventDefault();
+        spacebarPanning = true;
+        map.dragging.enable();
+        map.getContainer().style.cursor = 'grab';
+      }
+    }
+
+    function onBboxKeyUp(e) {
+      if (e.code === 'Space' && spacebarPanning) {
+        spacebarPanning = false;
+        // Only re-disable dragging if the draw tool is still active
+        // (leaflet-draw disables dragging on its own when active).
+        // Calling disable here ensures parity if tool was deactivated mid-pan.
+        if (inEditMode) {
+          map.dragging.disable();
+          map.getContainer().style.cursor = '';
+        }
+      }
+    }
+
     function enterEditMode() {
+      inEditMode = true;
       btnEdit.style.display = 'none';
       btnSave.style.display = '';
       btnCancel.style.display = '';
       btnSave.disabled = true;
       map.addControl(drawControl);
-      statusEl.textContent = 'Click to add polygon vertices. Double-click to finish.';
+      statusEl.textContent = 'Click to add polygon vertices. Double-click to finish. Hold Space and drag to pan.';
+      document.addEventListener('keydown', onBboxKeyDown);
+      document.addEventListener('keyup', onBboxKeyUp);
     }
 
     function exitEditMode() {
+      inEditMode = false;
+      spacebarPanning = false;
       btnEdit.style.display = '';
       btnSave.style.display = 'none';
       btnCancel.style.display = 'none';
@@ -421,6 +454,8 @@
       drawnItems.clearLayers();
       newPolygon = null;
       statusEl.textContent = '';
+      document.removeEventListener('keydown', onBboxKeyDown);
+      document.removeEventListener('keyup', onBboxKeyUp);
     }
 
     btnEdit.addEventListener('click', enterEditMode);
