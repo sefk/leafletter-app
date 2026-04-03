@@ -409,10 +409,12 @@
     var spacebarPanning = false;
 
     function onBboxKeyDown(e) {
+      if (e.code !== 'Space' || !inEditMode) return;
       var tag = document.activeElement && document.activeElement.tagName;
-      if (e.code === 'Space' && inEditMode && !spacebarPanning &&
-          tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-        e.preventDefault();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!spacebarPanning) {
         spacebarPanning = true;
         map.dragging.enable();
         map.getContainer().style.cursor = 'grab';
@@ -420,15 +422,13 @@
     }
 
     function onBboxKeyUp(e) {
-      if (e.code === 'Space' && spacebarPanning) {
+      if (e.code !== 'Space' || !inEditMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (spacebarPanning) {
         spacebarPanning = false;
-        // Only re-disable dragging if the draw tool is still active
-        // (leaflet-draw disables dragging on its own when active).
-        // Calling disable here ensures parity if tool was deactivated mid-pan.
-        if (inEditMode) {
-          map.dragging.disable();
-          map.getContainer().style.cursor = '';
-        }
+        map.dragging.disable();
+        map.getContainer().style.cursor = '';
       }
     }
 
