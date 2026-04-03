@@ -3226,3 +3226,116 @@ class BackupDatabaseTaskTest(TestCase):
         mock_run_backup.side_effect = RuntimeError('connection refused')
         with self.assertRaises(SystemExit):
             call_command('backup_database')
+
+
+class UsernameOrEmailBackendTest(TestCase):
+    """Tests for the custom UsernameOrEmailBackend authentication backend."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='secret123',
+        )
+
+    # ── Direct backend tests ──────────────────────────────────────────────────
+
+    def test_authenticate_with_username(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='testuser', password='secret123')
+        self.assertIsNotNone(user)
+        self.assertEqual(user.pk, self.user.pk)
+
+    def test_authenticate_with_email(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='test@example.com', password='secret123')
+        self.assertIsNotNone(user)
+        self.assertEqual(user.pk, self.user.pk)
+
+    def test_authenticate_with_email_case_insensitive(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='TEST@EXAMPLE.COM', password='secret123')
+        self.assertIsNotNone(user)
+        self.assertEqual(user.pk, self.user.pk)
+
+    def test_authenticate_wrong_password_username(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='testuser', password='wrongpassword')
+        self.assertIsNone(user)
+
+    def test_authenticate_wrong_password_email(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='test@example.com', password='wrongpassword')
+        self.assertIsNone(user)
+
+    def test_authenticate_nonexistent_user(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='nobody', password='secret123')
+        self.assertIsNone(user)
+
+    def test_authenticate_inactive_user_rejected(self):
+        from campaigns.backends import UsernameOrEmailBackend
+        self.user.is_active = False
+        self.user.save()
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='testuser', password='secret123')
+        self.assertIsNone(user)
+
+    def test_authenticate_ambiguous_email_rejected(self):
+        """When two accounts share the same email, neither should be able to log in via email."""
+        from campaigns.backends import UsernameOrEmailBackend
+        User.objects.create_user(
+            username='otheruser',
+            email='test@example.com',
+            password='secret123',
+        )
+        backend = UsernameOrEmailBackend()
+        user = backend.authenticate(None, username='test@example.com', password='secret123')
+        self.assertIsNone(user)
+
+    # ── Login view integration tests ──────────────────────────────────────────
+
+    def test_login_view_with_username(self):
+        resp = self.client.post('/manage/login/', {
+            'username': 'testuser',
+            'password': 'secret123',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertNotIn('/manage/login/', resp['Location'])
+
+    def test_login_view_with_email(self):
+        resp = self.client.post('/manage/login/', {
+            'username': 'test@example.com',
+            'password': 'secret123',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertNotIn('/manage/login/', resp['Location'])
+
+    def test_login_view_with_email_case_insensitive(self):
+        resp = self.client.post('/manage/login/', {
+            'username': 'TEST@EXAMPLE.COM',
+            'password': 'secret123',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertNotIn('/manage/login/', resp['Location'])
+
+    def test_login_view_invalid_credentials_shows_error(self):
+        resp = self.client.post('/manage/login/', {
+            'username': 'testuser',
+            'password': 'wrongpassword',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Invalid username or password')
+
+    def test_login_template_label(self):
+        """Login page must show 'Username or email' label."""
+        resp = self.client.get('/manage/login/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Username or email')

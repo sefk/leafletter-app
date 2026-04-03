@@ -161,6 +161,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = '/manage/login/'
 
+AUTHENTICATION_BACKENDS = [
+    'campaigns.backends.UsernameOrEmailBackend',
+]
+
 # ── Email ──────────────────────────────────────────────────────────────────────
 # Watchdog notification emails are sent to all active superusers (queried at
 # runtime), so no ADMINS list is needed here.
