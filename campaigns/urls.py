@@ -1,3 +1,4 @@
+from django.contrib.auth import views as auth_views
 from django.urls import path
 from . import views
 
@@ -15,6 +16,22 @@ urlpatterns = [
 manage_urlpatterns = [
     path('login/', views.manage_login, name='manage_login'),
     path('logout/', views.manage_logout, name='manage_logout'),
+    path('password-reset/', auth_views.PasswordResetView.as_view(
+        template_name='campaigns/manage/password_reset.html',
+        email_template_name='campaigns/manage/password_reset_email.txt',
+        subject_template_name='campaigns/manage/password_reset_subject.txt',
+        success_url='/manage/password-reset/sent/',
+    ), name='password_reset'),
+    path('password-reset/sent/', auth_views.PasswordResetDoneView.as_view(
+        template_name='campaigns/manage/password_reset_done.html',
+    ), name='password_reset_done'),
+    path('password-reset/confirm/<uidb64>/<token>/', auth_views.PasswordResetConfirmView.as_view(
+        template_name='campaigns/manage/password_reset_confirm.html',
+        success_url='/manage/password-reset/complete/',
+    ), name='password_reset_confirm'),
+    path('password-reset/complete/', auth_views.PasswordResetCompleteView.as_view(
+        template_name='campaigns/manage/password_reset_complete.html',
+    ), name='password_reset_complete'),
     path('', views.manage_campaign_list, name='manage_campaign_list'),
     path('new/', views.manage_campaign_create, name='manage_campaign_create'),
     path('city-search/', views.city_search, name='city_search'),
