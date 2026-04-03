@@ -33,7 +33,7 @@ from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_n
                     MAX_CAMPAIGN_BLOCKS,
                     backup_database, _run_backup, _prune_old_backups)
 from .forms import ImageUploadForm
-from .views import _apply_city_list_changes, _resize_hero_image
+from .views import _apply_city_list_changes, _repair_missing_city_jobs, _resize_hero_image
 
 # ── Shared test geometry ──────────────────────────────────────────────────────
 
@@ -2177,6 +2177,80 @@ class ApplyCityListChangesTest(TestCase):
         _apply_city_list_changes(cities, campaign)
 
         self.assertEqual(CityFetchJob.objects.filter(campaign=campaign).count(), 2)
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_kept_city_with_missing_job_gets_queued(self, mock_queue):
+        """A 'kept' city whose CityFetchJob was lost should be re-queued."""
+        cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign = self._make_campaign_with_cities(cities)
+        # Only A has a fetch job; B's was lost
+        _make_fetch_job(campaign, 0, 'A')
+
+        _apply_city_list_changes(cities, campaign)
+
+        # B (index 1) should be queued even though the cities list didn't change
+        mock_queue.assert_called_once_with(campaign.pk, city_indices=[1])
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_remove_readd_city_gets_queued(self, mock_queue):
+        """Removing and re-adding a city in the same save should trigger a fetch."""
+        old_cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign = self._make_campaign_with_cities(old_cities)
+        _make_fetch_job(campaign, 0, 'A')
+        _make_fetch_job(campaign, 1, 'B')
+
+        # Remove B, then re-add it — B's fetch job was deleted by the removal step
+        new_cities = [_make_city('A', 1)]
+        campaign.cities = new_cities
+        campaign.save()
+        # Simulate what the removal step does
+        CityFetchJob.objects.filter(campaign=campaign, city_index=1).delete()
+
+        # Now re-add B
+        new_cities = [_make_city('A', 1), _make_city('B', 2)]
+        campaign.cities = new_cities
+        campaign.save()
+        _apply_city_list_changes(old_cities, campaign)
+
+        # B should be queued
+        mock_queue.assert_called_once_with(campaign.pk, city_indices=[1])
+
+
+class RepairMissingCityJobsTest(TestCase):
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_repairs_city_with_no_fetch_job(self, mock_queue):
+        cities = [_make_city('A', 1)]
+        campaign = Campaign.objects.create(
+            name='Test', slug='repair-test', cities=cities, map_status='pending',
+        )
+        # No CityFetchJob exists
+
+        _repair_missing_city_jobs(campaign)
+
+        mock_queue.assert_called_once_with(campaign.pk, city_indices=[0])
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_no_repair_when_all_jobs_exist(self, mock_queue):
+        cities = [_make_city('A', 1)]
+        campaign = Campaign.objects.create(
+            name='Test', slug='repair-ok', cities=cities, map_status='ready',
+        )
+        _make_fetch_job(campaign, 0, 'A')
+
+        _repair_missing_city_jobs(campaign)
+
+        mock_queue.assert_not_called()
+
+    @patch('campaigns.views.queue_city_fetches')
+    def test_no_repair_when_no_cities(self, mock_queue):
+        campaign = Campaign.objects.create(
+            name='Test', slug='repair-empty', cities=[], map_status='pending',
+        )
+
+        _repair_missing_city_jobs(campaign)
+
+        mock_queue.assert_not_called()
 
 
 # ── Fetch-status endpoint tests ───────────────────────────────────────────────

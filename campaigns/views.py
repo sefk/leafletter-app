@@ -262,9 +262,24 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
             AddressPoint.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
             CityFetchJob.objects.filter(campaign=campaign, city_index=old_idx + TEMP_OFFSET).update(city_index=new_idx)
 
-    if added_keys:
-        new_indices = sorted(new_key_to_idx[k] for k in added_keys)
-        queue_city_fetches(campaign.pk, city_indices=new_indices)
+    # Also detect "kept" cities that are missing a CityFetchJob (e.g. a city
+    # was removed and re-added in the same save, or the original fetch job was
+    # lost).  These need to be queued alongside genuinely new cities.
+    existing_job_indices = set(
+        CityFetchJob.objects.filter(campaign=campaign)
+        .values_list('city_index', flat=True)
+    )
+    orphaned_indices = [
+        new_key_to_idx[k] for k in kept_keys
+        if new_key_to_idx[k] not in existing_job_indices
+    ]
+
+    fetch_indices = sorted(
+        [new_key_to_idx[k] for k in added_keys] + orphaned_indices
+    )
+
+    if fetch_indices:
+        queue_city_fetches(campaign.pk, city_indices=fetch_indices)
     elif removed_keys:
         # Cities removed but none added; invalidate cached GeoJSON and sync status.
         Campaign.objects.filter(pk=campaign.pk).update(streets_geojson='')
@@ -272,6 +287,18 @@ def _apply_city_list_changes(old_cities: list, campaign) -> None:
             Campaign.objects.filter(pk=campaign.pk).update(map_status='pending', map_error='')
         else:
             _sync_campaign_map_status(campaign.pk)
+
+
+def _repair_missing_city_jobs(campaign) -> None:
+    """Queue fetches for cities that exist in the cities list but have no CityFetchJob."""
+    if not campaign.cities:
+        return
+    existing = set(
+        CityFetchJob.objects.filter(campaign=campaign).values_list('city_index', flat=True)
+    )
+    missing = [i for i in range(len(campaign.cities)) if i not in existing]
+    if missing:
+        queue_city_fetches(campaign.pk, city_indices=missing)
 
 
 # ── Manager UI views ──────────────────────────────────────────────────────────
@@ -538,6 +565,10 @@ def manage_campaign_edit(request, slug):
                 _save_campaign_image(image_form, updated, request.user)
             if updated.cities != old_cities:
                 _apply_city_list_changes(old_cities, updated)
+            else:
+                # Cities unchanged — but check for cities missing a fetch job
+                # (e.g. original creation task was lost, or job was cleaned up).
+                _repair_missing_city_jobs(updated)
             return redirect('manage_campaign_detail', slug=updated.slug)
     else:
         form = CampaignForm(instance=campaign)
