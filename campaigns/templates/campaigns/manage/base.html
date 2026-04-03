@@ -116,9 +116,10 @@
       overflow: hidden;
     }
     .navbar .nav-right.open a,
-    .navbar .nav-right.open span,
-    .navbar .nav-right.open button { color: #222; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 0.95rem; width: 100%; text-align: left; text-decoration: none; font-weight: 500; }
-    .navbar .nav-right.open > *:last-child { border-bottom: none; }
+    .navbar .nav-right.open button { color: #222; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 0.95rem; width: 100%; text-align: left; text-decoration: none; font-weight: 500; background: none; border: none; font: inherit; cursor: pointer; }
+    .navbar .nav-right.open form { display: contents; }
+    .navbar .nav-right.open > *:last-child,
+    .navbar .nav-right.open > *:last-child button { border-bottom: none; }
     .navbar .nav-right.open a:hover,
     .navbar .nav-right.open button:hover { background: #f5f5f5; }
     .navbar { position: relative; }
@@ -144,13 +145,12 @@
     </svg>
   </button>
   <div class="nav-right" id="nav-right">
-    {% if user.is_authenticated %}<span>{{ user.username }}</span>{% endif %}
-    <a href="/manage/">List</a>
+    <a href="/">Home</a>
     <a href="/about/">About</a>
     {% if user.is_authenticated %}
-      <form method="post" action="/manage/logout/" style="display:inline">
+      <form method="post" action="/manage/logout/">
         {% csrf_token %}
-        <button type="submit" style="background:none;border:none;padding:0;color:#fff;font:inherit;cursor:pointer;font-weight:600;text-decoration:none;">Logout</button>
+        <button type="submit">Logout ({{ user.username }})</button>
       </form>
     {% else %}
       <a href="/manage/login/">Login</a>
