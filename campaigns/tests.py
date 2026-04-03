@@ -414,6 +414,23 @@ class CoverageGeoJSONViewTest(TestCase):
         data = self.client.get('/c/cov-camp/coverage.geojson').json()
         self.assertEqual(data['features'], [])
 
+    def test_worker_name_not_in_public_coverage_geojson(self):
+        """worker_name must not be exposed in the public-facing coverage endpoint."""
+        make_trip(self.campaign, streets=[self.street1], worker_name='Alice')
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(len(data['features']), 1)
+        props = data['features'][0]['properties']
+        self.assertNotIn('worker_name', props)
+
+    def test_notes_not_in_public_coverage_geojson(self):
+        """notes must not be exposed in the public-facing coverage endpoint."""
+        trip = Trip.objects.create(campaign=self.campaign, notes='Secret observations')
+        trip.streets.set([self.street1])
+        data = self.client.get('/c/cov-camp/coverage.geojson').json()
+        self.assertEqual(len(data['features']), 1)
+        props = data['features'][0]['properties']
+        self.assertNotIn('notes', props)
+
 
 # ── View tests: log_trip ──────────────────────────────────────────────────────
 
