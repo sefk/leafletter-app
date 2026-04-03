@@ -300,14 +300,14 @@
   var resultsDiv  = document.getElementById('city-results');
   var listEl      = document.getElementById('city-list');
 
-  // Set of city_name strings already downloaded (Street table).
+  // Set of display_name strings for cities that already have streets downloaded.
   // Used to bold selected cities and badge search results.
-  var prefetchedNames = new Set();
+  var prefetchedDisplayNames = new Set();
   fetch('/manage/cities/prefetched/')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      if (data.city_names) {
-        data.city_names.forEach(function (n) { prefetchedNames.add(n); });
+      if (data.city_display_names) {
+        data.city_display_names.forEach(function (n) { prefetchedDisplayNames.add(n); });
         // Re-render tags now that we know which are downloaded.
         renderTags();
       }
@@ -322,7 +322,7 @@
       var name = document.createElement('span');
       name.textContent = city.display_name || city.name;
       // Bold cities whose streets are already in the database.
-      if (prefetchedNames.has(city.name)) {
+      if (prefetchedDisplayNames.has(city.display_name || city.name)) {
         name.style.fontWeight = 'bold';
         name.title = 'Streets already downloaded';
       }
@@ -368,7 +368,7 @@
           var label = document.createElement('span');
           label.textContent = city.display_name || city.name;
           item.appendChild(label);
-          if (prefetchedNames.has(city.name)) {
+          if (prefetchedDisplayNames.has(city.display_name || city.name)) {
             var badge = document.createElement('span');
             badge.textContent = '✓ downloaded';
             badge.style.cssText = 'margin-left:8px; font-size:0.75rem; color:#1a6b3c; background:#e8f5e9; padding:1px 6px; border-radius:10px; white-space:nowrap;';

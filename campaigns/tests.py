@@ -1977,10 +1977,10 @@ class CitiesPrefetchedViewTest(TestCase):
     """
     Tests for /manage/cities/prefetched/.
 
-    Since streets are now decoupled from campaigns (issue #128), the endpoint
-    returns city_names directly from the Street table rather than cross-referencing
-    campaign city lists.  The frontend uses these names to bold selected cities and
-    badge search results.
+    The endpoint returns display_name values from campaign cities JSON entries
+    whose CityFetchJob completed successfully.  Matching on display_name (not
+    just city_name) avoids false positives for cities that share the same short
+    name (e.g. "Atherton" in CA vs UK vs AU).
     """
 
     def setUp(self):
@@ -1990,45 +1990,50 @@ class CitiesPrefetchedViewTest(TestCase):
     def _login(self):
         self.client.login(username='prefetchuser', password='pass123')
 
+    def _make_campaign(self, cities_json):
+        from django.utils.text import slugify
+        import random
+        slug = slugify(f'test-{random.randint(1, 999999)}')
+        return Campaign.objects.create(name=slug, slug=slug, cities=cities_json)
+
     def test_unauthenticated_redirects_to_login(self):
         resp = self.client.get('/manage/cities/prefetched/')
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/manage/login/', resp['Location'])
 
-    def test_returns_empty_when_no_streets(self):
+    def test_returns_empty_when_no_campaigns(self):
         self._login()
         resp = self.client.get('/manage/cities/prefetched/')
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {'city_names': []})
+        self.assertEqual(resp.json(), {'city_display_names': []})
 
-    def test_returns_city_names_from_street_table(self):
-        # Two streets for the same city — should appear only once.
-        Street.objects.create(city_name='Springfield', osm_id=100, block_index=0, geometry=GEOM)
-        Street.objects.create(city_name='Springfield', osm_id=100, block_index=1, geometry=GEOM2)
-        self._login()
-        resp = self.client.get('/manage/cities/prefetched/')
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertIn('city_names', data)
-        self.assertIn('Springfield', data['city_names'])
-        self.assertEqual(data['city_names'].count('Springfield'), 1)  # deduplicated
-
-    def test_returns_multiple_distinct_city_names(self):
-        Street.objects.create(city_name='Fresno', osm_id=1, block_index=0, geometry=GEOM)
-        Street.objects.create(city_name='Clovis', osm_id=2, block_index=0, geometry=GEOM2)
+    def test_returns_display_name_for_ready_fetch_job(self):
+        cities = [{'name': 'Atherton', 'osm_id': 123, 'display_name': 'Atherton, San Mateo County, California, 94027, United States'}]
+        campaign = self._make_campaign(cities)
+        CityFetchJob.objects.create(campaign=campaign, city_index=0, city_name='Atherton', status='ready')
         self._login()
         resp = self.client.get('/manage/cities/prefetched/')
         data = resp.json()
-        self.assertIn('Fresno', data['city_names'])
-        self.assertIn('Clovis', data['city_names'])
+        self.assertIn('Atherton, San Mateo County, California, 94027, United States', data['city_display_names'])
 
-    def test_does_not_require_campaign_to_report_city(self):
-        # Streets exist for a city but no campaign references it — still returned.
-        Street.objects.create(city_name='Orphan City', osm_id=42, block_index=0, geometry=GEOM)
+    def test_does_not_return_pending_fetch_jobs(self):
+        cities = [{'name': 'Springfield', 'osm_id': 456, 'display_name': 'Springfield, IL, United States'}]
+        campaign = self._make_campaign(cities)
+        CityFetchJob.objects.create(campaign=campaign, city_index=0, city_name='Springfield', status='pending')
+        self._login()
+        resp = self.client.get('/manage/cities/prefetched/')
+        self.assertEqual(resp.json(), {'city_display_names': []})
+
+    def test_same_short_name_different_display_names(self):
+        """Two cities named 'Atherton' in different countries should not both match."""
+        cities = [{'name': 'Atherton', 'osm_id': 123, 'display_name': 'Atherton, California, US'}]
+        campaign = self._make_campaign(cities)
+        CityFetchJob.objects.create(campaign=campaign, city_index=0, city_name='Atherton', status='ready')
         self._login()
         resp = self.client.get('/manage/cities/prefetched/')
         data = resp.json()
-        self.assertIn('Orphan City', data['city_names'])
+        self.assertIn('Atherton, California, US', data['city_display_names'])
+        self.assertNotIn('Atherton, Queensland, Australia', data['city_display_names'])
 
 
 # ── _apply_city_list_changes tests ───────────────────────────────────────────

@@ -772,14 +772,29 @@ def manage_trip_edit(request, slug, trip_id):
 @_login_required
 @require_GET
 def cities_prefetched(request):
-    """Return city names that already have streets downloaded (Street table, keyed by city_name).
+    """Return display_names of cities that already have streets downloaded.
 
-    Since streets are now decoupled from campaigns (issue #128), we query Street.city_name
-    directly rather than going through campaign city lists.  The frontend uses these names
-    to mark downloaded cities in both the search results and the selected-cities tag list.
+    We collect display_name values from campaign cities JSON entries whose
+    corresponding CityFetchJob completed successfully.  Matching on
+    display_name (not just city_name) avoids false positives when multiple
+    cities share the same short name (e.g. "Atherton" in CA vs UK vs AU).
     """
-    city_names = list(Street.objects.values_list('city_name', flat=True).distinct())
-    return JsonResponse({'city_names': city_names})
+    downloaded = set()
+    for campaign in Campaign.objects.all():
+        cities_list = campaign.cities or []
+        ready_names = set(
+            CityFetchJob.objects.filter(campaign=campaign, status='ready')
+            .values_list('city_name', flat=True)
+        )
+        for city in cities_list:
+            if isinstance(city, dict):
+                name = city.get('name', '')
+                if name in ready_names:
+                    display = city.get('display_name', name)
+                    downloaded.add(display)
+            elif isinstance(city, str) and city in ready_names:
+                downloaded.add(city)
+    return JsonResponse({'city_display_names': sorted(downloaded)})
 
 
 @_login_required
