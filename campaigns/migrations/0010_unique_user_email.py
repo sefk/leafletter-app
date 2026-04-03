@@ -32,15 +32,12 @@ def create_index(apps, schema_editor):
         """)
 
     elif vendor in ('mysql', 'mariadb'):
-        # Convert any existing empty-string emails to NULL so the unique index
-        # can be created without conflicts.  Users with no email should be NULL.
-        schema_editor.execute("""
-            UPDATE auth_user SET email = NULL WHERE email = ''
-        """)
-        schema_editor.execute("""
-            CREATE UNIQUE INDEX leafletter_unique_user_email
-            ON auth_user (email)
-        """)
+        # MySQL doesn't support partial indexes and auth_user.email is NOT NULL
+        # (default ''), so we can't create a unique index that allows multiple
+        # empty-string rows.  Skip the DB constraint on MySQL — the application
+        # layer (UsernameOrEmailBackend) already handles duplicate emails
+        # gracefully by refusing ambiguous logins.
+        pass
 
     else:
         # PostgreSQL: partial, case-insensitive
@@ -58,7 +55,8 @@ def drop_index(apps, schema_editor):
         schema_editor.execute("DROP INDEX IF EXISTS leafletter_unique_user_email")
 
     elif vendor in ('mysql', 'mariadb'):
-        schema_editor.execute("DROP INDEX leafletter_unique_user_email ON auth_user")
+        # No index was created on MySQL — nothing to drop.
+        pass
 
     else:
         # PostgreSQL
