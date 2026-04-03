@@ -763,13 +763,15 @@ def watchdog_stuck_jobs() -> dict:
     cutoff = timezone.now() - timedelta(minutes=STUCK_JOB_THRESHOLD_MINUTES)
 
     # ── Part 1: stuck CityFetchJob records ────────────────────────────────────
+    # Catch both 'generating' (task started but never finished) and 'pending'
+    # (task was dispatched but never picked up by a worker).
     stuck_jobs = CityFetchJob.objects.filter(
-        status='generating',
+        status__in=('generating', 'pending'),
         updated_at__lt=cutoff,
     ).select_related('campaign')
 
     error_msg = (
-        f'Job stuck in generating status for more than '
+        f'Job stuck for more than '
         f'{STUCK_JOB_THRESHOLD_MINUTES} minutes; marked as error by watchdog'
     )
 

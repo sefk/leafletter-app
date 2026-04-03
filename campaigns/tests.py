@@ -2399,9 +2399,9 @@ class WatchdogStuckJobsTest(TestCase):
         self.assertIn('watchdog', job.error)
         self.assertTrue(len(job.error) > 0)
 
-    def test_non_generating_jobs_not_touched(self):
-        """Jobs in ready/error/pending should never be flagged."""
-        for idx, status in enumerate(['ready', 'error', 'pending']):
+    def test_non_active_jobs_not_touched(self):
+        """Jobs in ready/error should never be flagged."""
+        for idx, status in enumerate(['ready', 'error']):
             job = CityFetchJob.objects.create(
                 campaign=self.campaign,
                 city_index=idx,
@@ -2413,6 +2413,23 @@ class WatchdogStuckJobsTest(TestCase):
 
         result = watchdog_stuck_jobs()
         self.assertEqual(result['found'], 0)
+
+    def test_stuck_pending_job_detected(self):
+        """A job stuck in 'pending' (task never picked up) should be caught."""
+        job = CityFetchJob.objects.create(
+            campaign=self.campaign,
+            city_index=0,
+            city_name='Springfield',
+            status='pending',
+        )
+        old_time = timezone.now() - timedelta(minutes=STUCK_JOB_THRESHOLD_MINUTES + 10)
+        CityFetchJob.objects.filter(pk=job.pk).update(updated_at=old_time)
+
+        result = watchdog_stuck_jobs()
+        self.assertIn(job.pk, result['marked_error'])
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'error')
+        self.assertIn('watchdog', job.error)
 
     # ── Campaign map_status sync ──────────────────────────────────────────────
 
