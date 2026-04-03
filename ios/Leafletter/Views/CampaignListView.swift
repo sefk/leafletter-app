@@ -99,23 +99,21 @@ struct CampaignListView: View {
 private struct BannerView: View {
     let onAbout: () -> Void
 
-    // Build an AttributedString so we can style the "About this app" run
-    // differently without using the deprecated Text(+)Text concatenation.
-    private var bannerText: AttributedString {
-        var intro = AttributedString("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
-        intro.font = .footnote
-        intro.foregroundColor = .white.opacity(0.9)
+    private var bannerAttributedString: AttributedString {
+        var body = AttributedString("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
+        body.font = .footnote
+        body.foregroundColor = .white.opacity(0.9)
 
         var link = AttributedString("About this app")
-        link.font = .footnote.bold()
+        link.font = .init(.footnote.bold())
         link.foregroundColor = .white
         link.underlineStyle = .single
 
-        return intro + link
+        return body + link
     }
 
     var body: some View {
-        Text(bannerText)
+        Text(bannerAttributedString)
             .onTapGesture { onAbout() }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
