@@ -65,3 +65,12 @@ Minor:
 - Streets are pre-fetched OSM segments stored as PostGIS LineStrings
 - Coverage computed server-side per request (no caching in coverage endpoint)
 - Trip deletion is soft-delete (deleted=True flag)
+
+## Island-in-the-City Problem (Issue #136, reviewed 2026-04-02)
+- OSM unincorporated holes are common in US suburbs (CDPs, unincorporated neighborhoods inside city boundaries)
+- Current workaround (download county + draw polygon) is unusable for non-technical managers
+- Recommended approach: Option 4 as named-place search — let managers add CDPs/unincorporated areas by name (Nominatim/OSM admin boundary search), same UI pattern as city picker
+- Key UX principle: worker experience should be identical — just streets, no visible indication of how the boundary was sourced
+- Option 2 (auto-fill) is the ideal long-term goal but detection of "holes vs. normal gaps" is risky to get wrong
+- Options 1 (freeform) and 3 (placeholder blob) both break the street-level mental model workers rely on
+- map.js lasso handler only captures layers in layerToId — blank map areas produce nothing; Options 1/3 would require parallel data model

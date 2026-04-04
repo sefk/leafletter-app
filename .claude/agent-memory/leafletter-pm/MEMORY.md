@@ -44,6 +44,27 @@ Every open issue should have:
 ## Board Audit History
 
 - **2026-04-01**: Full audit — 34 open issues, all present on board. All closed issues correctly marked Done. No corrections needed; board was fully in sync.
+- **2026-04-01 (session 2)**: 10 issues in Ready state. Grouped into 2 waves for parallel dev agents. Wave 1: #129, #130, #132, #104 (manage form); #103, #101 (map.js); #65 (OG tags). Wave 2: #134 (views.py + campaign_detail), #126 (hamburger menu). #136 held for design review.
+
+## Codebase File Map (key files for agent assignment)
+
+- `campaigns/templates/campaigns/manage/campaign_form.html` — manage new/update form
+- `campaigns/templates/campaigns/manage/base.html` — manage base layout
+- `campaigns/templates/campaigns/campaign_detail.html` — public worker view
+- `campaigns/templates/campaigns/campaign_list.html` — public campaign list / home
+- `campaigns/templates/campaigns/about.html` — about page
+- `campaigns/static/campaigns/map.js` — all JS for map interaction (trip logging, worker view)
+- `campaigns/views.py` — all views including publish logic
+- `campaigns/forms.py` — Django forms for campaign management
+- `campaigns/models.py` — Campaign, Street, Trip, CityFetchJob models
+
+## Parallel Agent Rules (learned 2026-04-01)
+
+- `campaign_form.html` (manage) and `map.js` are high-collision files — only one agent at a time
+- `campaign_detail.html` is touched by many issues — sequence agents that touch it
+- manage form issues (label/text changes) are safe to batch into one agent
+- `views.py` changes (auth/publish logic) should be isolated from template-only agents
+- Issue #136 (island-in-city, labeled large) requires design approval before implementation
 
 ## Milestone Structure
 
