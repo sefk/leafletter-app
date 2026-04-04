@@ -171,13 +171,21 @@ AUTHENTICATION_BACKENDS = [
 
 # Email backend: defaults to Django's standard smtp backend so that Django's
 # test runner can substitute locmem (it only does so when the backend is smtp).
+# On Railway (and other PaaS that block outbound SMTP), set:
+#   EMAIL_BACKEND=sendgrid_backend.SendgridBackend
+#   SENDGRID_API_KEY=SG.xxx
 # In local dev you can set EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
-# in your .env to avoid needing a real mail server.
+# to avoid needing a real mail server.
 EMAIL_BACKEND = os.environ.get(
     'EMAIL_BACKEND',
     'django.core.mail.backends.smtp.EmailBackend',
 )
 
+# SendGrid Web API backend (used when EMAIL_BACKEND=sendgrid_backend.SendgridBackend)
+SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
+SENDGRID_SANDBOX_MODE_IN_DEBUG = False
+
+# SMTP settings (used when EMAIL_BACKEND is the default smtp backend)
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'

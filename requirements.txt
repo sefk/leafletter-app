@@ -14,3 +14,4 @@ whitenoise
 django-storages[s3]
 boto3
 Pillow
+django-sendgrid-v5
