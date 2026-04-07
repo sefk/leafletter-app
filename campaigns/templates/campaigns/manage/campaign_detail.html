@@ -150,10 +150,10 @@
   <div class="step-item">
     {% if step_states.publish == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
-    <span class="step-label">6 Publish</span>
+    <a href="#step-publish" class="step-label">6 Publish</a>
     {% else %}
     <span class="step-icon step-icon-available">&#9679;</span>
-    <span class="step-label">6 Publish</span>
+    <a href="#step-publish" class="step-label">6 Publish</a>
     {% endif %}
   </div>
 </aside>
@@ -1215,6 +1215,34 @@
   </script>
 </div>
 {% endif %}
+
+<!-- Publish / Unpublish -->
+<div class="card" id="step-publish">
+  <div class="card-title">Step 6: Publish</div>
+  {% if campaign.status == 'published' %}
+  <div style="margin-bottom:12px;">
+    <div style="padding:8px 12px; background:#f1f8e9; border:1px solid #c5e1a5; border-radius:6px; display:inline-block;">
+      <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#1a6b3c; word-break:break-all;">{{ campaign_url }}</a>
+    </div>
+  </div>
+  <form method="post" action="/manage/{{ campaign.slug }}/unpublish/"
+        onsubmit="return confirm('Unpublish this campaign? Visitors will see a &quot;not published yet&quot; message instead of the map. All data is kept intact.');">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-secondary">Unpublish</button>
+  </form>
+  {% else %}
+  <div style="margin-bottom:12px;">
+    <div style="padding:8px 12px; background:#fce4ec; border:1px solid #f48fb1; border-radius:6px; display:inline-block;">
+      <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#880e4f; word-break:break-all;">{{ campaign_url }}</a>
+      <div style="font-size:0.8rem; color:#880e4f; margin-top:4px;">Not published yet. The URL is accessible but visitors will see a "not published yet" message instead of the map.</div>
+    </div>
+  </div>
+  <form method="post" action="/manage/{{ campaign.slug }}/publish/">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">Publish Campaign</button>
+  </form>
+  {% endif %}
+</div>
 
 <div class="card">
   <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
