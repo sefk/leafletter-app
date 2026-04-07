@@ -377,12 +377,34 @@ def manage_campaign_list(request):
 
     inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering')]
     inflight.sort(key=lambda c: c.updated_at)
+
+    # Fetch deleted campaigns separately so users can restore them (issue #148).
+    if is_admin:
+        if owner_param == 'all':
+            deleted_qs = Campaign.objects.filter(status='deleted')
+        elif owner_param == 'none':
+            deleted_qs = Campaign.objects.filter(status='deleted', owner__isnull=True)
+        else:
+            try:
+                filter_user_id_del = int(owner_param)
+            except (ValueError, TypeError):
+                filter_user_id_del = request.user.pk
+            deleted_qs = Campaign.objects.filter(
+                status='deleted',
+            ).filter(Q(owner_id=filter_user_id_del) | Q(owner__isnull=True))
+    else:
+        deleted_qs = Campaign.objects.filter(status='deleted').filter(
+            Q(owner=request.user) | Q(owner__isnull=True)
+        )
+    deleted_campaigns = list(deleted_qs.order_by('-updated_at'))
+
     return render(request, 'campaigns/manage/campaign_list.html', {
         'campaigns': campaigns,
         'inflight': inflight,
         'is_admin': is_admin,
         'all_users': all_users,
         'owner_param': owner_param,
+        'deleted_campaigns': deleted_campaigns,
     })
 
 
@@ -761,6 +783,23 @@ def manage_campaign_delete(request, slug):
     campaign.status = 'deleted'
     campaign.save(update_fields=['status'])
     return redirect('manage_campaign_list')
+
+
+@_login_required
+@require_POST
+def manage_campaign_restore(request, slug):
+    """Restore a soft-deleted campaign back to draft status.
+
+    This intentionally does NOT call queue_city_fetches — all related data
+    (trips, streets, geo_limit, hero image, etc.) is preserved by the
+    soft-delete and needs no re-fetch on restore.
+    """
+    campaign = get_object_or_404(Campaign, slug=slug)
+    if campaign.status != 'deleted':
+        return redirect('manage_campaign_detail', slug=slug)
+    campaign.status = 'draft'
+    campaign.save(update_fields=['status'])
+    return redirect('manage_campaign_detail', slug=slug)
 
 
 @_login_required

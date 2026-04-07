@@ -116,4 +116,39 @@
 {% endif %}
 
 <p style="margin-top:24px; font-size:0.82rem; color:#555;">Because of how our map provider works, a "block" might actually be much smaller than what we normally consider a block. It might even be a driveway.</p>
+
+{% if deleted_campaigns %}
+<details style="margin-top:32px;">
+  <summary style="cursor:pointer; font-size:0.9rem; color:#888; font-weight:600; user-select:none;">
+    Deleted campaigns ({{ deleted_campaigns|length }})
+  </summary>
+  <table style="margin-top:10px; opacity:0.8;">
+    <thead>
+      <tr>
+        <th>Name</th>
+        {% if is_admin %}<th>Owner</th>{% endif %}
+        <th>Deleted</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for campaign in deleted_campaigns %}
+      <tr>
+        <td style="color:#888;">{{ campaign.name }}</td>
+        {% if is_admin %}<td style="font-size:0.85rem; color:#888;">{{ campaign.owner.username|default:"—" }}</td>{% endif %}
+        <td style="font-size:0.85rem; color:#888;">{{ campaign.updated_at|timesince }} ago</td>
+        <td>
+          <form method="post" action="/manage/{{ campaign.slug }}/restore/"
+                onsubmit="return confirm('Restore &quot;{{ campaign.name|escapejs }}&quot;? It will be returned to draft status.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;">Restore</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+
 {% endblock %}

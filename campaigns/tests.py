@@ -958,12 +958,13 @@ class CampaignAdminTest(TestCase):
         c.refresh_from_db()
         self.assertEqual(c.status, 'deleted')
 
-    def test_get_queryset_excludes_deleted_campaigns(self):
+    def test_get_queryset_includes_deleted_campaigns(self):
+        # Admin list shows deleted campaigns so admins can restore them (issue #148).
         active = make_campaign(slug='active-one')
         deleted = make_campaign(slug='deleted-one', status='deleted')
         pks = list(self.ma.get_queryset(self.request).values_list('pk', flat=True))
         self.assertIn(active.pk, pks)
-        self.assertNotIn(deleted.pk, pks)
+        self.assertIn(deleted.pk, pks)
 
     def test_readonly_fields_includes_slug_for_published(self):
         c = make_campaign(slug='pub-ro', status='published')
@@ -1108,6 +1109,27 @@ class CampaignAdminTest(TestCase):
         c2.refresh_from_db()
         self.assertEqual(c1.status, 'deleted')
         self.assertEqual(c2.status, 'deleted')
+
+    def test_restore_campaigns_action_restores_to_draft(self):
+        c = make_campaign(slug='to-restore', status='deleted')
+        self.ma.restore_campaigns(self.request, Campaign.objects.filter(pk=c.pk))
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'draft')
+
+    def test_restore_campaigns_action_ignores_non_deleted(self):
+        c = make_campaign(slug='already-active', status='published')
+        self.ma.restore_campaigns(self.request, Campaign.objects.filter(pk=c.pk))
+        c.refresh_from_db()
+        self.assertEqual(c.status, 'published')
+
+    @patch('campaigns.admin.queue_city_fetches')
+    def test_save_model_restore_from_deleted_does_not_queue_fetch(self, mock_task):
+        """Restoring a deleted campaign to draft/published should NOT re-queue street fetches."""
+        c = make_campaign(slug='restore-no-fetch', status='deleted')
+        c.status = 'published'
+        form = MagicMock()
+        self.ma.save_model(self.request, c, form, change=True)
+        mock_task.assert_not_called()
 
 
 # ── End-to-end: publish → import → worker flow ───────────────────────────────
@@ -1394,17 +1416,86 @@ class ManagerUITest(TestCase):
         self.campaign.refresh_from_db()
         self.assertEqual(self.campaign.status, 'deleted')
 
-    def test_deleted_campaign_not_in_list(self):
+    def test_deleted_campaign_shown_in_deleted_section(self):
+        # Deleted campaigns appear in the collapsible "Deleted campaigns" section
+        # so users can restore them (issue #148).
         self._login()
         self.client.post(f'/manage/{self.campaign.slug}/delete/')
         resp = self.client.get('/manage/')
-        self.assertNotContains(resp, self.campaign.name)
+        self.assertContains(resp, self.campaign.name)
 
     def test_delete_redirects_to_list(self):
         self._login()
         resp = self.client.post(f'/manage/{self.campaign.slug}/delete/')
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/manage/', resp['Location'])
+
+    # ── Restore ───────────────────────────────────────────────────────────────
+
+    def test_restore_sets_status_to_draft(self):
+        self.campaign.status = 'deleted'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'draft')
+
+    def test_restore_redirects_to_detail(self):
+        self.campaign.status = 'deleted'
+        self.campaign.save()
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(self.campaign.slug, resp['Location'])
+
+    def test_restore_preserves_trips(self):
+        """Restoring a campaign must not delete its trips (issue #148)."""
+        from campaigns.models import Trip
+        self.campaign.status = 'deleted'
+        self.campaign.save()
+        trip = Trip.objects.create(campaign=self.campaign, worker_name='Test Worker')
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.assertTrue(Trip.objects.filter(pk=trip.pk).exists())
+
+    def test_restore_preserves_geo_limit(self):
+        """Restoring a campaign must not clear its geo_limit (issue #148)."""
+        from django.contrib.gis.geos import Polygon
+        poly = Polygon(((0, 0), (0, 1), (1, 1), (1, 0), (0, 0)))
+        self.campaign.geo_limit = poly
+        self.campaign.status = 'deleted'
+        self.campaign.save()
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.campaign.refresh_from_db()
+        self.assertIsNotNone(self.campaign.geo_limit)
+
+    def test_restore_requires_post(self):
+        self.campaign.status = 'deleted'
+        self.campaign.save()
+        self._login()
+        resp = self.client.get(f'/manage/{self.campaign.slug}/restore/')
+        self.assertEqual(resp.status_code, 405)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'deleted')
+
+    def test_restore_of_non_deleted_campaign_redirects_to_detail(self):
+        """Calling restore on an active campaign is a no-op."""
+        self.campaign.status = 'draft'
+        self.campaign.save()
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.assertEqual(resp.status_code, 302)
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.status, 'draft')
+
+    def test_deleted_campaigns_shown_in_list(self):
+        """Deleted campaigns must appear in the list so users can restore them."""
+        self.campaign.status = 'deleted'
+        self.campaign.save()
+        self._login()
+        resp = self.client.get('/manage/')
+        self.assertContains(resp, self.campaign.name)
 
     # ── Re-fetch ──────────────────────────────────────────────────────────────
 
@@ -1461,11 +1552,13 @@ class ManagerUITest(TestCase):
         resp = self.client.get('/manage/')
         self.assertContains(resp, self.campaign.name)
 
-    def test_list_excludes_deleted_campaigns(self):
+    def test_list_shows_deleted_campaigns_in_deleted_section(self):
+        # Deleted campaigns are shown in the collapsed "Deleted campaigns" section
+        # so users can restore them (issue #148).
         self._login()
         make_campaign(slug='hidden-del', status='deleted', name='Hidden Deleted Camp')
         resp = self.client.get('/manage/')
-        self.assertNotContains(resp, 'Hidden Deleted Camp')
+        self.assertContains(resp, 'Hidden Deleted Camp')
 
 
 # ── Task tests: lookup_city ───────────────────────────────────────────────────

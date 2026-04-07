@@ -29,7 +29,7 @@ class CampaignAdmin(admin.ModelAdmin):
     list_display = ('name', 'slug', 'status', 'map_status_badge', 'start_date', 'end_date')
     list_filter = ('status', 'map_status')
     search_fields = ('name', 'slug')
-    actions = ['publish_campaigns', 'soft_delete_campaigns']
+    actions = ['publish_campaigns', 'soft_delete_campaigns', 'restore_campaigns']
     inlines = [TripInline]
 
     def get_prepopulated_fields(self, request, obj=None):
@@ -74,9 +74,14 @@ class CampaignAdmin(admin.ModelAdmin):
         if '_publish' not in request.POST:
             old = Campaign.objects.get(pk=obj.pk)
             super().save_model(request, obj, form, change)
+            restoring_from_deleted = old.status == 'deleted'
             transitioning_to_published = obj.status == 'published' and old.status != 'published'
             cities_changed = obj.status == 'published' and obj.cities != old.cities
-            if transitioning_to_published or cities_changed:
+            # Do not re-queue fetches when restoring from deleted: all related
+            # data (streets, trips, geo_limit, hero image) is preserved by the
+            # soft-delete and re-fetching would clear streets_geojson and reset
+            # CityFetchJob statuses unnecessarily (issue #148).
+            if not restoring_from_deleted and (transitioning_to_published or cities_changed):
                 obj.map_status = 'pending'
                 obj.save(update_fields=['map_status'])
                 queue_city_fetches(obj.pk)
@@ -117,6 +122,12 @@ class CampaignAdmin(admin.ModelAdmin):
     def soft_delete_campaigns(self, request, queryset):
         queryset.update(status='deleted')
         self.message_user(request, f"Soft-deleted {queryset.count()} campaign(s).")
+
+    @admin.action(description='Restore selected deleted campaigns to draft')
+    def restore_campaigns(self, request, queryset):
+        """Restore soft-deleted campaigns to draft without re-fetching streets (issue #148)."""
+        count = queryset.filter(status='deleted').update(status='draft')
+        self.message_user(request, f"Restored {count} campaign(s) to draft status.")
 
 
 
