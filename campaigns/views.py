@@ -583,6 +583,12 @@ def manage_campaign_detail(request, slug):
     estimated_addresses = campaign.estimated_addresses  # filtered by geo_limit if set
     estimated_addresses_sparse = 0 < estimated_addresses < ADDRESS_SPARSE_THRESHOLD
     address_fetch_too_large = streets_in_area > ADDRESS_FETCH_BLOCK_LIMIT
+    is_admin = request.user.is_superuser
+    if is_admin:
+        from django.contrib.auth import get_user_model
+        all_users = list(get_user_model().objects.order_by('username'))
+    else:
+        all_users = []
     return render(request, 'campaigns/manage/campaign_detail.html', {
         'campaign': campaign,
         'campaign_url': campaign_url,
@@ -597,6 +603,8 @@ def manage_campaign_detail(request, slug):
         'estimated_addresses_sparse': estimated_addresses_sparse,
         'address_fetch_too_large': address_fetch_too_large,
         'step_states': _get_step_states(campaign),
+        'is_admin': is_admin,
+        'all_users': all_users,
     })
 
 
@@ -677,8 +685,22 @@ def manage_save_basics(request, slug):
     campaign.contact_info = contact_info
     campaign.instructions = instructions
     campaign.is_test = is_test
-    campaign.save(update_fields=['name', 'start_date', 'end_date', 'contact_info',
-                                 'instructions', 'is_test'])
+    update_fields = ['name', 'start_date', 'end_date', 'contact_info', 'instructions', 'is_test']
+
+    if request.user.is_superuser:
+        owner_value = request.POST.get('owner', '').strip()
+        if owner_value == '':
+            campaign.owner = None
+            update_fields.append('owner')
+        else:
+            try:
+                from django.contrib.auth import get_user_model
+                campaign.owner = get_user_model().objects.get(pk=int(owner_value))
+                update_fields.append('owner')
+            except (ValueError, TypeError, get_user_model().DoesNotExist):
+                pass
+
+    campaign.save(update_fields=update_fields)
     return redirect('manage_campaign_detail', slug=slug)
 
 
