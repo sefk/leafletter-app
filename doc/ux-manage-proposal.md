@@ -354,7 +354,7 @@ These elements of the current implementation are working well and should be pres
 
 Given that the developer is working solo or in a small team, the following phased approach is recommended:
 
-### Phase 1: Progress track only (low implementation cost, high clarity gain)
+### Phase 1: Progress track only ✅ Done
 
 Add the step sidebar/header as a static presentational element — no interaction, no collapse. Just a vertical list of numbered steps with completion state icons derived from template context variables already available in the view. This alone addresses Problem 1 (workflow opacity) with perhaps a day of work.
 
@@ -374,13 +374,13 @@ def _get_step_states(campaign):
     return steps
 ```
 
-### Phase 2: Consolidate edit page into detail page
+### Phase 2: Consolidate edit page into detail page ✅ Done
 
 Move the basic metadata fields and city picker from `campaign_form.html` into inline sections on `campaign_detail.html`. This addresses Problem 3 (inconsistency) but requires creating new section-scoped save endpoints.
 
 The create flow (`/manage/new/`) can remain as a separate shorter form since the user must pick a slug before a detail page exists. After creation, redirect to the new single-page detail view.
 
-### Phase 3: Collapse/expand with `<details>`
+### Phase 3: Collapse/expand with `<details>` ❌ Attempted, abandoned
 
 Add the `<details>` collapse behavior to each step section. Use the `open` attribute server-side to match step state. This is additive and can be done incrementally.
 
