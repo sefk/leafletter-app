@@ -255,6 +255,14 @@
 
 <!-- Quill editor for Basics form -->
 <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
+<style>
+  /* Match Quill editor appearance to worker view styling */
+  #basics-quill-editor .ql-container {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+  }
+  #basics-quill-editor .ql-editor { color: #444; }
+</style>
 <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
 <script>
 (function () {
