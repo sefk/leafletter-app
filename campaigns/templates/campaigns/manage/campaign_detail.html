@@ -192,26 +192,6 @@
       </div>
     </div>
 
-    {# Owner #}
-    <div style="margin-bottom:16px;">
-      <label for="basics-owner" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
-        Owner
-      </label>
-      <div style="font-size:0.8rem; color:#777; margin-bottom:6px;">Only site admins can change ownership.</div>
-      {% if is_admin %}
-      <select id="basics-owner" name="owner"
-              style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
-        <option value=""{% if not campaign.owner %} selected{% endif %}>(unassigned)</option>
-        {% for u in all_users %}
-        <option value="{{ u.pk }}"{% if campaign.owner_id == u.pk %} selected{% endif %}>{{ u.username }}</option>
-        {% endfor %}
-      </select>
-      {% else %}
-      <input type="text" value="{{ campaign.owner.username|default:'(unassigned)' }}" disabled
-             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; background:#f5f5f5; color:#777;">
-      {% endif %}
-    </div>
-
     {# Instructions (Quill rich text) #}
     <div style="margin-bottom:16px;">
       <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
@@ -1255,18 +1235,78 @@
   {% endif %}
 </div>
 
-<div class="card">
+<div class="card" style="border-color:#f5c2c7;">
+  <div class="card-title" style="color:#c62828;">Danger Zone</div>
+
+  {# Owner #}
+  <div style="margin-bottom:20px; padding-bottom:20px; border-bottom:1px solid #f5c2c7;">
+    <div style="font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">Owner</div>
+    <div style="font-size:0.8rem; color:#777; margin-bottom:6px;">Only site admins can change ownership.</div>
+    {% if is_admin %}
+    <form method="post" action="{% url 'manage_save_basics' campaign.slug %}" style="display:flex; gap:10px; align-items:center;">
+      {% csrf_token %}
+      {# Hidden fields to pass through the other basics so the save handler doesn't blank them #}
+      <input type="hidden" name="name" value="{{ campaign.name|default:'' }}">
+      <input type="hidden" name="start_date" value="{{ campaign.start_date|date:'Y-m-d'|default:'' }}">
+      <input type="hidden" name="end_date" value="{{ campaign.end_date|date:'Y-m-d'|default:'' }}">
+      <input type="hidden" name="contact_info" value="{{ campaign.contact_info|default:'' }}">
+      <input type="hidden" name="instructions" value="{{ campaign.instructions|default:'' }}">
+      {% if campaign.is_test %}<input type="hidden" name="is_test" value="on">{% endif %}
+      <select name="owner"
+              style="padding:6px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+        <option value=""{% if not campaign.owner %} selected{% endif %}>(unassigned)</option>
+        {% for u in all_users %}
+        <option value="{{ u.pk }}"{% if campaign.owner_id == u.pk %} selected{% endif %}>{{ u.username }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-secondary">Save Owner</button>
+    </form>
+    {% else %}
+    <input type="text" value="{{ campaign.owner.username|default:'(unassigned)' }}" disabled
+           style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; background:#f5f5f5; color:#777;">
+    {% endif %}
+  </div>
+
+  {# Delete #}
   <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
     <form method="post" action="/manage/{{ campaign.slug }}/delete/"
           onsubmit="return confirm('Soft-delete this campaign?');">
       {% csrf_token %}
       <button type="submit" class="btn btn-danger">Delete Campaign</button>
     </form>
-    <span style="font-size:0.85rem; color:#c62828;">This cannot be undone.</span>
   </div>
 </div>
 
 </div>{# end .campaign-main #}
 </div>{# end .campaign-layout #}
+
+<script>
+(function () {
+  var formDirty = false;
+
+  var form = document.getElementById('basics-form');
+  form.addEventListener('input', function () { formDirty = true; });
+  form.addEventListener('change', function () { formDirty = true; });
+
+  // Quill is initialised asynchronously — poll until its editor element exists.
+  var quillPollInterval = setInterval(function () {
+    var editorEl = document.querySelector('#basics-quill-editor .ql-editor');
+    if (editorEl) {
+      clearInterval(quillPollInterval);
+      editorEl.addEventListener('input', function () { formDirty = true; });
+    }
+  }, 100);
+
+  // Clear flag when the basics form is submitted.
+  form.addEventListener('submit', function () { formDirty = false; });
+
+  window.addEventListener('beforeunload', function (e) {
+    if (formDirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+})();
+</script>
 
 {% endblock %}
