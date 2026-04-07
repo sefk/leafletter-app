@@ -118,9 +118,6 @@ class CampaignAdmin(admin.ModelAdmin):
         queryset.update(status='deleted')
         self.message_user(request, f"Soft-deleted {queryset.count()} campaign(s).")
 
-    def get_queryset(self, request):
-        # Show all non-deleted campaigns in the list
-        return super().get_queryset(request).exclude(status='deleted')
 
 
 @admin.register(CampaignImage)
