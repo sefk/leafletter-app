@@ -66,6 +66,14 @@ Every open issue should have:
 - `views.py` changes (auth/publish logic) should be isolated from template-only agents
 - Issue #136 (island-in-city, labeled large) requires design approval before implementation
 
+## Worktree Dev Pattern
+
+- Use `EnterWorktree` tool to create `.claude/worktrees/<name>/` on branch `worktree-<name>`
+- RemoteTrigger agent spawning requires unknown `session_request`/`job_config` schema — implement changes directly instead
+- Verify Python syntax with `python -m py_compile <file>` (no Django setup needed)
+- Leave changes unstaged/uncommitted; developer reviews via `git diff` in the worktree
+- See [worktree-pattern.md](worktree-pattern.md) for full details
+
 ## Milestone Structure
 
 (To be documented as milestones are created/reviewed)
