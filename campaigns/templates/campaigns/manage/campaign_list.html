@@ -1,13 +1,27 @@
 {% extends "campaigns/manage/base.html" %}
 {% load humanize %}
 
-{% block title %}Campaigns — Leafletter Manager{% endblock %}
+{% block title %}{% if is_admin %}Campaigns{% else %}My Campaigns{% endif %} — Leafletter Manager{% endblock %}
 
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-  <h1>Campaigns</h1>
+  <h1>{% if is_admin %}Campaigns{% else %}My Campaigns{% endif %}</h1>
   <a href="/manage/new/" class="btn btn-primary">+ New Campaign</a>
 </div>
+
+{% if is_admin %}
+<form method="get" style="margin-bottom:20px; display:flex; align-items:center; gap:10px;">
+  <label for="owner-filter" style="font-size:0.9rem; font-weight:600; color:#444;">Show campaigns for:</label>
+  <select id="owner-filter" name="owner" onchange="this.form.submit()"
+          style="padding:6px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    {% for u in all_users %}
+    <option value="{{ u.pk }}" {% if owner_param == u.pk|stringformat:"s" %}selected{% endif %}>{{ u.username }}</option>
+    {% endfor %}
+    <option value="none" {% if owner_param == 'none' %}selected{% endif %}>(unowned only)</option>
+    <option value="all" {% if owner_param == 'all' %}selected{% endif %}>(all campaigns)</option>
+  </select>
+</form>
+{% endif %}
 
 {% if inflight %}
 <div class="card" style="border-left:4px solid #e6ac00;">
@@ -51,6 +65,7 @@
     <tr>
       <th>Name</th>
       <th>Status</th>
+      {% if is_admin %}<th>Owner</th>{% endif %}
       <th>Campaign Size</th>
       <th>Downloaded Streets</th>
       <th>Trips</th>
@@ -66,6 +81,7 @@
         {% if campaign.is_test %}<span style="display:inline-block;background:#1a6b3c;color:#fff;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;vertical-align:middle;margin-left:5px;">Test</span>{% endif %}
       </td>
       <td><span class="badge badge-{{ campaign.status }}">{{ campaign.get_status_display }}</span></td>
+      {% if is_admin %}<td style="font-size:0.85rem; color:#666;">{{ campaign.owner.username|default:"—" }}</td>{% endif %}
       <td>
         <div style="font-size:0.9rem;">{{ campaign.size_street_count|intcomma }} blocks</div>
         <div style="font-size:0.9rem; color:#666;">{% if campaign.size_household_count > 0 %}{{ campaign.size_household_count|intcomma }} houses{% else %}—{% endif %}</div>

@@ -38,6 +38,10 @@ class Campaign(models.Model):
     # NULL means "not yet computed"; 0 means "computed and genuinely zero".
     cached_size_street_count = models.IntegerField(null=True, blank=True, default=None)
     cached_size_household_count = models.IntegerField(null=True, blank=True, default=None)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='owned_campaigns',
+    )
     hero_image_url = models.URLField(blank=True, default='')  # optional campaign hero image (landscape/16:9 recommended)
     streets_geojson = models.TextField(blank=True, default='')  # pre-rendered GeoJSON FeatureCollection
     created_at = models.DateTimeField(auto_now_add=True)

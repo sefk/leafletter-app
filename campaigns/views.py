@@ -305,9 +305,38 @@ def _repair_missing_city_jobs(campaign) -> None:
 
 @_login_required
 def manage_campaign_list(request):
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    is_admin = request.user.is_superuser
+
+    # Admins can filter by user via ?owner=<user_id> or ?owner=all.
+    # Non-admins always see only their own campaigns + unowned ones.
+    if is_admin:
+        owner_param = request.GET.get('owner', str(request.user.pk))
+        if owner_param == 'all':
+            qs = Campaign.objects.exclude(status='deleted')
+        elif owner_param == 'none':
+            qs = Campaign.objects.exclude(status='deleted').filter(owner__isnull=True)
+        else:
+            try:
+                filter_user_id = int(owner_param)
+            except (ValueError, TypeError):
+                filter_user_id = request.user.pk
+            qs = Campaign.objects.exclude(status='deleted').filter(
+                Q(owner_id=filter_user_id) | Q(owner__isnull=True)
+            )
+        all_users = list(User.objects.order_by('username'))
+    else:
+        owner_param = None
+        qs = Campaign.objects.exclude(status='deleted').filter(
+            Q(owner=request.user) | Q(owner__isnull=True)
+        )
+        all_users = []
+
     # Fetch campaigns without any multi-table JOIN annotations — multiple
     # COUNT DISTINCT JOINs in one query cause a row explosion on MySQL.
-    campaigns = list(Campaign.objects.exclude(status='deleted').order_by('is_test', '-created_at'))
+    campaigns = list(qs.order_by('is_test', '-created_at'))
     campaign_pks = [c.pk for c in campaigns]
 
     # Bulk counts — each is a separate simple query to avoid JOIN row explosion on MySQL.
@@ -351,6 +380,9 @@ def manage_campaign_list(request):
     return render(request, 'campaigns/manage/campaign_list.html', {
         'campaigns': campaigns,
         'inflight': inflight,
+        'is_admin': is_admin,
+        'all_users': all_users,
+        'owner_param': owner_param,
     })
 
 
@@ -468,6 +500,7 @@ def manage_campaign_create(request):
         if campaign_valid and image_valid:
             campaign = form.save(commit=False)
             campaign.status = 'draft'
+            campaign.owner = request.user
             campaign.save()
             if image_form:
                 _save_campaign_image(image_form, campaign, request.user)

@@ -192,6 +192,15 @@
       </div>
     </div>
 
+    {# Owner (read-only) #}
+    <div style="margin-bottom:16px;">
+      <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Owner
+      </label>
+      <input type="text" value="{{ campaign.owner.username|default:'(unassigned)' }}" disabled
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; background:#f5f5f5; color:#777;">
+    </div>
+
     {# Instructions (Quill rich text) #}
     <div style="margin-bottom:16px;">
       <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
