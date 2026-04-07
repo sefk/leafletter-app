@@ -83,10 +83,10 @@
   <div class="step-item">
     {% if step_states.basics == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
-    <a href="#step-basics" style="text-decoration:none; color:inherit;" class="step-label">1 Basics</a>
+    <span class="step-label">1 Basics</span>
     {% else %}
     <span class="step-icon step-icon-available">&#9679;</span>
-    <a href="#step-basics" style="text-decoration:none; color:inherit;" class="step-label">1 Basics</a>
+    <span class="step-label">1 Basics</span>
     {% endif %}
   </div>
 
@@ -105,16 +105,16 @@
   <div class="step-item">
     {% if step_states.cities == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
-    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
+    <span class="step-label">3 Cities</span>
     {% elif step_states.cities == 'in_progress' %}
     <span class="step-icon step-icon-in-progress">&#9679;</span>
-    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
+    <span class="step-label">3 Cities</span>
     {% elif step_states.cities == 'attention' %}
     <span class="step-icon step-icon-attention">!</span>
-    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
+    <span class="step-label">3 Cities</span>
     {% else %}
     <span class="step-icon step-icon-available">&#9679;</span>
-    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
+    <span class="step-label">3 Cities</span>
     {% endif %}
   </div>
 
@@ -150,10 +150,10 @@
   <div class="step-item">
     {% if step_states.publish == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
-    <a href="#step-publish" class="step-label">6 Publish</a>
+    <span class="step-label">6 Publish</span>
     {% else %}
     <span class="step-icon step-icon-available">&#9679;</span>
-    <a href="#step-publish" class="step-label">6 Publish</a>
+    <span class="step-label">6 Publish</span>
     {% endif %}
   </div>
 </aside>
@@ -1218,7 +1218,7 @@
 
 <!-- Publish / Unpublish -->
 <div class="card" id="step-publish">
-  <div class="card-title">Step 6: Publish</div>
+  <div class="card-title">Publish</div>
   {% if campaign.status == 'published' %}
   <div style="margin-bottom:12px;">
     <div style="padding:8px 12px; background:#f1f8e9; border:1px solid #c5e1a5; border-radius:6px; display:inline-block;">
