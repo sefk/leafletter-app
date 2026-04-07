@@ -1270,7 +1270,7 @@
   {# Delete #}
   <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
     <form method="post" action="/manage/{{ campaign.slug }}/delete/"
-          onsubmit="return confirm('Soft-delete this campaign?');">
+          onsubmit="return confirm('Delete this campaign?');">
       {% csrf_token %}
       <button type="submit" class="btn btn-danger">Delete Campaign</button>
     </form>
