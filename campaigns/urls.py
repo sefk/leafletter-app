@@ -39,6 +39,7 @@ manage_urlpatterns = [
     path('<slug:slug>/', views.manage_campaign_detail, name='manage_campaign_detail'),
     path('<slug:slug>/edit/', views.manage_campaign_edit, name='manage_campaign_edit'),
     path('<slug:slug>/save-basics/', views.manage_save_basics, name='manage_save_basics'),
+    path('<slug:slug>/save-hero/', views.manage_save_hero, name='manage_save_hero'),
     path('<slug:slug>/save-cities/', views.manage_save_cities, name='manage_save_cities'),
     path('<slug:slug>/publish/', views.manage_campaign_publish, name='manage_campaign_publish'),
     path('<slug:slug>/unpublish/', views.manage_campaign_unpublish, name='manage_campaign_unpublish'),

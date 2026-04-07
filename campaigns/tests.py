@@ -23,7 +23,7 @@ from django.test import Client, RequestFactory, TestCase
 from django.utils import timezone
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
-from .models import Campaign, CampaignStreet, CityFetchJob, Street, Trip
+from .models import Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
                     lookup_city, queue_city_fetches, query_overpass, query_overpass_addresses,
                     render_campaign_geojson,
@@ -1544,6 +1544,101 @@ class ManagerUITest(TestCase):
         })
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(Campaign.objects.filter(name='Empty Cities Test').exists())
+
+    # ── Hero Image (save_hero) ────────────────────────────────────────────────
+
+    def test_save_hero_url_saves_hero_image_url(self):
+        self._login()
+        self.client.post(
+            f'/manage/{self.campaign.slug}/save-hero/',
+            {'hero_image_url': 'https://example.com/image.jpg'},
+        )
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.hero_image_url, 'https://example.com/image.jpg')
+
+    def test_save_hero_url_clears_existing_url(self):
+        self.campaign.hero_image_url = 'https://example.com/old.jpg'
+        self.campaign.save()
+        self._login()
+        self.client.post(
+            f'/manage/{self.campaign.slug}/save-hero/',
+            {'hero_image_url': ''},
+        )
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.hero_image_url, '')
+
+    def test_save_hero_url_redirects_to_detail(self):
+        self._login()
+        resp = self.client.post(
+            f'/manage/{self.campaign.slug}/save-hero/',
+            {'hero_image_url': 'https://example.com/image.jpg'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
+
+    def test_save_hero_requires_login(self):
+        resp = self.client.post(
+            f'/manage/{self.campaign.slug}/save-hero/',
+            {'hero_image_url': 'https://example.com/image.jpg'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+
+    def test_save_hero_requires_post(self):
+        self._login()
+        resp = self.client.get(f'/manage/{self.campaign.slug}/save-hero/')
+        self.assertEqual(resp.status_code, 405)
+
+    def test_save_hero_upload_saves_campaign_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        import io as _io
+        # Create a minimal 10x10 JPEG in memory.
+        buf = _io.BytesIO()
+        Image.new('RGB', (10, 10), color=(100, 150, 200)).save(buf, format='JPEG')
+        buf.seek(0)
+        fake_file = SimpleUploadedFile('test.jpg', buf.read(), content_type='image/jpeg')
+        self._login()
+        self.client.post(
+            f'/manage/{self.campaign.slug}/save-hero/',
+            {
+                'image': fake_file,
+                'attest_rights': 'on',
+                'attest_content': 'on',
+            },
+        )
+        self.assertTrue(CampaignImage.objects.filter(campaign=self.campaign).exists())
+
+    def test_save_hero_upload_clears_hero_image_url(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        import io as _io
+        self.campaign.hero_image_url = 'https://example.com/old.jpg'
+        self.campaign.save()
+        buf = _io.BytesIO()
+        Image.new('RGB', (10, 10), color=(50, 50, 50)).save(buf, format='JPEG')
+        buf.seek(0)
+        fake_file = SimpleUploadedFile('new.jpg', buf.read(), content_type='image/jpeg')
+        self._login()
+        self.client.post(
+            f'/manage/{self.campaign.slug}/save-hero/',
+            {
+                'image': fake_file,
+                'attest_rights': 'on',
+                'attest_content': 'on',
+            },
+        )
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.hero_image_url, '')
+
+    def test_remove_image_endpoint_accessible(self):
+        self._login()
+        resp = self.client.post(f'/manage/{self.campaign.slug}/remove-image/')
+        # No existing image — still returns ok.
+        self.assertEqual(resp.status_code, 200)
+        import json as _json
+        data = _json.loads(resp.content)
+        self.assertTrue(data['ok'])
 
     # ── List view ─────────────────────────────────────────────────────────────
 

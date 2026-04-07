@@ -728,6 +728,41 @@ def manage_save_basics(request, slug):
 
 @_login_required
 @require_POST
+def manage_save_hero(request, slug):
+    """
+    Section-scoped save for Step 2 (Hero Image): either save a URL or upload a file.
+    The two cases are distinguished by the presence of 'image' in request.FILES.
+    Uses POST-redirect-GET so a reload never re-submits the form.
+    """
+    campaign = get_object_or_404(Campaign, slug=slug)
+
+    if 'image' in request.FILES:
+        # Upload path: validate and save the uploaded image.
+        image_form = ImageUploadForm(request.POST, request.FILES)
+        if image_form.is_valid():
+            _save_campaign_image(image_form, campaign, request.user)
+        else:
+            from django.contrib import messages
+            for field_errors in image_form.errors.values():
+                for err in field_errors:
+                    messages.error(request, err)
+    else:
+        # URL path: save hero_image_url and clear any uploaded image.
+        hero_image_url = request.POST.get('hero_image_url', '').strip()
+        try:
+            existing = campaign.uploaded_image
+            existing.image.delete(save=False)
+            existing.delete()
+        except CampaignImage.DoesNotExist:
+            pass
+        campaign.hero_image_url = hero_image_url
+        campaign.save(update_fields=['hero_image_url'])
+
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
 def manage_save_cities(request, slug):
     """
     Section-scoped save for Step 3 (Cities): add a city from the search widget.

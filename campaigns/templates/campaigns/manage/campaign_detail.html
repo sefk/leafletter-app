@@ -253,6 +253,186 @@
   </form>
 </div>
 
+<!-- Step 2: Hero Image -->
+<div class="card" id="step-hero">
+  <div class="card-title">Hero Image <span style="font-size:0.8rem; font-weight:400; color:#888;">(optional)</span></div>
+  <p style="font-size:0.85rem; color:#666; margin-bottom:16px;">
+    Landscape or 16:9 image recommended. Shown at the top of the public campaign page.
+  </p>
+
+  {# Tabs #}
+  <div style="display:flex; gap:0; margin-bottom:12px; border:1px solid #ccc; border-radius:4px; overflow:hidden; width:fit-content;">
+    <button type="button" id="hero-tab-url" onclick="heroShowTab('url')"
+            style="padding:6px 16px; font-size:0.85rem; border:none; cursor:pointer; background:#1a6b3c; color:#fff; font-weight:600;">
+      Paste URL
+    </button>
+    <button type="button" id="hero-tab-upload" onclick="heroShowTab('upload')"
+            style="padding:6px 16px; font-size:0.85rem; border:none; cursor:pointer; background:#f5f5f5; color:#444;">
+      Upload File
+    </button>
+  </div>
+
+  {# URL panel #}
+  <div id="hero-panel-url">
+    <form method="post" action="{% url 'manage_save_hero' campaign.slug %}" id="hero-url-form">
+      {% csrf_token %}
+      <label style="display:block; font-size:0.82rem; color:#666; margin-bottom:4px;">
+        Paste a direct link to a publicly accessible image.
+      </label>
+      <input type="url" name="hero_image_url" id="hero-url-input"
+             value="{{ campaign.hero_image_url|default:'' }}"
+             placeholder="https://example.com/image.jpg"
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; box-sizing:border-box;">
+      <div id="hero-url-preview" style="margin-top:10px; {% if not campaign.hero_image_url %}display:none;{% endif %}">
+        <img id="hero-url-preview-img" src="{{ campaign.hero_image_url|default:'' }}" alt="Hero preview"
+             style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd;">
+      </div>
+      <div style="margin-top:12px;">
+        <button type="submit" class="btn btn-primary">Save Hero Image</button>
+      </div>
+    </form>
+  </div>
+
+  {# Upload panel #}
+  <div id="hero-panel-upload" style="display:none;">
+    {% if campaign.uploaded_image %}
+    <div id="hero-uploaded-existing" style="margin-bottom:10px;">
+      <img src="{{ campaign.uploaded_image.image.url }}" alt="Current hero image"
+           style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd; display:block; margin-bottom:6px;">
+      <button type="button" onclick="heroRemoveImage()"
+              style="font-size:0.82rem; color:#c62828; background:none; border:none; cursor:pointer; padding:0;">
+        Remove uploaded image
+      </button>
+    </div>
+    {% endif %}
+
+    <div id="hero-upload-area">
+      <form method="post" action="{% url 'manage_save_hero' campaign.slug %}" enctype="multipart/form-data" id="hero-upload-form">
+        {% csrf_token %}
+        <label style="display:block; font-size:0.82rem; color:#666; margin-bottom:6px;">
+          Upload a JPEG, PNG, GIF, or WebP image. Landscape orientation (16:9 or wider) recommended.
+          Images are automatically resized to fit within 1920&times;1080. Maximum file size: 20 MB.
+        </label>
+        <input type="file" id="hero-file-input" name="image" accept=".jpg,.jpeg,.png,.gif,.webp"
+               style="display:block; margin-bottom:10px;" onchange="heroPreviewFile(this)">
+
+        <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 14px; margin-bottom:10px; font-size:0.82rem; color:#555;">
+          <strong>You must affirm the following to upload.</strong>
+          <label style="display:flex; align-items:flex-start; gap:8px; margin-top:8px; cursor:pointer;">
+            <input type="checkbox" name="attest_rights" id="hero-attest-rights" style="width:auto; margin-top:2px;" onchange="heroUpdateSaveBtn()">
+            <span>I own or have rights to use this image and it may be publicly displayed.</span>
+          </label>
+          <label style="display:flex; align-items:flex-start; gap:8px; margin-top:6px; cursor:pointer;">
+            <input type="checkbox" name="attest_content" id="hero-attest-content" style="width:auto; margin-top:2px;" onchange="heroUpdateSaveBtn()">
+            <span>This image contains no abusive, hateful, or illegal content (including CSAM, incitement to violence, or harassment).</span>
+          </label>
+        </div>
+
+        <div id="hero-upload-preview" style="margin-top:10px; display:none;">
+          <img id="hero-upload-preview-img" src="" alt="Upload preview"
+               style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd;">
+          <div id="hero-upload-status" style="font-size:0.82rem; color:#555; margin-top:4px;"></div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <button type="submit" id="hero-upload-save-btn" class="btn btn-primary" disabled>Save Hero Image</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  window.heroShowTab = function (tab) {
+    var urlPanel    = document.getElementById('hero-panel-url');
+    var uploadPanel = document.getElementById('hero-panel-upload');
+    var tabUrl      = document.getElementById('hero-tab-url');
+    var tabUpload   = document.getElementById('hero-tab-upload');
+    if (tab === 'url') {
+      urlPanel.style.display    = '';
+      uploadPanel.style.display = 'none';
+      tabUrl.style.background = '#1a6b3c'; tabUrl.style.color = '#fff'; tabUrl.style.fontWeight = '600';
+      tabUpload.style.background = '#f5f5f5'; tabUpload.style.color = '#444'; tabUpload.style.fontWeight = '';
+    } else {
+      urlPanel.style.display    = 'none';
+      uploadPanel.style.display = '';
+      tabUrl.style.background = '#f5f5f5'; tabUrl.style.color = '#444'; tabUrl.style.fontWeight = '';
+      tabUpload.style.background = '#1a6b3c'; tabUpload.style.color = '#fff'; tabUpload.style.fontWeight = '600';
+    }
+  };
+
+  // URL preview on input
+  var urlInput   = document.getElementById('hero-url-input');
+  var urlPreview = document.getElementById('hero-url-preview');
+  var urlPreviewImg = document.getElementById('hero-url-preview-img');
+  if (urlInput) {
+    urlInput.addEventListener('input', function () {
+      var val = urlInput.value.trim();
+      if (val) { urlPreviewImg.src = val; urlPreview.style.display = 'block'; }
+      else { urlPreview.style.display = 'none'; }
+    });
+  }
+
+  // If campaign already has an uploaded image, start on Upload tab
+  {% if campaign.uploaded_image %}
+  heroShowTab('upload');
+  {% endif %}
+
+  // Preview selected file locally
+  window.heroPreviewFile = function (input) {
+    var status     = document.getElementById('hero-upload-status');
+    var previewDiv = document.getElementById('hero-upload-preview');
+    var previewImg = document.getElementById('hero-upload-preview-img');
+    if (!input.files.length) { previewDiv.style.display = 'none'; return; }
+    var file = input.files[0];
+    if (file.size > 20 * 1024 * 1024) {
+      previewDiv.style.display = '';
+      previewImg.style.display = 'none';
+      status.textContent = 'Image exceeds the 20 MB size limit. Please use a smaller source file.';
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      previewImg.src = e.target.result;
+      previewImg.style.display = '';
+      previewDiv.style.display = '';
+      status.textContent = 'Image will be resized and uploaded when you save.';
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Enable/disable upload save button based on attestation checkboxes
+  window.heroUpdateSaveBtn = function () {
+    var rights   = document.getElementById('hero-attest-rights');
+    var content  = document.getElementById('hero-attest-content');
+    var saveBtn  = document.getElementById('hero-upload-save-btn');
+    if (saveBtn) saveBtn.disabled = !(rights && rights.checked && content && content.checked);
+  };
+
+  // Remove uploaded image via AJAX
+  window.heroRemoveImage = function () {
+    if (!confirm('Remove the uploaded image?')) return;
+    fetch('/manage/{{ campaign.slug }}/remove-image/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.ok) {
+        var existing = document.getElementById('hero-uploaded-existing');
+        if (existing) existing.style.display = 'none';
+        document.getElementById('hero-upload-preview').style.display = 'none';
+        var status = document.getElementById('hero-upload-status');
+        if (status) status.textContent = 'Image removed.';
+      }
+    });
+  };
+})();
+</script>
+
 <!-- Quill editor for Basics form -->
 <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
 <style>

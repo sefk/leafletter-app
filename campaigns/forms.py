@@ -67,11 +67,11 @@ class ImageUploadForm(forms.Form):
         help_text='Accepted formats: JPEG, PNG, GIF, WebP. Landscape orientation (16:9) recommended.',
     )
     attest_rights = forms.BooleanField(
-        required=True,
+        required=False,
         label='I confirm that I own or have rights to use this image.',
     )
     attest_content = forms.BooleanField(
-        required=True,
+        required=False,
         label='I confirm this image contains no abusive, hateful, or illegal content, including but not limited to CSAM, incitement to violence, or harassment.',
     )
 
