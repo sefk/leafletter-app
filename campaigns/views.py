@@ -481,6 +481,54 @@ def manage_campaign_create(request):
     })
 
 
+def _get_step_states(campaign):
+    """Derive step completion states for the Phase 1 progress track sidebar."""
+    steps = {}
+
+    # Step 1: Basics — name and start_date must be present
+    steps['basics'] = 'complete' if (campaign.name and campaign.start_date) else 'current'
+
+    # Step 2: Hero Image — optional step
+    steps['hero'] = 'complete' if campaign.hero_image_effective_url else 'optional'
+
+    # Step 3: Cities — derive from city fetch job statuses
+    city_jobs = list(campaign.city_fetch_jobs.all())
+    if not city_jobs:
+        steps['cities'] = 'current'
+    elif any(j.status in ('generating', 'pending', 'rendering') for j in city_jobs):
+        steps['cities'] = 'in_progress'
+    elif any(j.status == 'ready' for j in city_jobs):
+        if any(j.status == 'error' for j in city_jobs):
+            steps['cities'] = 'attention'
+        else:
+            steps['cities'] = 'complete'
+    elif all(j.status == 'error' for j in city_jobs):
+        steps['cities'] = 'attention'
+    else:
+        steps['cities'] = 'current'
+
+    # Step 4: Boundary
+    if campaign.geo_limit:
+        steps['boundary'] = 'complete'
+    elif campaign.map_status in ('ready', 'warning'):
+        steps['boundary'] = 'available'
+    else:
+        steps['boundary'] = 'blocked'
+
+    # Step 5: Review
+    if campaign.geo_limit and campaign.map_status in ('ready', 'warning'):
+        steps['review'] = 'complete'
+    elif campaign.geo_limit:
+        steps['review'] = 'in_progress'
+    else:
+        steps['review'] = 'blocked'
+
+    # Step 6: Publish
+    steps['publish'] = 'complete' if campaign.status == 'published' else 'available'
+
+    return steps
+
+
 @_login_required
 def manage_campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
@@ -515,6 +563,7 @@ def manage_campaign_detail(request, slug):
         'estimated_addresses': estimated_addresses,
         'estimated_addresses_sparse': estimated_addresses_sparse,
         'address_fetch_too_large': address_fetch_too_large,
+        'step_states': _get_step_states(campaign),
     })
 
 

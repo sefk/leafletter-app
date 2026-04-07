@@ -4,6 +4,68 @@
 {% block title %}{{ campaign.name }} — Leafletter Manager{% endblock %}
 
 {% block content %}
+<style>
+  /* Phase 1: Progress track layout */
+  .campaign-layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .step-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 16px 14px;
+    position: sticky;
+    top: 20px;
+  }
+  .step-sidebar-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+    margin-bottom: 12px;
+  }
+  .campaign-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 0.88rem;
+    color: #333;
+  }
+  .step-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    margin-top: 1px;
+  }
+  .step-icon-complete   { background: #2e7d32; color: #fff; }
+  .step-icon-in-progress{ background: #e6ac00; color: #fff; animation: pulse 1.2s infinite; }
+  .step-icon-available  { background: #e6ac00; color: #fff; }
+  .step-icon-attention  { background: #e65100; color: #fff; }
+  .step-icon-blocked    { background: #ddd;    color: #999; }
+  .step-icon-optional   { background: #ddd;    color: #999; }
+  .step-label-blocked   { color: #aaa; }
+  .step-label-optional  { color: #aaa; }
+  @media (max-width: 760px) {
+    .campaign-layout { flex-direction: column; }
+    .step-sidebar { width: auto; position: static; }
+  }
+</style>
+
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
   <h1>{{ campaign.name }}</h1>
   <div style="display:flex; gap:10px; align-items:center;">
@@ -11,6 +73,93 @@
     <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-secondary">Edit</a>
   </div>
 </div>
+
+<div class="campaign-layout">
+
+<!-- Step Sidebar -->
+<aside class="step-sidebar">
+  <div class="step-sidebar-title">Campaign Setup</div>
+
+  <!-- Step 1: Basics -->
+  <div class="step-item">
+    {% if step_states.basics == 'complete' %}
+    <span class="step-icon step-icon-complete">&#10003;</span>
+    <span class="step-label">1 Basics</span>
+    {% else %}
+    <span class="step-icon step-icon-available">&#9679;</span>
+    <span class="step-label">1 Basics</span>
+    {% endif %}
+  </div>
+
+  <!-- Step 2: Hero Image -->
+  <div class="step-item">
+    {% if step_states.hero == 'complete' %}
+    <span class="step-icon step-icon-complete">&#10003;</span>
+    <span class="step-label">2 Hero Image</span>
+    {% else %}
+    <span class="step-icon step-icon-optional">&#9675;</span>
+    <span class="step-label step-label-optional">2 Hero Image</span>
+    {% endif %}
+  </div>
+
+  <!-- Step 3: Cities -->
+  <div class="step-item">
+    {% if step_states.cities == 'complete' %}
+    <span class="step-icon step-icon-complete">&#10003;</span>
+    <span class="step-label">3 Cities</span>
+    {% elif step_states.cities == 'in_progress' %}
+    <span class="step-icon step-icon-in-progress">&#9679;</span>
+    <span class="step-label">3 Cities</span>
+    {% elif step_states.cities == 'attention' %}
+    <span class="step-icon step-icon-attention">!</span>
+    <span class="step-label">3 Cities</span>
+    {% else %}
+    <span class="step-icon step-icon-available">&#9679;</span>
+    <span class="step-label">3 Cities</span>
+    {% endif %}
+  </div>
+
+  <!-- Step 4: Boundary -->
+  <div class="step-item">
+    {% if step_states.boundary == 'complete' %}
+    <span class="step-icon step-icon-complete">&#10003;</span>
+    <span class="step-label">4 Boundary</span>
+    {% elif step_states.boundary == 'available' %}
+    <span class="step-icon step-icon-available">&#9679;</span>
+    <span class="step-label">4 Boundary</span>
+    {% else %}
+    <span class="step-icon step-icon-blocked">&#9675;</span>
+    <span class="step-label step-label-blocked">4 Boundary</span>
+    {% endif %}
+  </div>
+
+  <!-- Step 5: Review -->
+  <div class="step-item">
+    {% if step_states.review == 'complete' %}
+    <span class="step-icon step-icon-complete">&#10003;</span>
+    <span class="step-label">5 Review</span>
+    {% elif step_states.review == 'in_progress' %}
+    <span class="step-icon step-icon-in-progress">&#9679;</span>
+    <span class="step-label">5 Review</span>
+    {% else %}
+    <span class="step-icon step-icon-blocked">&#9675;</span>
+    <span class="step-label step-label-blocked">5 Review</span>
+    {% endif %}
+  </div>
+
+  <!-- Step 6: Publish -->
+  <div class="step-item">
+    {% if step_states.publish == 'complete' %}
+    <span class="step-icon step-icon-complete">&#10003;</span>
+    <span class="step-label">6 Publish</span>
+    {% else %}
+    <span class="step-icon step-icon-available">&#9679;</span>
+    <span class="step-label">6 Publish</span>
+    {% endif %}
+  </div>
+</aside>
+
+<div class="campaign-main">
 
 <!-- Campaign Info -->
 <div class="card">
@@ -903,5 +1052,8 @@
     <span style="font-size:0.85rem; color:#c62828;">This cannot be undone.</span>
   </div>
 </div>
+
+</div>{# end .campaign-main #}
+</div>{# end .campaign-layout #}
 
 {% endblock %}
