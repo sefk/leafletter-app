@@ -1263,9 +1263,11 @@ class ManagerUITest(TestCase):
         self.assertEqual(resp.status_code, 200)
 
     def test_authenticated_can_access_edit(self):
+        # Phase 2: edit URL redirects to the detail page (editing is now inline).
         self._login()
         resp = self.client.get(f'/manage/{self.campaign.slug}/edit/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f'/manage/{self.campaign.slug}/', resp['Location'])
 
     # ── Create ────────────────────────────────────────────────────────────────
 
@@ -3609,3 +3611,199 @@ class UsernameOrEmailBackendTest(TestCase):
         resp = self.client.get('/manage/login/')
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Username or email')
+
+
+# ── Phase 2: Inline editing endpoints ─────────────────────────────────────────
+
+class ManageSaveBasicsTest(TestCase):
+    """POST /manage/<slug>/save-basics/ updates campaign metadata."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('basics-user', password='pw')
+        self.client = Client()
+        self.client.login(username='basics-user', password='pw')
+        self.campaign = make_campaign(slug='basics-camp', status='draft', start_date='2026-06-01')
+
+    def _post(self, data=None):
+        defaults = {
+            'name': 'Updated Name',
+            'start_date': '2026-07-01',
+            'end_date': '',
+            'contact_info': 'test@example.com',
+            'instructions': '<p>Hello</p>',
+            'is_test': '',
+        }
+        if data:
+            defaults.update(data)
+        return self.client.post(f'/manage/basics-camp/save-basics/', defaults)
+
+    def test_requires_login(self):
+        self.client.logout()
+        resp = self.client.post('/manage/basics-camp/save-basics/', {'name': 'x', 'start_date': '2026-01-01'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+
+    def test_successful_post_redirects_to_detail(self):
+        resp = self._post()
+        self.assertRedirects(resp, f'/manage/basics-camp/', fetch_redirect_response=False)
+
+    def test_updates_name(self):
+        self._post({'name': 'My New Name'})
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.name, 'My New Name')
+
+    def test_updates_start_date(self):
+        self._post({'start_date': '2026-09-01'})
+        self.campaign.refresh_from_db()
+        self.assertEqual(str(self.campaign.start_date), '2026-09-01')
+
+    def test_clears_end_date_when_blank(self):
+        self.campaign.end_date = '2026-12-31'
+        self.campaign.save()
+        self._post({'end_date': ''})
+        self.campaign.refresh_from_db()
+        self.assertIsNone(self.campaign.end_date)
+
+    def test_updates_contact_info(self):
+        self._post({'contact_info': 'contact@org.org'})
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.contact_info, 'contact@org.org')
+
+    def test_updates_instructions(self):
+        self._post({'instructions': '<p>New instructions</p>'})
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.instructions, '<p>New instructions</p>')
+
+    def test_sets_is_test_when_checkbox_present(self):
+        self._post({'is_test': 'on'})
+        self.campaign.refresh_from_db()
+        self.assertTrue(self.campaign.is_test)
+
+    def test_clears_is_test_when_checkbox_absent(self):
+        self.campaign.is_test = True
+        self.campaign.save()
+        self._post({'is_test': ''})
+        self.campaign.refresh_from_db()
+        self.assertFalse(self.campaign.is_test)
+
+    def test_empty_name_redirects_with_error(self):
+        resp = self._post({'name': ''})
+        # Should redirect back (not crash); error surfaced via messages.
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/basics-camp/', resp['Location'])
+
+    def test_empty_name_does_not_change_campaign_name(self):
+        self._post({'name': ''})
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.name, 'Test Campaign')
+
+    def test_slug_not_changed_by_save_basics(self):
+        self._post({'name': 'New Name'})
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.slug, 'basics-camp')
+
+    def test_get_not_allowed(self):
+        resp = self.client.get('/manage/basics-camp/save-basics/')
+        self.assertEqual(resp.status_code, 405)
+
+
+class ManageSaveCitiesTest(TestCase):
+    """POST /manage/<slug>/save-cities/ adds a city and queues a fetch."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('cities-user', password='pw')
+        self.client = Client()
+        self.client.login(username='cities-user', password='pw')
+        self.campaign = make_campaign(slug='cities-camp', status='draft', cities=[])
+
+    def _post_city(self, city_data=None):
+        if city_data is None:
+            city_data = {'name': 'Oakland', 'osm_id': 123456, 'display_name': 'Oakland, CA', 'osm_type': 'relation'}
+        return self.client.post('/manage/cities-camp/save-cities/', {
+            'city_json': json.dumps(city_data),
+        })
+
+    def test_requires_login(self):
+        self.client.logout()
+        resp = self.client.post('/manage/cities-camp/save-cities/', {'city_json': '{}'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+
+    def test_redirects_to_detail_on_success(self):
+        with patch('campaigns.views.queue_city_fetches'):
+            resp = self._post_city()
+        self.assertRedirects(resp, '/manage/cities-camp/', fetch_redirect_response=False)
+
+    def test_city_appended_to_campaign(self):
+        with patch('campaigns.views.queue_city_fetches'):
+            self._post_city()
+        self.campaign.refresh_from_db()
+        self.assertEqual(len(self.campaign.cities), 1)
+        self.assertEqual(self.campaign.cities[0]['name'], 'Oakland')
+
+    def test_duplicate_city_not_added(self):
+        """Adding a city with the same osm_id twice should not duplicate it."""
+        city = {'name': 'Oakland', 'osm_id': 123456, 'display_name': 'Oakland, CA', 'osm_type': 'relation'}
+        self.campaign.cities = [city]
+        self.campaign.save()
+        with patch('campaigns.views.queue_city_fetches'):
+            self._post_city(city)
+        self.campaign.refresh_from_db()
+        self.assertEqual(len(self.campaign.cities), 1)
+
+    def test_invalid_city_json_redirects_with_error(self):
+        resp = self.client.post('/manage/cities-camp/save-cities/', {'city_json': 'not-json'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/cities-camp/', resp['Location'])
+
+    def test_missing_name_field_redirects_with_error(self):
+        bad = {'osm_id': 999}
+        resp = self.client.post('/manage/cities-camp/save-cities/', {'city_json': json.dumps(bad)})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/cities-camp/', resp['Location'])
+
+    def test_get_not_allowed(self):
+        resp = self.client.get('/manage/cities-camp/save-cities/')
+        self.assertEqual(resp.status_code, 405)
+
+
+class ManageCampaignEditRedirectTest(TestCase):
+    """Phase 2: /manage/<slug>/edit/ now redirects to the detail page."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('edit-redir-user', password='pw')
+        self.client = Client()
+        self.client.login(username='edit-redir-user', password='pw')
+        self.campaign = make_campaign(slug='edit-redir-camp', status='draft')
+
+    def test_get_redirects_to_detail(self):
+        resp = self.client.get(f'/manage/edit-redir-camp/edit/')
+        self.assertRedirects(resp, '/manage/edit-redir-camp/', fetch_redirect_response=False)
+
+    def test_post_redirects_to_detail(self):
+        resp = self.client.post(f'/manage/edit-redir-camp/edit/', {})
+        self.assertRedirects(resp, '/manage/edit-redir-camp/', fetch_redirect_response=False)
+
+
+class ManageCampaignDetailInlineBasicsTest(TestCase):
+    """The detail page must render the inline Basics form (Phase 2)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('detail-inline-user', password='pw')
+        self.client = Client()
+        self.client.login(username='detail-inline-user', password='pw')
+        self.campaign = make_campaign(slug='detail-inline-camp', status='draft', start_date='2026-06-01')
+
+    def test_detail_page_shows_basics_form(self):
+        resp = self.client.get('/manage/detail-inline-camp/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'save-basics')
+
+    def test_detail_page_shows_city_search_widget(self):
+        resp = self.client.get('/manage/detail-inline-camp/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'save-cities')
+
+    def test_detail_page_shows_campaign_name_in_form(self):
+        resp = self.client.get('/manage/detail-inline-camp/')
+        self.assertContains(resp, 'Test Campaign')

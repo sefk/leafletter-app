@@ -601,35 +601,84 @@ def manage_campaign_fetch_status(request, slug):
 
 @_login_required
 def manage_campaign_edit(request, slug):
+    """Legacy edit page — now redirects to the detail page (Phase 2 consolidation)."""
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_save_basics(request, slug):
+    """
+    Section-scoped save for Step 1 (Basics): name, start_date, end_date,
+    contact_info, instructions, is_test.  Slug is immutable after creation.
+    Uses POST-redirect-GET so a reload never re-submits the form.
+    """
     campaign = get_object_or_404(Campaign, slug=slug)
-    if request.method == 'POST':
-        form = CampaignForm(request.POST, instance=campaign)
-        image_form = ImageUploadForm(request.POST, request.FILES) if 'image' in request.FILES else None
-        campaign_valid = form.is_valid()
-        image_valid = image_form is None or image_form.is_valid()
-        if campaign_valid and image_valid:
-            old_cities = campaign.cities
-            updated = form.save()
-            if image_form:
-                _save_campaign_image(image_form, updated, request.user)
-            if updated.cities != old_cities:
-                _apply_city_list_changes(old_cities, updated)
-            else:
-                # Cities unchanged — but check for cities missing a fetch job
-                # (e.g. original creation task was lost, or job was cleaned up).
-                _repair_missing_city_jobs(updated)
-            return redirect('manage_campaign_detail', slug=updated.slug)
-    else:
-        form = CampaignForm(instance=campaign)
-        image_form = None
-    campaign_url = request.build_absolute_uri(f'/c/{campaign.slug}/')
-    return render(request, 'campaigns/manage/campaign_form.html', {
-        'form': form,
-        'image_form': image_form,
-        'campaign': campaign,
-        'action': 'Edit',
-        'campaign_url': campaign_url,
-    })
+
+    # Build a limited form that excludes slug and cities_json.
+    # We reuse CampaignForm but override __init__ behaviour by passing only
+    # the basics fields manually, then saving with update_fields.
+    name = request.POST.get('name', '').strip()
+    start_date = request.POST.get('start_date', '').strip() or None
+    end_date = request.POST.get('end_date', '').strip() or None
+    contact_info = request.POST.get('contact_info', '').strip()
+    # Quill syncs to the hidden textarea before submit.
+    instructions = request.POST.get('instructions', '').replace('&nbsp;', ' ').replace('\u00a0', ' ')
+    is_test = bool(request.POST.get('is_test'))
+
+    errors = []
+    if not name:
+        errors.append('Campaign name is required.')
+
+    if errors:
+        # Re-render detail page with validation errors surfaced via session message.
+        # For now a simple redirect keeps it straightforward; inline errors are Phase 3+.
+        from django.contrib import messages
+        for err in errors:
+            messages.error(request, err)
+        return redirect('manage_campaign_detail', slug=slug)
+
+    campaign.name = name
+    campaign.start_date = start_date or None
+    campaign.end_date = end_date or None
+    campaign.contact_info = contact_info
+    campaign.instructions = instructions
+    campaign.is_test = is_test
+    campaign.save(update_fields=['name', 'start_date', 'end_date', 'contact_info',
+                                 'instructions', 'is_test'])
+    return redirect('manage_campaign_detail', slug=slug)
+
+
+@_login_required
+@require_POST
+def manage_save_cities(request, slug):
+    """
+    Section-scoped save for Step 3 (Cities): add a city from the search widget.
+    The city is appended to campaign.cities and a fetch job is queued.
+    City removal and per-city refetch/delete are handled by the existing
+    manage_city_delete / manage_city_refetch endpoints respectively.
+    """
+    campaign = get_object_or_404(Campaign, slug=slug)
+    import json as _json
+    try:
+        city_data = _json.loads(request.POST.get('city_json', '{}'))
+        if not isinstance(city_data, dict) or 'name' not in city_data or 'osm_id' not in city_data:
+            raise ValueError('missing fields')
+    except (ValueError, TypeError):
+        from django.contrib import messages
+        messages.error(request, 'Invalid city data. Please search and select a city from the results.')
+        return redirect('manage_campaign_detail', slug=slug)
+
+    old_cities = list(campaign.cities or [])
+    # De-duplicate by osm_id.
+    if any(c.get('osm_id') == city_data.get('osm_id') for c in old_cities if isinstance(c, dict)):
+        return redirect('manage_campaign_detail', slug=slug)
+
+    new_cities = old_cities + [city_data]
+    campaign.cities = new_cities
+    campaign.save(update_fields=['cities'])
+    _apply_city_list_changes(old_cities, campaign)
+    return redirect('manage_campaign_detail', slug=slug)
 
 
 @_login_required

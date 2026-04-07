@@ -70,7 +70,6 @@
   <h1>{{ campaign.name }}</h1>
   <div style="display:flex; gap:10px; align-items:center;">
     <a href="/manage/" class="btn btn-secondary">List</a>
-    <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-secondary">Edit</a>
   </div>
 </div>
 
@@ -84,10 +83,10 @@
   <div class="step-item">
     {% if step_states.basics == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
-    <span class="step-label">1 Basics</span>
+    <a href="#step-basics" style="text-decoration:none; color:inherit;" class="step-label">1 Basics</a>
     {% else %}
     <span class="step-icon step-icon-available">&#9679;</span>
-    <span class="step-label">1 Basics</span>
+    <a href="#step-basics" style="text-decoration:none; color:inherit;" class="step-label">1 Basics</a>
     {% endif %}
   </div>
 
@@ -106,16 +105,16 @@
   <div class="step-item">
     {% if step_states.cities == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
-    <span class="step-label">3 Cities</span>
+    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
     {% elif step_states.cities == 'in_progress' %}
     <span class="step-icon step-icon-in-progress">&#9679;</span>
-    <span class="step-label">3 Cities</span>
+    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
     {% elif step_states.cities == 'attention' %}
     <span class="step-icon step-icon-attention">!</span>
-    <span class="step-label">3 Cities</span>
+    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
     {% else %}
     <span class="step-icon step-icon-available">&#9679;</span>
-    <span class="step-label">3 Cities</span>
+    <a href="#step-cities" style="text-decoration:none; color:inherit;" class="step-label">3 Cities</a>
     {% endif %}
   </div>
 
@@ -161,75 +160,147 @@
 
 <div class="campaign-main">
 
-<!-- Campaign Info -->
-<div class="card">
-  <div class="card-title">Campaign Details</div>
-  <table style="margin:0; table-layout:fixed; width:100%;">
-    <tr>
-      <th style="width:140px; vertical-align:top;">Cities</th>
-      <td>
-        <ul style="list-style:none; margin:0; padding:0;">
-          {% for city in campaign.cities %}
-          <li style="padding:4px 0; border-bottom:1px solid #eee; font-size:0.9rem;">
-            {% if city.display_name %}{{ city.display_name }}{% else %}{{ city }}{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-      </td>
-    </tr>
-    <tr>
-      <th>Public URL</th>
-      <td>
-        {% if campaign.status == 'published' %}
-        <div style="padding:8px 12px; background:#f1f8e9; border:1px solid #c5e1a5; border-radius:6px; display:inline-block;">
-          <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#1a6b3c; word-break:break-all;">{{ campaign_url }}</a>
-        </div>
-        <form method="post" action="/manage/{{ campaign.slug }}/unpublish/" style="display:inline-block; margin-left:8px;"
-              onsubmit="return confirm('Unpublish this campaign? Visitors will see a &quot;not published yet&quot; message instead of the map. All data is kept intact.');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-secondary">Unpublish</button>
-        </form>
-        {% else %}
-        <div style="padding:8px 12px; background:#fce4ec; border:1px solid #f48fb1; border-radius:6px; display:inline-block;">
-          <a href="{{ campaign_url }}" target="_blank" style="font-size:0.9rem; color:#880e4f; word-break:break-all;">{{ campaign_url }}</a>
-          <div style="font-size:0.8rem; color:#880e4f; margin-top:4px;">Not published yet. The URL is accessible but visitors will see a "not published yet" message instead of the map.</div>
-        </div>
-        <form method="post" action="/manage/{{ campaign.slug }}/publish/" style="display:inline-block; margin-top:8px;">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-primary">Publish Campaign</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    <tr><th>Dates</th><td>{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</td></tr>
-    {% if campaign.instructions %}
-    <tr><th style="vertical-align:top;">Instructions</th><td class="instructions">{{ campaign.instructions|safe }}</td></tr>
-    {% endif %}
-    {% if campaign.contact_info %}
-    <tr><th>Contact</th><td>{{ campaign.contact_info }}</td></tr>
-    {% endif %}
-    {% if campaign.hero_image_effective_url %}
-    <tr>
-      <th style="vertical-align:top;">Hero Image</th>
-      <td>
-        <img src="{{ campaign.hero_image_effective_url }}" alt="{{ campaign.name }}"
-             style="max-width:100%; max-height:220px; border-radius:4px; object-fit:cover; border:1px solid #ddd; display:block;">
-      </td>
-    </tr>
-    {% endif %}
-  </table>
+<!-- Step 1: Basics (inline editable form) -->
+<div class="card" id="step-basics">
+  <div class="card-title">Step 1: Basics</div>
+  <p style="font-size:0.85rem; color:#666; margin-bottom:16px;">
+    The following fields are visible to all viewers of this campaign.
+  </p>
+
+  <form method="post" action="{% url 'manage_save_basics' campaign.slug %}" id="basics-form">
+    {% csrf_token %}
+
+    {# Name #}
+    <div style="margin-bottom:16px;">
+      <label for="basics-name" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Campaign Name *
+      </label>
+      <input type="text" id="basics-name" name="name" value="{{ campaign.name|default:'' }}"
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    </div>
+
+    {# Slug (read-only after creation) #}
+    <div style="margin-bottom:16px;">
+      <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        URL Slug
+      </label>
+      <input type="text" value="{{ campaign.slug }}" disabled
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; background:#f5f5f5; color:#777;">
+      <div style="font-size:0.8rem; color:#777; margin-top:4px;">
+        Public URL: <a href="{{ campaign_url }}" target="_blank" style="color:#1a6b3c;">{{ campaign_url }}</a>
+        &mdash; slug cannot be changed after creation.
+      </div>
+    </div>
+
+    {# Instructions (Quill rich text) #}
+    <div style="margin-bottom:16px;">
+      <label style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Instructions &amp; Materials
+      </label>
+      <p style="font-size:0.85rem; color:#666; margin-bottom:8px;">
+        Tell users what they need to know: guidelines, where to get materials, links for more info.
+      </p>
+      <textarea name="instructions" id="basics-instructions" style="display:none;">{{ campaign.instructions|default:'' }}</textarea>
+      <div id="basics-quill-editor" style="background:#fff; border:1px solid #ccc; border-radius:4px; min-height:160px; font-size:0.9rem;"></div>
+    </div>
+
+    {# Start date #}
+    <div style="margin-bottom:16px;">
+      <label for="basics-start-date" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Start Date *
+      </label>
+      <input type="date" id="basics-start-date" name="start_date"
+             value="{{ campaign.start_date|date:'Y-m-d'|default:'' }}"
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    </div>
+
+    {# End date #}
+    <div style="margin-bottom:16px;">
+      <label for="basics-end-date" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        End Date
+      </label>
+      <input type="date" id="basics-end-date" name="end_date"
+             value="{{ campaign.end_date|date:'Y-m-d'|default:'' }}"
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    </div>
+
+    {# Contact info #}
+    <div style="margin-bottom:16px;">
+      <label for="basics-contact" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Contact Info
+      </label>
+      <input type="text" id="basics-contact" name="contact_info"
+             value="{{ campaign.contact_info|default:'' }}"
+             style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    </div>
+
+    {# Test campaign flag #}
+    <div style="margin-bottom:20px; padding:12px 14px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px;">
+      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+        <input type="checkbox" name="is_test" style="width:auto; margin-top:2px;" {% if campaign.is_test %}checked{% endif %}>
+        <span>
+          <span style="font-size:0.85rem; font-weight:600; color:#444;">Test Campaign</span>
+          <span style="display:block; font-size:0.82rem; color:#666; margin-top:2px;">
+            Test campaigns appear at the bottom of the list with a special badge. Use for demos or evaluation.
+          </span>
+        </span>
+      </label>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:center;">
+      <button type="submit" class="btn btn-primary">Save Basics</button>
+    </div>
+  </form>
 </div>
 
-<!-- Status Panel -->
+<!-- Quill editor for Basics form -->
+<link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
+<script>
+(function () {
+  var hiddenInput = document.getElementById('basics-instructions');
+  var quill = new Quill('#basics-quill-editor', {
+    theme: 'snow',
+    placeholder: 'Add volunteer instructions, links to materials, etc.',
+    modules: {
+      toolbar: [
+        ['bold', 'italic', 'underline'],
+        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+        ['link'],
+        ['clean'],
+      ],
+    },
+  });
+
+  // Pre-populate from existing value.
+  if (hiddenInput.value) {
+    quill.clipboard.dangerouslyPasteHTML(hiddenInput.value);
+  }
+
+  var form = document.getElementById('basics-form');
+  // Sync Quill content into the hidden textarea before the form submits.
+  form.addEventListener('formdata', function (e) {
+    e.formData.set('instructions', quill.getSemanticHTML());
+  });
+  // Fallback for browsers without the formdata event.
+  form.addEventListener('submit', function () {
+    hiddenInput.value = quill.getSemanticHTML();
+    hiddenInput.style.display = '';  // make it a real textarea so the name is submitted
+  });
+})();
+</script>
+
+<!-- Step 3: Cities -->
 <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
-<div class="card"
+<div class="card" id="step-cities"
      data-fetch-status-url="{% url 'manage_campaign_fetch_status' campaign.slug %}"
      data-initial-map-status="{{ campaign.map_status }}">
-  <div class="card-title">Street Management</div>
+  <div class="card-title">Step 3: Cities</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    Streets are fetched from OpenStreetMap and put over the map tiles. Streets are split up into very small "blocks", often more granular than normal blocks.
-      Fetching data can take a long time depending on the map size and the load on the OpenStreetMap servers.
-      Leafletter tries six times before giving up.
+    Choose the geographic area this campaign will cover. You can add entire cities or counties —
+    counties are often easier since city boundaries sometimes exclude nearby neighborhoods.
+    Streets are downloaded from OpenStreetMap, which can take 5–15 minutes.
+    You can leave this page and come back — fetching continues in the background.
   </p>
   <div style="margin-bottom:12px;">
     Map status:
@@ -319,10 +390,12 @@
     </div>
     {% endif %}
 
-    <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline;">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-secondary">Re-fetch All Streets</button>
-    </form>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px;">
+      <form method="post" action="/manage/{{ campaign.slug }}/refetch/" style="display:inline; margin:0;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary">Re-download Streets</button>
+      </form>
+    </div>
 
   {% else %}
     <!-- Legacy: no city fetch jobs yet (pre-migration campaigns) -->
@@ -349,7 +422,7 @@
         {% if campaign.map_error %}{{ campaign.map_error }}{% else %}Unknown error.{% endif %}
       </p>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a href="/manage/{{ campaign.slug }}/edit/" class="btn btn-primary">Edit Campaign</a>
+        <a href="#step-cities" class="btn btn-primary">Add Cities</a>
         <form method="post" action="/manage/{{ campaign.slug }}/refetch/">
           {% csrf_token %}
           <button type="submit" class="btn btn-secondary">Re-fetch Streets</button>
@@ -358,9 +431,101 @@
     {% endif %}
   {% endif %}
 
+  <!-- Add city form -->
+  <div style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
+    <div style="font-size:0.9rem; font-weight:600; color:#333; margin-bottom:8px;">Add a City or County</div>
+    <div id="cities-add-search-row" style="display:flex; gap:8px; margin-bottom:8px;">
+      <input type="text" id="cities-search-input" placeholder="Search for a city or county&hellip;"
+             style="flex:1; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+      <button type="button" id="cities-search-btn" class="btn btn-secondary">Search</button>
+    </div>
+    <div id="cities-search-results" style="display:none; border:1px solid #ccc; border-radius:4px; background:#fff; max-height:200px; overflow-y:auto;"></div>
+    <!-- Hidden form that submits the selected city -->
+    <form id="cities-add-form" method="post" action="{% url 'manage_save_cities' campaign.slug %}" style="display:none;">
+      {% csrf_token %}
+      <input type="hidden" id="cities-add-city-json" name="city_json" value="">
+    </form>
+  </div>
+
 </div>
 
 <script>
+(function () {
+  'use strict';
+
+  // ── Add-city search widget ─────────────────────────────────────────────────
+  var searchInput  = document.getElementById('cities-search-input');
+  var searchBtn    = document.getElementById('cities-search-btn');
+  var resultsDiv   = document.getElementById('cities-search-results');
+  var addForm      = document.getElementById('cities-add-form');
+  var cityJsonInput = document.getElementById('cities-add-city-json');
+
+  var prefetchedDisplayNames = new Set();
+  fetch('/manage/cities/prefetched/')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.city_display_names) {
+        data.city_display_names.forEach(function (n) { prefetchedDisplayNames.add(n); });
+      }
+    })
+    .catch(function () {});
+
+  function doCitySearch() {
+    var q = searchInput.value.trim();
+    if (!q) return;
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#777; font-size:0.9rem;">Searching&hellip;</div>';
+    fetch('/manage/city-search/?q=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        resultsDiv.innerHTML = '';
+        if (data.error) {
+          resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#c62828;">Error: ' + data.error + '</div>';
+          return;
+        }
+        if (!data.results || data.results.length === 0) {
+          resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#777; font-size:0.9rem;">No city results found.</div>';
+          return;
+        }
+        data.results.forEach(function (city) {
+          var item = document.createElement('div');
+          item.style.cssText = 'padding:8px 12px; cursor:pointer; font-size:0.9rem; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between;';
+          var label = document.createElement('span');
+          label.textContent = city.display_name || city.name;
+          item.appendChild(label);
+          if (prefetchedDisplayNames.has(city.display_name || city.name)) {
+            var badge = document.createElement('span');
+            badge.textContent = '\u2713 downloaded';
+            badge.style.cssText = 'margin-left:8px; font-size:0.75rem; color:#1a6b3c; background:#e8f5e9; padding:1px 6px; border-radius:10px; white-space:nowrap;';
+            item.appendChild(badge);
+          }
+          item.addEventListener('mouseenter', function () { item.style.background = '#f5f5f5'; });
+          item.addEventListener('mouseleave', function () { item.style.background = ''; });
+          item.addEventListener('click', function () {
+            cityJsonInput.value = JSON.stringify(city);
+            resultsDiv.style.display = 'none';
+            searchInput.value = '';
+            addForm.submit();
+          });
+          resultsDiv.appendChild(item);
+        });
+      })
+      .catch(function () {
+        resultsDiv.innerHTML = '<div style="padding:8px 12px; color:#c62828;">Request failed. Try again.</div>';
+      });
+  }
+
+  searchBtn.addEventListener('click', doCitySearch);
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); doCitySearch(); }
+  });
+  document.addEventListener('click', function (e) {
+    if (!resultsDiv.contains(e.target) && e.target !== searchInput && e.target !== searchBtn) {
+      resultsDiv.style.display = 'none';
+    }
+  });
+})();
+
 (function () {
   'use strict';
 
