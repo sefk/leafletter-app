@@ -629,12 +629,12 @@
 })();
 </script>
 
-<!-- Geographical Limit Editor -->
+<!-- Campaign Boundary Editor -->
 {% if campaign.bbox %}
 <div class="card">
-  <div class="card-title">Geographical Limit</div>
+  <div class="card-title">Campaign Boundary</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    The Geographical Limit defines the boundary of this campaign. Only streets inside this polygon
+    The Campaign Boundary defines the area of this campaign. Only streets inside this polygon
     are shown to workers. Draw a polygon that matches the true campaign area for best results.
   </p>
   <div id="geo-limit-stale-banner" style="display:none; padding:8px 12px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; margin-bottom:12px; font-size:0.875rem; color:#5a4000;">
@@ -657,8 +657,8 @@
   {% endif %}
 
   <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <button id="btn-edit-bbox" class="btn btn-secondary">Edit Geographical Limit</button>
-    <button id="btn-save-bbox" class="btn btn-primary" style="display:none;" disabled>Save Geographical Limit</button>
+    <button id="btn-edit-bbox" class="btn btn-secondary">Edit Campaign Boundary</button>
+    <button id="btn-save-bbox" class="btn btn-primary" style="display:none;" disabled>Save Campaign Boundary</button>
     <button id="btn-cancel-bbox" class="btn btn-danger" style="display:none;">Cancel</button>
     <span id="bbox-status" style="font-size:0.85rem; color:#666;"></span>
   </div>
@@ -846,7 +846,7 @@
               statusEl.textContent = 'Saved!';
               setTimeout(function() { statusEl.textContent = ''; }, 2000);
             }
-            // Update the household estimate in the Geographical Limit card.
+            // Update the household estimate in the Campaign Boundary card.
             if (data.estimated_addresses !== undefined) {
               var addrEl = document.getElementById('sm-estimated-addresses');
               if (addrEl) {
@@ -881,7 +881,7 @@
 <div class="card" style="border-left:4px solid #e6ac00; background:#fffde7;">
   <p style="margin:0; font-size:0.95rem; color:#5a4000;">
     <strong>Draw a geographic boundary to render the campaign map.</strong>
-    Street data has been imported. Use the "Geographical Limit" section above to draw a polygon
+    Street data has been imported. Use the "Campaign Boundary" section above to draw a polygon
     defining the campaign area. Saving the boundary will trigger map rendering.
   </p>
 </div>
@@ -901,7 +901,7 @@
   </div>
   {% if campaign.bbox %}
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    This view matches the "Geographical Limit" selected above and matches what is shown to workers.
+    This view matches the "Campaign Boundary" selected above and matches what is shown to workers.
   </p>
   {% else %}
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
