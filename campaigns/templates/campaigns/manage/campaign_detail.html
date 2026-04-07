@@ -162,7 +162,7 @@
 
 <!-- Step 1: Basics (inline editable form) -->
 <div class="card" id="step-basics">
-  <div class="card-title">Step 1: Basics</div>
+  <div class="card-title">Basics</div>
   <p style="font-size:0.85rem; color:#666; margin-bottom:16px;">
     The following fields are visible to all viewers of this campaign.
   </p>
@@ -295,7 +295,7 @@
 <div class="card" id="step-cities"
      data-fetch-status-url="{% url 'manage_campaign_fetch_status' campaign.slug %}"
      data-initial-map-status="{{ campaign.map_status }}">
-  <div class="card-title">Step 3: Cities</div>
+  <div class="card-title">Cities</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
     Choose the geographic area this campaign will cover. You can add entire cities or counties —
     counties are often easier since city boundaries sometimes exclude nearby neighborhoods.
@@ -901,7 +901,7 @@
   </div>
   {% if campaign.bbox %}
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    This view matches the "Campaign Boundary" selected above and matches what is shown to workers.
+    This view matches the "Campaign Boundary" selected above and is what will be shown to workers. Select "Coverage detail" to see and edit the logged trips.
   </p>
   {% else %}
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
