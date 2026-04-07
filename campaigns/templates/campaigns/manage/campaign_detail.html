@@ -257,23 +257,25 @@
 <div class="card" id="step-hero">
   <div class="card-title">Hero Image <span style="font-size:0.8rem; font-weight:400; color:#888;">(optional)</span></div>
   <p style="font-size:0.85rem; color:#666; margin-bottom:16px;">
-    Landscape or 16:9 image recommended. Shown at the top of the public campaign page.
+    This image will be shown prominently on list of campaigns and at the top of your campaign page.
+    Use a wide (horizontal) image. Use something simple and clear with few words if any.
+    If uploaded, the image will be saved on our server and resized; if a URL is provided, make sure it doesn't go away later.
   </p>
 
   {# Tabs #}
   <div style="display:flex; gap:0; margin-bottom:12px; border:1px solid #ccc; border-radius:4px; overflow:hidden; width:fit-content;">
-    <button type="button" id="hero-tab-url" onclick="heroShowTab('url')"
-            style="padding:6px 16px; font-size:0.85rem; border:none; cursor:pointer; background:#1a6b3c; color:#fff; font-weight:600;">
-      Paste URL
-    </button>
     <button type="button" id="hero-tab-upload" onclick="heroShowTab('upload')"
-            style="padding:6px 16px; font-size:0.85rem; border:none; cursor:pointer; background:#f5f5f5; color:#444;">
+            style="padding:6px 16px; font-size:0.85rem; border:none; cursor:pointer; background:#1a6b3c; color:#fff; font-weight:600;">
       Upload File
+    </button>
+    <button type="button" id="hero-tab-url" onclick="heroShowTab('url')"
+            style="padding:6px 16px; font-size:0.85rem; border:none; cursor:pointer; background:#f5f5f5; color:#444;">
+      Paste URL
     </button>
   </div>
 
   {# URL panel #}
-  <div id="hero-panel-url">
+  <div id="hero-panel-url" style="display:none;">
     <form method="post" action="{% url 'manage_save_hero' campaign.slug %}" id="hero-url-form">
       {% csrf_token %}
       <label style="display:block; font-size:0.82rem; color:#666; margin-bottom:4px;">
@@ -294,7 +296,7 @@
   </div>
 
   {# Upload panel #}
-  <div id="hero-panel-upload" style="display:none;">
+  <div id="hero-panel-upload">
     {% if campaign.uploaded_image %}
     <div id="hero-uploaded-existing" style="margin-bottom:10px;">
       <img src="{{ campaign.uploaded_image.image.url }}" alt="Current hero image"
@@ -309,14 +311,16 @@
     <div id="hero-upload-area">
       <form method="post" action="{% url 'manage_save_hero' campaign.slug %}" enctype="multipart/form-data" id="hero-upload-form">
         {% csrf_token %}
-        <label style="display:block; font-size:0.82rem; color:#666; margin-bottom:6px;">
-          Upload a JPEG, PNG, GIF, or WebP image. Landscape orientation (16:9 or wider) recommended.
-          Images are automatically resized to fit within 1920&times;1080. Maximum file size: 20 MB.
-        </label>
         <input type="file" id="hero-file-input" name="image" accept=".jpg,.jpeg,.png,.gif,.webp"
                style="display:block; margin-bottom:10px;" onchange="heroPreviewFile(this)">
 
-        <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 14px; margin-bottom:10px; font-size:0.82rem; color:#555;">
+        <div id="hero-upload-preview" style="margin-top:10px; display:none;">
+          <img id="hero-upload-preview-img" src="" alt="Upload preview"
+               style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd;">
+          <div id="hero-upload-status" style="font-size:0.82rem; color:#555; margin-top:4px;"></div>
+        </div>
+
+        <div id="hero-attest-box" style="display:none; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 14px; margin-top:10px; margin-bottom:10px; font-size:0.82rem; color:#555;">
           <strong>You must affirm the following to upload.</strong>
           <label style="display:flex; align-items:flex-start; gap:8px; margin-top:8px; cursor:pointer;">
             <input type="checkbox" name="attest_rights" id="hero-attest-rights" style="width:auto; margin-top:2px;" onchange="heroUpdateSaveBtn()">
@@ -326,12 +330,6 @@
             <input type="checkbox" name="attest_content" id="hero-attest-content" style="width:auto; margin-top:2px;" onchange="heroUpdateSaveBtn()">
             <span>This image contains no abusive, hateful, or illegal content (including CSAM, incitement to violence, or harassment).</span>
           </label>
-        </div>
-
-        <div id="hero-upload-preview" style="margin-top:10px; display:none;">
-          <img id="hero-upload-preview-img" src="" alt="Upload preview"
-               style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd;">
-          <div id="hero-upload-status" style="font-size:0.82rem; color:#555; margin-top:4px;"></div>
         </div>
 
         <div style="margin-top:12px;">
@@ -376,30 +374,34 @@
     });
   }
 
-  // If campaign already has an uploaded image, start on Upload tab
-  {% if campaign.uploaded_image %}
-  heroShowTab('upload');
-  {% endif %}
-
   // Preview selected file locally
   window.heroPreviewFile = function (input) {
     var status     = document.getElementById('hero-upload-status');
     var previewDiv = document.getElementById('hero-upload-preview');
     var previewImg = document.getElementById('hero-upload-preview-img');
-    if (!input.files.length) { previewDiv.style.display = 'none'; return; }
+    var attestBox  = document.getElementById('hero-attest-box');
+    if (!input.files.length) {
+      previewDiv.style.display = 'none';
+      if (attestBox) attestBox.style.display = 'none';
+      heroUpdateSaveBtn();
+      return;
+    }
     var file = input.files[0];
     if (file.size > 20 * 1024 * 1024) {
       previewDiv.style.display = '';
       previewImg.style.display = 'none';
       status.textContent = 'Image exceeds the 20 MB size limit. Please use a smaller source file.';
+      if (attestBox) attestBox.style.display = 'none';
+      heroUpdateSaveBtn();
       return;
     }
+    if (attestBox) attestBox.style.display = '';
+    heroUpdateSaveBtn();
     var reader = new FileReader();
     reader.onload = function (e) {
       previewImg.src = e.target.result;
       previewImg.style.display = '';
       previewDiv.style.display = '';
-      status.textContent = 'Image will be resized and uploaded when you save.';
     };
     reader.readAsDataURL(file);
   };
