@@ -6,7 +6,35 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
   <h1>{% if is_admin %}Campaigns{% else %}My Campaigns{% endif %}</h1>
-  <a href="/manage/new/" class="btn btn-primary">+ New Campaign</a>
+  <button type="button" class="btn btn-primary" id="new-campaign-toggle" onclick="document.getElementById('new-campaign-panel').style.display='block'; this.style.display='none'; document.getElementById('new-campaign-name').focus();">+ New Campaign</button>
+</div>
+
+{% if messages %}
+<div style="margin-bottom:16px;">
+  {% for message in messages %}
+  <div style="background:#ffebee; color:#c62828; padding:10px 14px; border-radius:6px; margin-bottom:6px;">{{ message }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div id="new-campaign-panel" style="display:none; margin-bottom:24px;">
+  <div class="card" style="padding:20px;">
+    <h2 style="font-size:1rem; font-weight:700; margin:0 0 6px 0;">Create a new campaign</h2>
+    <p style="font-size:0.85rem; color:#666; margin:0 0 14px 0;">
+      Name your campaign to get started. You'll set up cities, boundaries, and other details on the next page.
+    </p>
+    <form method="post" action="/manage/new/" style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap;">
+      {% csrf_token %}
+      <input type="text" id="new-campaign-name" name="name" placeholder="e.g. Summer 2026 Canvass"
+             required maxlength="200" autocomplete="off"
+             style="flex:1; min-width:200px; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+      <button type="submit" class="btn btn-primary">Create</button>
+      <button type="button" class="btn btn-secondary"
+              onclick="document.getElementById('new-campaign-panel').style.display='none'; document.getElementById('new-campaign-toggle').style.display='';">
+        Cancel
+      </button>
+    </form>
+  </div>
 </div>
 
 {% if is_admin %}
@@ -112,7 +140,7 @@
   </tbody>
 </table>
 {% else %}
-  <p style="color:#666;">No campaigns yet. <a href="/manage/new/">Create your first campaign.</a></p>
+  <p style="color:#666;">No campaigns yet. <a href="#" onclick="document.getElementById('new-campaign-toggle').click(); return false;">Create your first campaign.</a></p>
 {% endif %}
 
 <p style="margin-top:24px; font-size:0.82rem; color:#555;">Because of how our map provider works, a "block" might actually be much smaller than what we normally consider a block. It might even be a driveway.</p>

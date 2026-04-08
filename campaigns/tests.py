@@ -1274,10 +1274,12 @@ class ManagerUITest(TestCase):
         resp = self.client.get('/manage/')
         self.assertEqual(resp.status_code, 200)
 
-    def test_authenticated_can_access_create(self):
+    def test_authenticated_get_new_redirects_to_list(self):
+        # GET /manage/new/ now redirects to the list (quick-create is POST-only)
         self._login()
         resp = self.client.get('/manage/new/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/', resp['Location'])
 
     def test_authenticated_can_access_detail(self):
         self._login()
@@ -1301,33 +1303,43 @@ class ManagerUITest(TestCase):
 
     def test_create_saves_as_draft(self):
         self._login()
-        self.client.post('/manage/new/', {
-            'name': 'Brand New Campaign',
-            'cities_json': self._city_json('San Jose'),
-            'start_date': '2026-06-01',
-        })
+        self.client.post('/manage/new/', {'name': 'Brand New Campaign'})
         campaign = Campaign.objects.get(name='Brand New Campaign')
         self.assertEqual(campaign.status, 'draft')
 
     def test_create_redirects_to_detail(self):
         self._login()
-        resp = self.client.post('/manage/new/', {
-            'name': 'Redirect Test',
-            'cities_json': self._city_json('Palo Alto', 123),
-            'start_date': '2026-06-01',
-        })
+        resp = self.client.post('/manage/new/', {'name': 'Redirect Test'})
         self.assertEqual(resp.status_code, 302)
-        self.assertIn('/manage/', resp['Location'])
+        self.assertIn('/manage/redirect-test/', resp['Location'])
 
     def test_create_autogenerates_slug_when_blank(self):
         self._login()
-        self.client.post('/manage/new/', {
-            'name': 'Auto Slug Campaign',
-            'cities_json': self._city_json('Sunnyvale', 456),
-            'start_date': '2026-06-01',
-        })
+        self.client.post('/manage/new/', {'name': 'Auto Slug Campaign'})
         campaign = Campaign.objects.get(name='Auto Slug Campaign')
         self.assertEqual(campaign.slug, 'auto-slug-campaign')
+
+    def test_create_empty_name_redirects_to_list(self):
+        self._login()
+        resp = self.client.post('/manage/new/', {'name': ''})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/', resp['Location'])
+        # No campaign should have been created
+        self.assertFalse(Campaign.objects.filter(name='').exists())
+
+    def test_create_duplicate_slug_appends_number(self):
+        # Create a campaign that will occupy the base slug
+        self._login()
+        self.client.post('/manage/new/', {'name': 'Slug Collision'})
+        self.client.post('/manage/new/', {'name': 'Slug Collision'})
+        self.assertTrue(Campaign.objects.filter(slug='slug-collision').exists())
+        self.assertTrue(Campaign.objects.filter(slug='slug-collision-2').exists())
+
+    def test_create_sets_empty_cities(self):
+        self._login()
+        self.client.post('/manage/new/', {'name': 'Empty Cities Campaign'})
+        campaign = Campaign.objects.get(name='Empty Cities Campaign')
+        self.assertEqual(campaign.cities, [])
 
     # ── Publish ───────────────────────────────────────────────────────────────
 
@@ -1510,40 +1522,43 @@ class ManagerUITest(TestCase):
 
     # ── Cities JSON parsing ───────────────────────────────────────────────────
 
-    def test_cities_json_saved_as_dict_list(self):
+    def test_save_cities_adds_city_as_dict(self):
+        # Cities are added via the save-cities endpoint on the detail page.
+        # Use a fresh campaign with empty cities to avoid fixture interference.
         self._login()
-        cities = [
-            {'name': 'San Jose', 'osm_id': 112143, 'osm_type': 'relation', 'display_name': 'San José, CA'},
-            {'name': 'Palo Alto', 'osm_id': 999, 'osm_type': 'relation', 'display_name': 'Palo Alto, CA'},
-        ]
-        self.client.post('/manage/new/', {
-            'name': 'City Parse Test',
-            'cities_json': json.dumps(cities),
-            'start_date': '2026-06-01',
-        })
-        campaign = Campaign.objects.get(name='City Parse Test')
-        self.assertEqual(campaign.cities[0]['name'], 'San Jose')
-        self.assertEqual(campaign.cities[1]['osm_id'], 999)
+        fresh = make_campaign(slug='save-cities-test', cities=[])
+        city = {'name': 'San Jose', 'osm_id': 112143, 'osm_type': 'relation', 'display_name': 'San José, CA'}
+        with patch('campaigns.views.queue_city_fetches'):
+            self.client.post(
+                f'/manage/{fresh.slug}/save-cities/',
+                {'city_json': json.dumps(city)},
+            )
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.cities[0]['name'], 'San Jose')
+        self.assertEqual(fresh.cities[0]['osm_id'], 112143)
 
-    def test_cities_json_invalid_json_fails_validation(self):
+    def test_save_cities_invalid_json_redirects_with_error(self):
         self._login()
-        resp = self.client.post('/manage/new/', {
-            'name': 'Bad JSON Test',
-            'cities_json': 'not-json',
-            'start_date': '2026-06-01',
-        })
-        self.assertEqual(resp.status_code, 200)  # form re-rendered with errors
-        self.assertFalse(Campaign.objects.filter(name='Bad JSON Test').exists())
+        fresh = make_campaign(slug='save-cities-bad-json', cities=[])
+        resp = self.client.post(
+            f'/manage/{fresh.slug}/save-cities/',
+            {'city_json': 'not-json'},
+        )
+        # Should redirect back to detail (no crash, no city added)
+        self.assertEqual(resp.status_code, 302)
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.cities, [])
 
-    def test_cities_json_empty_list_fails_validation(self):
+    def test_save_cities_missing_fields_redirects_with_error(self):
         self._login()
-        resp = self.client.post('/manage/new/', {
-            'name': 'Empty Cities Test',
-            'cities_json': '[]',
-            'start_date': '2026-06-01',
-        })
-        self.assertEqual(resp.status_code, 200)
-        self.assertFalse(Campaign.objects.filter(name='Empty Cities Test').exists())
+        fresh = make_campaign(slug='save-cities-missing', cities=[])
+        resp = self.client.post(
+            f'/manage/{fresh.slug}/save-cities/',
+            {'city_json': json.dumps({'name': 'Nowhere'})},  # missing osm_id
+        )
+        self.assertEqual(resp.status_code, 302)
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.cities, [])
 
     # ── Hero Image (save_hero) ────────────────────────────────────────────────
 
