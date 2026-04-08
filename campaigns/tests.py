@@ -1274,12 +1274,11 @@ class ManagerUITest(TestCase):
         resp = self.client.get('/manage/')
         self.assertEqual(resp.status_code, 200)
 
-    def test_authenticated_get_new_redirects_to_list(self):
-        # GET /manage/new/ now redirects to the list (quick-create is POST-only)
+    def test_authenticated_can_access_create_page(self):
         self._login()
         resp = self.client.get('/manage/new/')
-        self.assertEqual(resp.status_code, 302)
-        self.assertIn('/manage/', resp['Location'])
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Create a new campaign')
 
     def test_authenticated_can_access_detail(self):
         self._login()

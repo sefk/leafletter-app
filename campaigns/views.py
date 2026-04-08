@@ -514,11 +514,11 @@ def _save_campaign_image(image_form, campaign, user):
 
 @_login_required
 def manage_campaign_quick_create(request):
-    """POST-only quick create: accept a name, create a minimal Campaign, redirect to detail."""
+    """Quick create: GET shows a simple name form, POST creates and redirects to detail."""
     from django.utils.text import slugify as _slugify
     from django.contrib import messages
     if request.method != 'POST':
-        return redirect('manage_campaign_list')
+        return render(request, 'campaigns/manage/campaign_create.html')
     name = request.POST.get('name', '').strip()
     if not name:
         messages.error(request, 'Campaign name is required.')

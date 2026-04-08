@@ -1,0 +1,39 @@
+{% extends "campaigns/manage/base.html" %}
+
+{% block title %}New Campaign — Leafletter Manager{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:20px;">
+  <a href="/manage/" style="font-size:0.9rem; color:#1a6b3c; text-decoration:none;">&larr; All Campaigns</a>
+</div>
+
+<div class="card" style="max-width:500px;">
+  <h1 style="font-size:1.25rem; margin:0 0 8px 0;">Create a new campaign</h1>
+  <p style="font-size:0.9rem; color:#666; margin:0 0 20px 0;">
+    Name your campaign to get started. On the next page you'll add cities,
+    draw a boundary, and configure everything else before publishing.
+  </p>
+
+  {% if messages %}
+  <div style="margin-bottom:16px;">
+    {% for message in messages %}
+    <div style="background:#ffebee; color:#c62828; padding:10px 14px; border-radius:6px; margin-bottom:6px;">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    <label for="campaign-name" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+      Campaign name
+    </label>
+    <input type="text" id="campaign-name" name="name" placeholder="e.g. Summer 2026 Canvass"
+           required maxlength="200" autocomplete="off" autofocus
+           style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; box-sizing:border-box; margin-bottom:16px;">
+    <div style="display:flex; gap:8px;">
+      <button type="submit" class="btn btn-primary">Create Campaign</button>
+      <a href="/manage/" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
