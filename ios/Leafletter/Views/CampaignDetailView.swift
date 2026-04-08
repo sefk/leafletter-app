@@ -67,14 +67,21 @@ private struct CampaignWebView: UIViewRepresentable {
             forMainFrameOnly: true
         )
         config.userContentController.addUserScript(hideMenu)
-        // Inject a viewport meta tag that disables page-level pinch-to-zoom.
-        // The Leaflet map handles its own touch/pinch events independently.
+        // Inject a viewport meta tag that disables page-level pinch-to-zoom,
+        // then scroll past the hero image so the map and "Log a Trip" button
+        // are visible on load. The hero is still accessible by scrolling up.
         let script = WKUserScript(
             source: """
             (function() {
                 var meta = document.querySelector('meta[name=viewport]');
                 if (!meta) { meta = document.createElement('meta'); meta.name = 'viewport'; document.head.appendChild(meta); }
                 meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+
+                // Scroll so the toolbar ("Log a Trip") is visible on screen.
+                var toolbar = document.querySelector('.toolbar');
+                if (toolbar) {
+                    toolbar.scrollIntoView({ behavior: 'instant', block: 'end' });
+                }
             })();
             """,
             injectionTime: .atDocumentEnd,
