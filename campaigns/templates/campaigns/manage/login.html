@@ -41,12 +41,8 @@
 </p>
 
 <p style="max-width: 400px; margin-bottom: 16px; color: #555;">
-  {% if admin_emails %}
-    If you believe you should have access, or need a password reset, please contact the administrator{% if admin_emails|length > 1 %}s{% endif %} at
-    {% for email in admin_emails %}<a href="mailto:{{ email }}">{{ email }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
-  {% else %}
-    If you believe you should have access, or need a password reset, please contact the administrator.
-  {% endif %}
+  If you believe you should have access, or need a password reset, please contact us at
+  <a href="mailto:info@leafletter.app">info@leafletter.app</a>.
 </p>
 
 {% endblock %}

@@ -126,7 +126,7 @@ private struct BannerView: View {
 
 private struct BetaBannerView: View {
     var body: some View {
-        Text("**Beta:** This app is in beta. If you have feedback or concerns, please [file a bug](https://github.com/sefk/leafletter-app/issues/) or [contact the owner](https://sef.kloninger.com/).")
+        Text("**Beta:** This app is in beta. If you have feedback or concerns, please [file a bug](https://github.com/sefk/leafletter-app/issues/) or [email us](mailto:info@leafletter.app).")
             .font(.caption)
             .foregroundStyle(Color(red: 0.365, green: 0.251, blue: 0.216))
             .frame(maxWidth: .infinity)
