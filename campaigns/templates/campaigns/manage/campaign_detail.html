@@ -508,7 +508,7 @@
   {% endif %}
 
   <!-- In-progress indicator — shown while a fetch or render is running, hidden when done -->
-  <div id="sm-inflight-banner" style="display:{% if campaign.map_status == 'generating' or campaign.map_status == 'pending' or campaign.map_status == 'rendering' %}flex{% else %}none{% endif %}; align-items:flex-start; gap:10px; margin-bottom:12px;">
+  <div id="sm-inflight-banner" style="display:{% if campaign.cities and campaign.map_status == 'generating' or campaign.cities and campaign.map_status == 'pending' or campaign.cities and campaign.map_status == 'rendering' %}flex{% else %}none{% endif %}; align-items:flex-start; gap:10px; margin-bottom:12px;">
     <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6ac00; animation:pulse 1.2s infinite; flex-shrink:0; margin-top:4px;"></span>
     <span style="color:#666;">
       Street import in progress — status updates automatically.

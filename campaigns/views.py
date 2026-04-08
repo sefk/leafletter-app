@@ -375,7 +375,7 @@ def manage_campaign_list(request):
         c.size_street_count = c.cached_size_street_count
         c.size_household_count = c.cached_size_household_count
 
-    inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering')]
+    inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering') and c.cities]
     inflight.sort(key=lambda c: c.updated_at)
 
     # Fetch deleted campaigns separately so users can restore them (issue #148).
