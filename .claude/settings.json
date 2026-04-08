@@ -8,7 +8,9 @@
       "Bash(railway variables)",
       "Bash(railway environment)",
       "Bash(railway service)",
-      "Bash(railway run)"
+      "Bash(railway run)",
+      "Bash(python:*)",
+      "Bash(python3:*)"
     ]
   }
 }

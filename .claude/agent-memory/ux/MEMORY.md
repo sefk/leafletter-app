@@ -66,6 +66,12 @@ Minor:
 - Coverage computed server-side per request (no caching in coverage endpoint)
 - Trip deletion is soft-delete (deleted=True flag)
 
+## Manage UI — Product Decisions (2026-04-07)
+- Slug policy: editable before publish, locked after publish. "Cannot change once created" is wrong — remove that copy everywhere.
+- New campaign flow: product owner wants /manage/new/ to be a single-field form (name only, slug auto-derived). Full setup happens in the step-based detail page.
+- Cities step is interactive / ongoing, not a one-time import — add/remove/re-fetch at any time, even post-publish.
+- Full proposal at doc/ux-manage-proposal.md (updated 2026-04-07 with Phase 4).
+
 ## Island-in-the-City Problem (Issue #136, reviewed 2026-04-02)
 - OSM unincorporated holes are common in US suburbs (CDPs, unincorporated neighborhoods inside city boundaries)
 - Current workaround (download county + draw polygon) is unusable for non-technical managers
