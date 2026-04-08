@@ -288,10 +288,17 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
                 return
             }
 
+            // Hand off non-web schemes (mailto:, tel:, etc.) to the system.
+            if navigationAction.navigationType == .linkActivated,
+               url.scheme != "http", url.scheme != "https" {
+                decisionHandler(.cancel)
+                UIApplication.shared.open(url)
+                return
+            }
+
             // Open all external HTTP(S) link clicks in Safari — don't load them
             // inside the about-page WebView.
             if navigationAction.navigationType == .linkActivated,
-               (url.scheme == "http" || url.scheme == "https"),
                !url.absoluteString.hasPrefix(baseURL) {
                 decisionHandler(.cancel)
                 UIApplication.shared.open(url)
