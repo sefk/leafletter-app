@@ -223,6 +223,17 @@ struct AboutWKWebViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let info = AboutWKWebViewRepresentable.buildInfo
         let config = WKWebViewConfiguration()
+        // Hide the hamburger menu — the iOS app has its own navigation.
+        let hideMenu = WKUserScript(
+            source: """
+            var s = document.createElement('style');
+            s.textContent = '.hamburger-btn, .hamburger-menu { display: none !important; }';
+            document.documentElement.appendChild(s);
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(hideMenu)
         // Allow window.open() / target="_blank" links to be handled by the
         // WKUIDelegate (which the Coordinator also implements) so we can
         // redirect them to Safari.

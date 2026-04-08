@@ -56,6 +56,17 @@ private struct CampaignWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        // Hide the hamburger menu — the iOS app has its own navigation.
+        let hideMenu = WKUserScript(
+            source: """
+            var s = document.createElement('style');
+            s.textContent = '.hamburger-btn, .hamburger-menu { display: none !important; }';
+            document.documentElement.appendChild(s);
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(hideMenu)
         // Inject a viewport meta tag that disables page-level pinch-to-zoom.
         // The Leaflet map handles its own touch/pinch events independently.
         let script = WKUserScript(
