@@ -8,7 +8,7 @@ A web app for coordinating volunteer leafletting campaigns.
 
 This is basically at MVP or Beta stage.
 
-Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap streets to select them, and submit a trip. Campaign managers use Django Admin to create campaigns, publish them (triggering a background OSM street import), and monitor coverage.
+Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap streets to select them, and submit a trip. Campaign managers use the `/manage/` UI to create campaigns, add cities (which triggers a background OSM street import), and publish them. There is also an iOS app that wraps the public-facing pages in a native shell.
 
 ### Tech stack
 
@@ -29,8 +29,8 @@ Workers visit a campaign URL, see a Leaflet map of OSM street segments, tap stre
 - **Coverage GeoJSON returns individual features** — MySQL doesn't support spatial union aggregates, so covered streets are returned as individual GeoJSON features rather than a merged geometry
 - **Soft delete** on Campaign — sets `status='deleted'`, never removes rows
 - **Cities are editable on published campaigns** — editing triggers a fresh OSM fetch and resets `map_status` to pending
-- **Task trigger in `save_model` and `response_change`** — publishing via the status dropdown, the Publish button, or the bulk action all queue an OSM fetch
-- **155 tests** covering models, all views, the Overpass task, and admin behaviour
+- **Task trigger** — in the manage UI, adding cities queues an OSM fetch immediately; in Django Admin, publishing or changing cities on a published campaign triggers the fetch via `save_model` and `response_change`
+- **383 tests** covering models, all views (public, manage, admin), the Overpass task, and API endpoints
 
 ---
 
@@ -132,9 +132,8 @@ honcho start
 
 - `/` — Public landing page listing active campaigns
 - `/manage/` — Campaign manager UI
-  - Create a Campaign, fill in `cities` as a JSON list: `["Palo Alto", "Menlo Park"]`
-  - Use the **Publish** button to publish and trigger OSM street import
-  - Wait for `map_status` to become **Ready**
+  - Create a campaign, add cities via the search widget, then publish
+  - Adding cities triggers the background OSM street import; wait for `map_status` to become **Ready**
 - `/admin/` — Django Admin (superuser access; useful for debugging)
 - `/c/<slug>/` — Worker map view; tap streets, log trips
 
@@ -204,7 +203,10 @@ Railway will pick up the push to `prod` and deploy to the production environment
 | URL | Description |
 |-----|-------------|
 | `/` | Public campaign landing page |
+| `/about/` | About, privacy policy, and legal |
 | `/manage/` | Campaign manager UI |
+| `/manage/new/` | Create a new campaign |
+| `/manage/<slug>/` | Campaign detail / edit page |
 | `/admin/` | Django Admin |
 | `/c/<slug>/` | Worker campaign map |
 | `/c/<slug>/streets.geojson` | All street segments (GeoJSON) |
