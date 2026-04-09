@@ -62,7 +62,7 @@ def about(request):
 
 def campaign_detail(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug)
-    if campaign.status == 'deleted':
+    if campaign.status in ('deleted', 'draft'):
         from django.http import Http404
         raise Http404
     geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
