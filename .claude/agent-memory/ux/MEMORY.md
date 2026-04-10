@@ -19,10 +19,21 @@
 ## Design Conventions (confirmed)
 - Brand color: #1a6b3c (dark green) — used for header bg, links, primary buttons, selected segments
 - Typography: system-ui font stack (-apple-system, BlinkMacSystemFont, Segoe UI)
-- No base template/inheritance — each page is standalone HTML (no {% extends %})
-- Inline CSS only — no external stylesheet, no CSS framework (no Bootstrap/Tailwind)
-- Google Analytics: G-STEDJ3HETF (campaign-specific token, different from global tokens in CLAUDE.md)
-- Beta banner: fixed bottom on campaign_list, static bottom on about page (inconsistency)
+- Worker pages (campaign_list, campaign_detail, about) are standalone HTML — no {% extends %}
+- Manage pages use campaigns/templates/campaigns/manage/base.html ({% extends %})
+- Inline CSS throughout — no external stylesheet, no CSS framework
+- Google Analytics: G-STEDJ3HETF on all pages
+- Beta banner: position:fixed on campaign_list (web), safeAreaInset on iOS; static on about page
+- Hamburger nav pattern used consistently across all pages
+- iOS app: CampaignListView (native SwiftUI) + CampaignDetailView (WKWebView wrapping /c/<slug>/) + AboutWebView (WKWebView)
+
+## iOS App Architecture
+- APIClient.swift calls /api/campaigns/ — native list, not a web view
+- CampaignDetailView injects JS: hides hamburger menu, disables pinch-to-zoom, scrolls toolbar into view on load
+- CampaignDetailView disables iOS swipe-back gesture (edge pan) to prevent accidental nav during map interaction
+- AboutWebView intercepts back-links and /about/ links to use native navigation instead
+- Staging/production toggle hidden behind 3 taps on "About" title in nav bar
+- Config.swift: Config.baseURL / Config.isStaging / Config.toggleStaging()
 
 ## Worker Flow (campaign_detail.html + map.js)
 1. Page loads -> map renders -> streets + coverage load asynchronously
@@ -36,28 +47,32 @@
 - Trip legend with per-trip color swatches and visibility checkboxes (detail mode only)
 - Undo button for deselecting last lasso batch or individual click
 
-## Known UX Issues (from initial review, 2026-03-07)
-See: ux-review-initial.md for full details
+## Known UX Issues (updated 2026-04-09)
 
-Critical:
-- "Manage" link visible to all workers in header — exposes internal URL, confusing
-- log_trip endpoint uses @csrf_exempt — security concern noted
+### iOS Worker
+- CampaignRow: TestBadgeView component defined separately but plain-text TEST badge duplicated inline in else branch (code inconsistency, not UX issue per se)
+- "Map generating…" label appears on campaign list row — good indicator, but no explanation of what to do (check back later)
+- BannerView entire text block uses onTapGesture — whole banner is tappable but only "About this app" is styled as a link; confusing tap target
+- Campaign list loads correctly show hero images but hero image height is fixed at 150px — very short, cuts faces/details
+- No loading shimmer/placeholder — campaigns show ProgressView spinner only, no skeleton rows
+- Error retry uses TaskGroup pattern correctly; Retry button placement (bottom overlay on ContentUnavailableView) is good
 
-Major:
-- No zoom enforcement before selection mode — small segments are very hard to tap on mobile at city zoom level
-- Trip form appears ABOVE toolbar during selection, meaning worker must scroll down past map to find it
-- "Add This Trip" button label doesn't match PRD's "Done selecting" / "Submit" two-step flow description
-- No confirmation or summary before final submit — easy to accidentally submit with wrong segments
-- Loading state repurposes the primary CTA button text — disorienting on repeat visits
-- Lasso warning text is very long and technical for non-tech-savvy workers
-- beta-banner is position:fixed on campaign_list (obscures bottom content) but not on campaign_detail
+### Web Worker — campaign_detail.html
+- "Manage campaign" link in hamburger menu visible to all visitors — exposes /manage/<slug>/ URL; unauthenticated access redirects to login but label is confusing for workers
+- Trip form (name + notes) rendered above toolbar in DOM, but because toolbar is above it visually (DOM order: form then toolbar), on mobile the form appears below the fold during selection mode — worker must scroll down
+- Lasso warning: zero streets message is well-placed now (between drawing-instructions and trip-form)
+- "Add This Trip" button appears with no selection count visible confirmation before submit
+- coverage-mode select default is "Coverage summary" on page load (map.js sets coverageMode = 'summary') but HTML select default value is also "Coverage summary" — consistent
+- No empty-state when no trips yet logged: map just shows grey streets with no orange overlay and legend is hidden — which is fine but could be more welcoming for first visitor
+- campaign_list.html uses location.replace() so back button from detail skips the list — intentional (matches iOS behavior, prevents web back-nav confusion)
 
-Minor:
-- No back-navigation from campaign_detail to campaign_list (header "Home" link present but not prominent)
-- "blocks" terminology in selection counter may confuse workers (they think in streets/roads)
-- Instructions collapse/expand uses bare "more"/"less" with no visual affordance
-- recorded_at in legend shows ISO date only (no time), which matters when multiple trips same day
-- No empty-state messaging when no coverage exists yet
+### Manager UI — manage/campaign_detail.html
+- Slug field still says "It cannot be changed once created" — incorrect per product decision (editable before publish). Should be fixed.
+- Step sidebar: all steps always visible and numbered, but steps 4 (Boundary) and 5 (Review) show as "blocked" with grey circles when cities aren't fetched yet — no tooltip explaining why they're blocked
+- Boundary section only renders if campaign.bbox exists — if no cities yet, entire boundary section is absent with no placeholder message explaining next step
+- Re-download Streets button has no confirmation; destructive (clears existing blocks) with no warning
+- Delete confirmation uses browser confirm() — adequate but no undo path shown
+- Admin owner-change form embeds all basics fields as hidden inputs to avoid blanking them on save — fragile pattern, easy to accidentally drop a field
 
 ## Data Model Notes
 - Campaign.instructions stores HTML (rich text from manager)

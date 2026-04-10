@@ -1,0 +1,198 @@
+name: Sync Priority Labels to Project Board
+
+on:
+  issues:
+    types: [labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to backfill (leave blank to backfill all open issues)'
+        required: false
+        type: string
+
+jobs:
+  sync-priority:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync priority label to project board Priority field
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PROJECT_PAT }}
+          script: |
+            const PRIORITY_LABELS = ['P0', 'P1', 'P2', 'P3'];
+            const PROJECT_NUMBER = 1;
+            const PROJECT_OWNER = 'sefk';
+
+            // ── helpers ────────────────────────────────────────────────────────
+
+            async function getProject() {
+              const result = await github.graphql(`
+                query($login: String!, $number: Int!) {
+                  user(login: $login) {
+                    projectV2(number: $number) {
+                      id
+                      fields(first: 30) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options {
+                              id
+                              name
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `, { login: PROJECT_OWNER, number: PROJECT_NUMBER });
+              return result.user.projectV2;
+            }
+
+            // Returns the project item ID for an issue node_id, or null if not on board.
+            async function getProjectItemId(projectId, issueNodeId) {
+              // We can't search by content directly; look up via the issue's projectItems.
+              const result = await github.graphql(`
+                query($issueId: ID!) {
+                  node(id: $issueId) {
+                    ... on Issue {
+                      projectItems(first: 10) {
+                        nodes {
+                          id
+                          project {
+                            id
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `, { issueId: issueNodeId });
+              const items = result.node.projectItems.nodes;
+              const match = items.find(item => item.project.id === projectId);
+              return match ? match.id : null;
+            }
+
+            async function setPriorityField(projectId, itemId, fieldId, optionId) {
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `, { projectId, itemId, fieldId, optionId });
+            }
+
+            async function clearPriorityField(projectId, itemId, fieldId) {
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+                  clearProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                  }) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `, { projectId, itemId, fieldId });
+            }
+
+            // Sync a single issue given its node_id and current label names array.
+            async function syncIssue(project, priorityField, issueNodeId, issueNumber, labelNames) {
+              const itemId = await getProjectItemId(project.id, issueNodeId);
+              if (!itemId) {
+                core.info(`Issue #${issueNumber} is not on the project board — skipping`);
+                return;
+              }
+
+              const activeLabel = PRIORITY_LABELS.find(p => labelNames.includes(p));
+
+              if (activeLabel) {
+                const option = priorityField.options.find(o => o.name === activeLabel);
+                if (!option) {
+                  core.warning(`Priority field has no option named "${activeLabel}" — check field options`);
+                  return;
+                }
+                await setPriorityField(project.id, itemId, priorityField.id, option.id);
+                core.info(`Issue #${issueNumber}: set Priority → ${activeLabel}`);
+              } else {
+                await clearPriorityField(project.id, itemId, priorityField.id);
+                core.info(`Issue #${issueNumber}: cleared Priority (no P-label)`);
+              }
+            }
+
+            // ── main ───────────────────────────────────────────────────────────
+
+            const project = await getProject();
+            if (!project) {
+              core.setFailed(`Could not find project ${PROJECT_NUMBER} for user ${PROJECT_OWNER}`);
+              return;
+            }
+
+            const priorityField = project.fields.nodes.find(
+              f => f.name === 'Priority' && f.options
+            );
+            if (!priorityField) {
+              core.setFailed('Could not find a single-select field named "Priority" on the project board');
+              return;
+            }
+
+            // ── workflow_dispatch: backfill mode ────────────────────────────────
+            if (context.eventName === 'workflow_dispatch') {
+              const inputNumber = context.payload.inputs && context.payload.inputs.issue_number;
+
+              let issues = [];
+              if (inputNumber) {
+                // Single issue
+                const r = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: parseInt(inputNumber, 10),
+                });
+                issues = [r.data];
+              } else {
+                // All open issues with at least one P-label
+                let page = 1;
+                while (true) {
+                  const r = await github.rest.issues.listForRepo({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    state: 'open',
+                    per_page: 100,
+                    page,
+                  });
+                  if (r.data.length === 0) break;
+                  issues = issues.concat(r.data);
+                  page++;
+                }
+              }
+
+              for (const issue of issues) {
+                const labelNames = issue.labels.map(l => l.name);
+                await syncIssue(project, priorityField, issue.node_id, issue.number, labelNames);
+              }
+              return;
+            }
+
+            // ── issues event: single-issue mode ────────────────────────────────
+            const changedLabel = context.payload.label.name;
+
+            // Only act when a P-label was the one added/removed
+            if (!PRIORITY_LABELS.includes(changedLabel)) {
+              core.info(`Label "${changedLabel}" is not a priority label — nothing to do`);
+              return;
+            }
+
+            const issue = context.payload.issue;
+            const labelNames = issue.labels.map(l => l.name);
+            await syncIssue(project, priorityField, issue.node_id, issue.number, labelNames);
