@@ -15,12 +15,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Put the uv-managed venv on PATH so subsequent RUN steps and start_web.sh
+# use the project Python/packages without needing `uv run`.
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+COPY pyproject.toml uv.lock ./
 
 # Install Python deps, then reinstall GDAL pinned to the system library version
 # so the Python bindings and libgdal.so are guaranteed to match.
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir --force-reinstall "GDAL==$(gdal-config --version)"
+RUN uv sync --frozen --no-dev \
+    && uv pip install --no-cache-dir --force-reinstall "GDAL==$(gdal-config --version)"
 
 COPY . .
 

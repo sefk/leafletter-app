@@ -1,0 +1,29 @@
+[project]
+name = "leafletter-app"
+version = "0.1.0"
+description = "Campaign mapping and leafletting coordination tool"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "Django>=5.0",
+    "mysqlclient",
+    "django[argon2]",
+    "celery",
+    "kombu[sqlalchemy]",
+    "requests",
+    "django-celery-beat",
+    "django-celery-results",
+    "dj-celery-panel",
+    "watchdog",
+    "gunicorn",
+    "whitenoise",
+    "django-storages[s3]",
+    "boto3",
+    "Pillow",
+    "django-sendgrid-v5",
+]
+
+[dependency-groups]
+dev = [
+    "honcho",
+]

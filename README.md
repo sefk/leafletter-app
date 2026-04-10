@@ -55,13 +55,13 @@ sudo apt-get install -y \
 
 ## Setup
 
-### 1. Create virtual environment and install dependencies
+### 1. Install dependencies
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
+
+`uv` manages the virtual environment automatically. Run subsequent commands with `uv run <cmd>` or activate the venv with `source .venv/bin/activate`.
 
 ### 2. Set up MySQL database
 
@@ -109,11 +109,6 @@ python manage.py collectstatic
 
 ## Running locally
 
-Install `honcho` if you haven't already:
-```bash
-pip install honcho
-```
-
 **macOS** — start MySQL via brew services, then use honcho to launch everything else (Celery worker, Django):
 ```bash
 brew services start mysql
@@ -152,8 +147,7 @@ Each row shows the task name, status (`SUCCESS` / `FAILURE` / `PENDING`), argume
 Run a task synchronously in a shell (bypasses Celery entirely):
 
 ```bash
-source .venv/bin/activate
-python manage.py shell
+uv run python manage.py shell
 ```
 
 ```python
