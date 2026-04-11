@@ -125,7 +125,7 @@
         <div style="padding:6px 10px; background:#fce4ec; border:1px solid #f48fb1; border-radius:6px; display:inline-block; font-size:0.82rem;">
           <a href="{% url 'campaigns:campaign_detail' campaign.slug %}" target="_blank"
              style="color:#880e4f; word-break:break-all;">{{ request.get_host }}/c/{{ campaign.slug }}/</a>
-          <div style="font-size:0.78rem; color:#880e4f; margin-top:2px;">Not published yet. Visitors see a "not published yet" message.</div>
+          <span style="font-size:0.78rem; color:#880e4f; margin-left:6px;">(Not Published)</span>
         </div>
         {% endif %}
       </td>
@@ -133,6 +133,10 @@
     {% endfor %}
   </tbody>
 </table>
+
+<p style="font-size:0.85rem; color:#666; margin-top:8px;">
+  Draft campaigns (shown in pink) are accessible via their URL but display a "not published yet" message to visitors.
+</p>
 
 <style>
   .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
