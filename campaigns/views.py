@@ -71,12 +71,47 @@ def campaign_detail(request, slug):
         raise Http404
     geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
     is_preview = (campaign.status != 'published')
+    has_access_code = bool(campaign.access_code)
+    # If the campaign has an access code, check whether the session has validated it.
+    access_granted = (
+        not has_access_code or
+        request.session.get(f'access_granted_{campaign.slug}', False)
+    )
     return render(request, 'campaigns/campaign_detail.html', {
         'campaign': campaign,
         'bbox_json': json.dumps(campaign.bbox),
         'geo_limit_json': geo_limit_json,
         'is_preview': is_preview,
+        'has_access_code': has_access_code,
+        'access_granted': access_granted,
     })
+
+
+@csrf_exempt
+@require_POST
+def validate_access_code(request, slug):
+    """AJAX endpoint to check the access code for a campaign.
+
+    Returns {valid: true} and sets a session flag on success.
+    Never reveals the actual access code in the response.
+    """
+    campaign = get_object_or_404(Campaign, slug=slug, status='published')
+
+    if not campaign.access_code:
+        # No code configured — always valid.
+        return JsonResponse({'valid': True})
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest('Invalid JSON')
+
+    submitted = body.get('code', '').strip()
+    valid = submitted.lower() == campaign.access_code.lower()
+    if valid:
+        request.session[f'access_granted_{campaign.slug}'] = True
+
+    return JsonResponse({'valid': valid})
 
 
 @require_GET
@@ -154,6 +189,12 @@ def campaign_coverage_geojson(request, slug):
 @require_POST
 def log_trip(request, slug):
     campaign = get_object_or_404(Campaign, slug=slug, status='published')
+
+    # Enforce access code when configured: session must carry the granted flag.
+    if campaign.access_code:
+        if not request.session.get(f'access_granted_{campaign.slug}', False):
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden('Access code required')
 
     try:
         body = json.loads(request.body)
@@ -757,13 +798,16 @@ def manage_save_basics(request, slug):
             messages.error(request, err)
         return redirect('manage_campaign_detail', slug=slug)
 
+    access_code = request.POST.get('access_code', '').strip()
+
     campaign.name = name
     campaign.start_date = start_date or None
     campaign.end_date = end_date or None
     campaign.contact_info = contact_info
     campaign.instructions = instructions
     campaign.is_test = is_test
-    update_fields = ['name', 'start_date', 'end_date', 'contact_info', 'instructions', 'is_test']
+    campaign.access_code = access_code
+    update_fields = ['name', 'start_date', 'end_date', 'contact_info', 'instructions', 'is_test', 'access_code']
 
     if request.user.is_superuser:
         owner_value = request.POST.get('owner', '').strip()

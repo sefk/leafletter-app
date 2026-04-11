@@ -168,6 +168,26 @@
   const btnLogTrip = document.getElementById('btn-log-trip');
   btnLogTrip.disabled = true;
 
+  // Track whether the map has finished loading streets/coverage.
+  let _mapLoadComplete = false;
+
+  // enableLogTripButton — called when loading finishes.
+  // Only enables the button if the access code is either not required or already granted.
+  function enableLogTripButton() {
+    _mapLoadComplete = true;
+    if (!window.HAS_ACCESS_CODE || window.ACCESS_GRANTED) {
+      btnLogTrip.disabled = false;
+    }
+  }
+
+  // If an access code is required, listen for the granted event from
+  // the inline validation JS in campaign_detail.html.
+  if (window.HAS_ACCESS_CODE) {
+    window.addEventListener('accessGranted', function() {
+      if (_mapLoadComplete) btnLogTrip.disabled = false;
+    });
+  }
+
   function setLoadingStatus(msg) {
     const el = document.getElementById('loading-status');
     if (!el) return;
@@ -204,7 +224,7 @@
     .then(geojson => {
       if (!geojson.features || geojson.features.length === 0) {
         map.setView([0, 0], 2);
-        btnLogTrip.disabled = false;
+        enableLogTripButton();
         setLoadingStatus(null);
         return;
       }
@@ -303,7 +323,7 @@
     })
     .catch(err => {
       console.error('Failed to load streets:', err);
-      btnLogTrip.disabled = false;
+      enableLogTripButton();
       setLoadingStatus(null);
     });
 
@@ -374,12 +394,12 @@
 
         applyCoverageMode();
         renderTripLegend();
-        btnLogTrip.disabled = false;
+        enableLogTripButton();
         setLoadingStatus(null);
       })
       .catch(err => {
         console.error('Failed to load coverage:', err);
-        btnLogTrip.disabled = false;
+        enableLogTripButton();
         setLoadingStatus(null);
       });
   }

@@ -650,6 +650,119 @@ class LogTripViewTest(TestCase):
         self.assertNotIn('placeholder="e.g. Chris Smith"', content)
 
 
+# ── View tests: validate_access_code & access-code enforcement ────────────────
+
+class AccessCodeTest(TestCase):
+    """Tests for the access-code (troll prevention) feature (#143)."""
+
+    def setUp(self):
+        self.client = Client()
+        self.campaign = make_campaign(slug='code-camp', access_code='Secret42')
+        self.street = make_street(self.campaign, osm_id=20)
+        self.no_code_campaign = make_campaign(slug='open-camp')
+        self.no_code_street = make_street(self.no_code_campaign, osm_id=21)
+
+    # ── validate_access_code endpoint ────────────────────────────────────────
+
+    def _validate(self, code, slug='code-camp'):
+        return self.client.post(
+            f'/c/{slug}/validate-code/',
+            data=json.dumps({'code': code}),
+            content_type='application/json',
+        )
+
+    def test_correct_code_returns_valid_true(self):
+        resp = self._validate('Secret42')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIs(resp.json()['valid'], True)
+
+    def test_correct_code_case_insensitive(self):
+        resp = self._validate('secret42')
+        self.assertIs(resp.json()['valid'], True)
+
+    def test_correct_code_case_insensitive_upper(self):
+        resp = self._validate('SECRET42')
+        self.assertIs(resp.json()['valid'], True)
+
+    def test_wrong_code_returns_valid_false(self):
+        resp = self._validate('wrong')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIs(resp.json()['valid'], False)
+
+    def test_no_code_configured_always_valid(self):
+        resp = self._validate('anything', slug='open-camp')
+        self.assertIs(resp.json()['valid'], True)
+
+    def test_invalid_json_returns_400(self):
+        resp = self.client.post('/c/code-camp/validate-code/', data='not-json',
+                                content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_get_not_allowed(self):
+        resp = self.client.get('/c/code-camp/validate-code/')
+        self.assertEqual(resp.status_code, 405)
+
+    def test_correct_code_sets_session_flag(self):
+        self._validate('Secret42')
+        self.assertTrue(self.client.session.get('access_granted_code-camp'))
+
+    def test_wrong_code_does_not_set_session_flag(self):
+        self._validate('wrong')
+        self.assertFalse(self.client.session.get('access_granted_code-camp', False))
+
+    # ── log_trip enforcement ─────────────────────────────────────────────────
+
+    def _post_trip(self, data, slug='code-camp'):
+        return self.client.post(
+            f'/c/{slug}/trip/',
+            data=json.dumps(data),
+            content_type='application/json',
+        )
+
+    def test_log_trip_without_code_returns_403(self):
+        resp = self._post_trip({'segment_ids': [self.street.pk]})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_log_trip_after_valid_code_succeeds(self):
+        self._validate('Secret42')  # sets session flag
+        resp = self._post_trip({'segment_ids': [self.street.pk]})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'ok')
+
+    def test_log_trip_no_code_configured_succeeds(self):
+        resp = self._post_trip({'segment_ids': [self.no_code_street.pk]}, slug='open-camp')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'ok')
+
+    # ── campaign_detail view context ─────────────────────────────────────────
+
+    def test_detail_has_access_code_true_when_code_set(self):
+        resp = self.client.get('/c/code-camp/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context['has_access_code'])
+
+    def test_detail_has_access_code_false_when_no_code(self):
+        resp = self.client.get('/c/open-camp/')
+        self.assertFalse(resp.context['has_access_code'])
+
+    def test_detail_access_not_granted_without_session(self):
+        resp = self.client.get('/c/code-camp/')
+        self.assertFalse(resp.context['access_granted'])
+
+    def test_detail_access_granted_after_validation(self):
+        self._validate('Secret42')
+        resp = self.client.get('/c/code-camp/')
+        self.assertTrue(resp.context['access_granted'])
+
+    def test_detail_shows_access_code_input_when_code_set(self):
+        resp = self.client.get('/c/code-camp/')
+        self.assertContains(resp, 'access-code-input')
+
+    def test_detail_no_access_code_input_when_no_code(self):
+        resp = self.client.get('/c/open-camp/')
+        self.assertNotContains(resp, 'access-code-input')
+
+
 # ── Task tests: query_overpass ────────────────────────────────────────────────
 
 OVERPASS_RESPONSE = {

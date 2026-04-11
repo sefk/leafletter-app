@@ -8,6 +8,7 @@ urlpatterns = [
     path('<slug:slug>/', views.campaign_detail, name='campaign_detail'),
     path('<slug:slug>/streets.geojson', views.campaign_streets_geojson, name='streets_geojson'),
     path('<slug:slug>/coverage.geojson', views.campaign_coverage_geojson, name='coverage_geojson'),
+    path('<slug:slug>/validate-code/', views.validate_access_code, name='validate_access_code'),
     path('<slug:slug>/trip/', views.log_trip, name='log_trip'),
     path('<slug:slug>/trip/<uuid:trip_id>/', views.worker_get_trip, name='worker_get_trip'),
     path('<slug:slug>/trip/<uuid:trip_id>/edit/', views.worker_edit_trip, name='worker_edit_trip'),

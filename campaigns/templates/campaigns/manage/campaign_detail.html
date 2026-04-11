@@ -250,6 +250,22 @@
       </label>
     </div>
 
+    {# Access code (troll prevention) #}
+    <div style="margin-bottom:20px;">
+      <label for="basics-access-code" style="display:block; font-size:0.85rem; font-weight:600; color:#444; margin-bottom:4px;">
+        Access Code <span style="font-weight:400; color:#888;">(optional)</span>
+      </label>
+      <p style="font-size:0.82rem; color:#666; margin-bottom:6px;">
+        If set, volunteers must enter this code before logging a trip. Leave blank to allow anyone to log trips.
+        Share the code out-of-band (e.g. in your email to volunteers). Case-insensitive.
+      </p>
+      <input type="text" id="basics-access-code" name="access_code"
+             value="{{ campaign.access_code|default:'' }}"
+             placeholder="e.g. midpen2026"
+             autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+             style="width:100%; max-width:300px; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit;">
+    </div>
+
     <div style="display:flex; gap:10px; align-items:center;">
       <button type="submit" class="btn btn-primary">Save Basics</button>
     </div>

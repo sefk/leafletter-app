@@ -43,6 +43,7 @@ class Campaign(models.Model):
         null=True, blank=True, related_name='owned_campaigns',
     )
     hero_image_url = models.URLField(blank=True, default='')  # optional campaign hero image (landscape/16:9 recommended)
+    access_code = models.CharField(max_length=100, blank=True, default='')  # optional code required to log a trip
     streets_geojson = models.TextField(blank=True, default='')  # pre-rendered GeoJSON FeatureCollection
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
