@@ -823,7 +823,14 @@
 </script>
 
 <!-- Campaign Boundary Editor -->
-{% if campaign.bbox %}
+{% if not campaign.bbox %}
+<div class="card" style="opacity:0.6;">
+  <div class="card-title">Campaign Boundary</div>
+  <p style="color:#666; font-size:0.9rem; margin-bottom:0;">
+    Available after street data finishes importing.
+  </p>
+</div>
+{% else %}
 <div class="card">
   <div class="card-title">Campaign Boundary</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
