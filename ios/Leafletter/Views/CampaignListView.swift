@@ -99,26 +99,23 @@ struct CampaignListView: View {
 private struct BannerView: View {
     let onAbout: () -> Void
 
-    private var bannerAttributedString: AttributedString {
-        var body = AttributedString("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
-        body.font = .footnote
-        body.foregroundColor = .white.opacity(0.9)
-
-        var link = AttributedString("About this app")
-        link.font = .init(.footnote.bold())
-        link.foregroundColor = .white
-        link.underlineStyle = .single
-
-        return body + link
-    }
-
     var body: some View {
-        Text(bannerAttributedString)
-            .onTapGesture { onAbout() }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(red: 0.10, green: 0.42, blue: 0.24))
+        HStack(alignment: .top, spacing: 0) {
+            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
+                .font(.footnote)
+                .foregroundColor(.white.opacity(0.9))
+            Button(action: onAbout) {
+                Text("About this app")
+                    .font(.footnote.bold())
+                    .foregroundColor(.white)
+                    .underline()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.10, green: 0.42, blue: 0.24))
     }
 }
 
