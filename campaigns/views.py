@@ -158,6 +158,7 @@ def log_trip(request, slug):
 
     segment_ids = body.get('segment_ids', [])
     worker_name = body.get('worker_name', '').strip()
+    worker_email = body.get('worker_email', '').strip()
     notes = body.get('notes', '').strip()
 
     if not segment_ids:
@@ -171,6 +172,7 @@ def log_trip(request, slug):
     trip = Trip.objects.create(
         campaign=campaign,
         worker_name=worker_name,
+        worker_email=worker_email,
         notes=notes,
     )
     trip.streets.set(streets)
@@ -188,7 +190,7 @@ def worker_get_trip(request, slug, trip_id):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden('Not your trip or session expired')
     trip = get_object_or_404(Trip, pk=trip_id, campaign=campaign, deleted=False)
-    return JsonResponse({'trip_id': str(trip.pk), 'worker_name': trip.worker_name, 'notes': trip.notes})
+    return JsonResponse({'trip_id': str(trip.pk), 'worker_name': trip.worker_name, 'worker_email': trip.worker_email, 'notes': trip.notes})
 
 
 @csrf_exempt
@@ -205,8 +207,9 @@ def worker_edit_trip(request, slug, trip_id):
     except json.JSONDecodeError:
         return HttpResponseBadRequest('Invalid JSON')
     trip.worker_name = body.get('worker_name', trip.worker_name).strip()
+    trip.worker_email = body.get('worker_email', trip.worker_email).strip()
     trip.notes = body.get('notes', trip.notes).strip()
-    trip.save(update_fields=['worker_name', 'notes'])
+    trip.save(update_fields=['worker_name', 'worker_email', 'notes'])
     return JsonResponse({'status': 'ok'})
 
 

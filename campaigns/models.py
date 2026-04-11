@@ -179,6 +179,7 @@ class Trip(models.Model):
     campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='trips')
     streets = models.ManyToManyField(Street)
     worker_name = models.CharField(max_length=200, blank=True)
+    worker_email = models.EmailField(max_length=254, blank=True)
     notes = models.TextField(blank=True)
     recorded_at = models.DateTimeField(auto_now_add=True)
     deleted = models.BooleanField(default=False)

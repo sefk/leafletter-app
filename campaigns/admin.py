@@ -17,7 +17,7 @@ MAP_STATUS_COLORS = {
 
 class TripInline(admin.TabularInline):
     model = Trip
-    fields = ('id', 'worker_name', 'notes', 'recorded_at')
+    fields = ('id', 'worker_name', 'worker_email', 'notes', 'recorded_at')
     readonly_fields = ('id', 'recorded_at')
     extra = 0
     can_delete = True
@@ -170,8 +170,8 @@ class CampaignStreetAdmin(admin.ModelAdmin):
 
 @admin.register(Trip)
 class TripAdmin(admin.ModelAdmin):
-    list_display = ('id', 'worker_name', 'campaign', 'recorded_at')
+    list_display = ('id', 'worker_name', 'worker_email', 'campaign', 'recorded_at')
     list_filter = ('campaign',)
-    search_fields = ('worker_name',)
+    search_fields = ('worker_name', 'worker_email')
     readonly_fields = ('id', 'recorded_at')
     filter_horizontal = ('streets',)

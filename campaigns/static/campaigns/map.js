@@ -593,6 +593,7 @@
     setSelectionMode(false);
     resetSelection();
     document.getElementById('worker-name').value = '';
+    document.getElementById('worker-email').value = '';
     document.getElementById('notes').value = '';
     document.getElementById('status-message').style.display = 'none';
     document.getElementById('debug-section').style.display = 'none';
@@ -604,6 +605,7 @@
       return;
     }
     const workerName = document.getElementById('worker-name').value.trim();
+    const workerEmail = document.getElementById('worker-email').value.trim();
     const notes = document.getElementById('notes').value.trim();
     const segmentIds = Array.from(selectedIds);
 
@@ -612,7 +614,7 @@
     fetch(window.TRIP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ segment_ids: segmentIds, worker_name: workerName, notes }),
+      body: JSON.stringify({ segment_ids: segmentIds, worker_name: workerName, worker_email: workerEmail, notes }),
     })
       .then(r => {
         if (!r.ok) return r.text().then(t => { throw new Error(t); });
@@ -622,6 +624,7 @@
         setSelectionMode(false);
         document.getElementById('debug-section').style.display = 'none';
         document.getElementById('worker-name').value = '';
+        document.getElementById('worker-email').value = '';
         document.getElementById('notes').value = '';
         document.getElementById('btn-done').disabled = false;
         resetSelection();
@@ -683,6 +686,7 @@
       })
       .then(data => {
         document.getElementById('edit-worker-name').value = data.worker_name || '';
+        document.getElementById('edit-worker-email').value = data.worker_email || '';
         document.getElementById('edit-notes').value = data.notes || '';
         const panel = document.getElementById('edit-trip-panel');
         panel.style.display = 'block';
@@ -693,13 +697,14 @@
 
   document.getElementById('btn-save-edit').addEventListener('click', () => {
     const workerName = document.getElementById('edit-worker-name').value.trim();
+    const workerEmail = document.getElementById('edit-worker-email').value.trim();
     const notes = document.getElementById('edit-notes').value.trim();
     const btn = document.getElementById('btn-save-edit');
     btn.disabled = true;
     fetch(window._lastTripEditUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ worker_name: workerName, notes }),
+      body: JSON.stringify({ worker_name: workerName, worker_email: workerEmail, notes }),
     })
       .then(r => {
         if (!r.ok) return r.text().then(t => { throw new Error(t); });

@@ -520,6 +520,32 @@ class LogTripViewTest(TestCase):
         trip = Trip.objects.get(campaign=self.campaign)
         self.assertEqual(trip.streets.count(), 1)
 
+    def test_worker_email_saved(self):
+        self._post({'segment_ids': [self.street.pk], 'worker_email': 'alice@example.com'})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.worker_email, 'alice@example.com')
+
+    def test_worker_email_is_stripped(self):
+        self._post({'segment_ids': [self.street.pk], 'worker_email': '  alice@example.com  '})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.worker_email, 'alice@example.com')
+
+    def test_worker_email_defaults_to_empty(self):
+        """Email is optional — omitting it should save an empty string."""
+        self._post({'segment_ids': [self.street.pk], 'worker_name': 'Alice'})
+        trip = Trip.objects.get(campaign=self.campaign)
+        self.assertEqual(trip.worker_email, '')
+
+    def test_worker_name_placeholder_is_not_full_name(self):
+        """Regression: name field should not suggest last names (issue #170)."""
+        from campaigns.models import Campaign
+        c = Campaign.objects.get(slug='trip-camp')
+        resp = self.client.get(f'/c/{c.slug}/')
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('autocomplete="given-name"', content)
+        self.assertNotIn('placeholder="e.g. Chris Smith"', content)
+
 
 # ── Task tests: query_overpass ────────────────────────────────────────────────
 
