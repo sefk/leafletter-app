@@ -69,7 +69,9 @@ Every open issue should have:
 ## Worktree Dev Pattern
 
 - Use `EnterWorktree` tool to create `.claude/worktrees/<name>/` on branch `worktree-<name>`
-- RemoteTrigger agent spawning requires unknown `session_request`/`job_config` schema — implement changes directly instead
+- RemoteTrigger does NOT support spawning sub-agents via prompt: schema requires `session_request.worker` but exact fields are unknown; `job_config` also fails. Cannot spawn parallel dev agents via RemoteTrigger.
+- Cannot query GitHub Projects v2 board (Ready/Backlog/Done status) — PAT has only `repo` scope, not `read:project`. MCP plugin has no raw GraphQL tool.
+- Workaround: infer Ready issues from issue characteristics (specific file refs, small scope, recent creation) and present plan for human to approve before making changes directly in this session.
 - Verify Python syntax with `python -m py_compile <file>` (no Django setup needed)
 - Leave changes unstaged/uncommitted; developer reviews via `git diff` in the worktree
 - See [worktree-pattern.md](worktree-pattern.md) for full details
