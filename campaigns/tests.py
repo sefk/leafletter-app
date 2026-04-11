@@ -1637,6 +1637,67 @@ class ManagerUITest(TestCase):
         resp = self.client.get('/manage/')
         self.assertContains(resp, self.campaign.name)
 
+    # ── Delete preserves data (issue #148) ────────────────────────────────────
+
+    def test_delete_preserves_trips(self):
+        """Soft-deleting must not delete trips (issue #148)."""
+        trip = Trip.objects.create(campaign=self.campaign, worker_name='Test Worker')
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        self.assertTrue(Trip.objects.filter(pk=trip.pk).exists())
+
+    def test_delete_preserves_hero_image(self):
+        """Soft-deleting must not clear hero_image_url (issue #148)."""
+        self.campaign.hero_image_url = 'https://example.com/hero.jpg'
+        self.campaign.save(update_fields=['hero_image_url'])
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.hero_image_url, 'https://example.com/hero.jpg')
+
+    def test_delete_preserves_geo_limit(self):
+        """Soft-deleting must not clear geo_limit / campaign boundary (issue #148)."""
+        from django.contrib.gis.geos import Polygon
+        poly = Polygon(((0, 0), (0, 1), (1, 1), (1, 0), (0, 0)))
+        self.campaign.geo_limit = poly
+        self.campaign.save(update_fields=['geo_limit'])
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        self.campaign.refresh_from_db()
+        self.assertIsNotNone(self.campaign.geo_limit)
+
+    def test_delete_preserves_campaign_streets(self):
+        """Soft-deleting must not remove CampaignStreet records (issue #148)."""
+        street = make_street(self.campaign, osm_id=9001, city_index=0)
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/delete/')
+        self.assertTrue(
+            CampaignStreet.objects.filter(campaign=self.campaign, street=street).exists()
+        )
+
+    # ── Restore preserves all data (issue #148) ───────────────────────────────
+
+    def test_restore_preserves_hero_image(self):
+        """Restoring must not clear hero_image_url (issue #148)."""
+        self.campaign.hero_image_url = 'https://example.com/hero.jpg'
+        self.campaign.status = 'deleted'
+        self.campaign.save(update_fields=['hero_image_url', 'status'])
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.campaign.refresh_from_db()
+        self.assertEqual(self.campaign.hero_image_url, 'https://example.com/hero.jpg')
+
+    def test_restore_preserves_campaign_streets(self):
+        """Restoring must not remove CampaignStreet records (issue #148)."""
+        street = make_street(self.campaign, osm_id=9002, city_index=0)
+        self.campaign.status = 'deleted'
+        self.campaign.save(update_fields=['status'])
+        self._login()
+        self.client.post(f'/manage/{self.campaign.slug}/restore/')
+        self.assertTrue(
+            CampaignStreet.objects.filter(campaign=self.campaign, street=street).exists()
+        )
+
     # ── Re-fetch ──────────────────────────────────────────────────────────────
 
     @patch('campaigns.views.queue_city_fetches')
