@@ -339,7 +339,7 @@ def manage_campaign_list(request):
 
     # Sort params — default: start_date descending.
     # Valid column keys match what we annotate onto each campaign object below.
-    VALID_SORT_COLS = {'name', 'status', 'start_date', 'trip_count', 'street_count'}
+    VALID_SORT_COLS = {'name', 'status', 'start_date', 'trip_count', 'street_count', 'owner', 'size_street_count'}
     sort_col = request.GET.get('sort', 'start_date')
     if sort_col not in VALID_SORT_COLS:
         sort_col = 'start_date'
@@ -395,6 +395,8 @@ def manage_campaign_list(request):
     # consistent with the DB NULLs-first behaviour for ascending sorts.
     def _sort_key(c):
         val = getattr(c, sort_col, None)
+        if sort_col == 'owner':
+            val = val.username if val else None
         # Make None sort consistently (put None/null at end for desc, start for asc).
         return (val is None, val if val is not None else '')
 

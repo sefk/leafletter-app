@@ -60,22 +60,42 @@
 {% endif %}
 
 {% if campaigns %}
-<table>
+<table id="campaigns-table">
   <thead>
     <tr>
-      <th>Name</th>
-      <th>Status</th>
-      {% if is_admin %}<th>Owner</th>{% endif %}
-      <th>Campaign Size</th>
-      <th>Downloaded Streets</th>
-      <th>Trips</th>
-      <th>Start Date</th>
+      <th data-col="name" class="sortable{% if sort_col == 'name' %} sort-active{% endif %}">
+        Name <span class="sort-arrow">{% if sort_col == 'name' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>
+      <th data-col="status" class="sortable{% if sort_col == 'status' %} sort-active{% endif %}">
+        Status <span class="sort-arrow">{% if sort_col == 'status' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>
+      {% if is_admin %}<th data-col="owner" class="sortable{% if sort_col == 'owner' %} sort-active{% endif %}">
+        Owner <span class="sort-arrow">{% if sort_col == 'owner' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>{% endif %}
+      <th data-col="size_street_count" class="sortable{% if sort_col == 'size_street_count' %} sort-active{% endif %}">
+        Campaign Size <span class="sort-arrow">{% if sort_col == 'size_street_count' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>
+      <th data-col="street_count" class="sortable{% if sort_col == 'street_count' %} sort-active{% endif %}">
+        Downloaded Streets <span class="sort-arrow">{% if sort_col == 'street_count' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>
+      <th data-col="trip_count" class="sortable{% if sort_col == 'trip_count' %} sort-active{% endif %}">
+        Trips <span class="sort-arrow">{% if sort_col == 'trip_count' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>
+      <th data-col="start_date" class="sortable{% if sort_col == 'start_date' %} sort-active{% endif %}">
+        Start Date <span class="sort-arrow">{% if sort_col == 'start_date' %}{% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}{% else %}&updownarrow;{% endif %}</span>
+      </th>
       <th>Public URL</th>
     </tr>
   </thead>
   <tbody>
     {% for campaign in campaigns %}
-    <tr>
+    <tr
+      data-name="{{ campaign.name|lower }}"
+      data-status="{{ campaign.status }}"
+      data-street_count="{{ campaign.street_count }}"
+      data-trip_count="{{ campaign.trip_count }}"
+      data-start_date="{{ campaign.start_date|default:'' }}"
+    >
       <td>
         <a href="/manage/{{ campaign.slug }}/">{{ campaign.name }}</a>
         {% if campaign.is_test %}<span style="display:inline-block;background:#1a6b3c;color:#fff;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;vertical-align:middle;margin-left:5px;">Test</span>{% endif %}
@@ -91,7 +111,7 @@
         <div style="font-size:0.9rem; margin-top:4px;">{{ campaign.street_count|intcomma }} blocks</div>
         <div style="font-size:0.9rem;">{% if campaign.household_count > 0 %}{{ campaign.household_count|intcomma }} houses{% else %}—{% endif %}</div>
       </td>
-      <td>{{ campaign.trip_count|intcomma }}</td>
+      <td data-val="{{ campaign.trip_count }}">{{ campaign.trip_count|intcomma }}</td>
       <td>{{ campaign.start_date }}</td>
       <td>
         {% if campaign.status == 'published' %}
@@ -111,6 +131,82 @@
     {% endfor %}
   </tbody>
 </table>
+
+<style>
+  .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  .sortable:hover { background: #f5f5f5; }
+  .sort-active { color: #1a6b3c; }
+  .sort-arrow { font-size: 0.75rem; opacity: 0.6; margin-left: 2px; }
+  .sort-active .sort-arrow { opacity: 1; }
+</style>
+
+<script>
+(function () {
+  var currentCol = '{{ sort_col }}';
+  var currentDir = '{{ sort_dir }}';
+
+  function sortTable(col, dir) {
+    var tbody = document.querySelector('#campaigns-table tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    var numeric = ['street_count', 'trip_count'];
+    rows.sort(function (a, b) {
+      var av = a.dataset[col] || '';
+      var bv = b.dataset[col] || '';
+      var cmp;
+      if (numeric.indexOf(col) >= 0) {
+        cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
+      } else {
+        cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      }
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(function (r) { tbody.appendChild(r); });
+  }
+
+  function updateHeaders(col, dir) {
+    document.querySelectorAll('#campaigns-table th[data-col]').forEach(function (th) {
+      var arrow = th.querySelector('.sort-arrow');
+      if (th.dataset.col === col) {
+        th.classList.add('sort-active');
+        arrow.innerHTML = dir === 'asc' ? '&uarr;' : '&darr;';
+      } else {
+        th.classList.remove('sort-active');
+        arrow.innerHTML = '&updownarrow;';
+      }
+    });
+  }
+
+  function pushUrl(col, dir) {
+    var params = new URLSearchParams(window.location.search);
+    params.set('sort', col);
+    params.set('dir', dir);
+    history.pushState({sort: col, dir: dir}, '', '?' + params.toString());
+  }
+
+  document.querySelectorAll('#campaigns-table th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+      var col = th.dataset.col;
+      var dir = (currentCol === col && currentDir === 'desc') ? 'asc' : 'desc';
+      currentCol = col;
+      currentDir = dir;
+      sortTable(col, dir);
+      updateHeaders(col, dir);
+      pushUrl(col, dir);
+    });
+  });
+
+  // Re-sort on browser back/forward.
+  window.addEventListener('popstate', function (e) {
+    if (e.state && e.state.sort) {
+      currentCol = e.state.sort;
+      currentDir = e.state.dir;
+      sortTable(currentCol, currentDir);
+      updateHeaders(currentCol, currentDir);
+    }
+  });
+})();
+</script>
+
 {% else %}
   <p style="color:#666;">No campaigns yet. <a href="/manage/new/">Create your first campaign.</a></p>
 {% endif %}

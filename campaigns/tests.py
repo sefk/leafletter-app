@@ -271,6 +271,24 @@ class AuthGatingTest(TestCase):
         self.assertEqual(resp.status_code, 302)
 
 
+class LogoutRedirectTest(TestCase):
+    """Logging out should redirect to the home page, not the login page."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('logoutuser', password='pw')
+        self.client = Client()
+        self.client.login(username='logoutuser', password='pw')
+
+    def test_logout_redirects_to_home(self):
+        resp = self.client.post('/manage/logout/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp['Location'], '/')
+
+    def test_logout_redirects_not_to_login(self):
+        resp = self.client.post('/manage/logout/')
+        self.assertNotIn('/manage/login/', resp['Location'])
+
+
 class ManageCampaignListAnnotationsTest(TestCase):
     """manage_campaign_list annotates downloaded counts and campaign size (geo_limit boundary)."""
 
@@ -313,6 +331,99 @@ class ManageCampaignListAnnotationsTest(TestCase):
         self.campaign.save()
         c = self._get_campaign_from_response()
         self.assertEqual(c.size_street_count, 0)
+
+
+# ── View tests: manage campaign list sorting (issue #175) ────────────────────
+
+class ManageCampaignListSortTest(TestCase):
+    """manage_campaign_list respects ?sort= and ?dir= query parameters."""
+
+    def setUp(self):
+        from datetime import date
+        self.user = User.objects.create_user('sortmgr', password='pw')
+        self.client = Client()
+        self.client.login(username='sortmgr', password='pw')
+        self.c1 = make_campaign(slug='sort-alpha', name='Alpha', start_date=date(2025, 1, 1))
+        self.c2 = make_campaign(slug='sort-beta', name='Beta', start_date=date(2025, 6, 1))
+        self.c3 = make_campaign(slug='sort-gamma', name='Gamma', start_date=date(2024, 3, 1))
+
+    def _campaigns(self, params=''):
+        resp = self.client.get(f'/manage/{params}')
+        self.assertEqual(resp.status_code, 200)
+        return resp.context['campaigns']
+
+    def _slugs(self, campaigns):
+        return [c.slug for c in campaigns]
+
+    def test_default_sort_is_start_date_descending(self):
+        # No params → newest start_date first
+        campaigns = self._campaigns()
+        slugs = self._slugs(campaigns)
+        self.assertEqual(slugs.index('sort-beta'), 0)   # 2025-06-01 is latest
+        self.assertLess(slugs.index('sort-beta'), slugs.index('sort-alpha'))
+        self.assertLess(slugs.index('sort-alpha'), slugs.index('sort-gamma'))
+
+    def test_sort_start_date_ascending(self):
+        campaigns = self._campaigns('?sort=start_date&dir=asc')
+        slugs = self._slugs(campaigns)
+        self.assertEqual(slugs.index('sort-gamma'), 0)   # 2024-03-01 is earliest
+        self.assertLess(slugs.index('sort-gamma'), slugs.index('sort-alpha'))
+        self.assertLess(slugs.index('sort-alpha'), slugs.index('sort-beta'))
+
+    def test_sort_name_ascending(self):
+        campaigns = self._campaigns('?sort=name&dir=asc')
+        slugs = self._slugs(campaigns)
+        self.assertLess(slugs.index('sort-alpha'), slugs.index('sort-beta'))
+        self.assertLess(slugs.index('sort-beta'), slugs.index('sort-gamma'))
+
+    def test_sort_name_descending(self):
+        campaigns = self._campaigns('?sort=name&dir=desc')
+        slugs = self._slugs(campaigns)
+        self.assertLess(slugs.index('sort-gamma'), slugs.index('sort-beta'))
+        self.assertLess(slugs.index('sort-beta'), slugs.index('sort-alpha'))
+
+    def test_sort_context_vars_passed_to_template(self):
+        resp = self.client.get('/manage/?sort=name&dir=asc')
+        self.assertEqual(resp.context['sort_col'], 'name')
+        self.assertEqual(resp.context['sort_dir'], 'asc')
+
+    def test_default_sort_context_vars(self):
+        resp = self.client.get('/manage/')
+        self.assertEqual(resp.context['sort_col'], 'start_date')
+        self.assertEqual(resp.context['sort_dir'], 'desc')
+
+    def test_invalid_sort_col_falls_back_to_start_date(self):
+        resp = self.client.get('/manage/?sort=INVALID&dir=desc')
+        self.assertEqual(resp.context['sort_col'], 'start_date')
+
+    def test_invalid_sort_dir_falls_back_to_desc(self):
+        resp = self.client.get('/manage/?sort=name&dir=INVALID')
+        self.assertEqual(resp.context['sort_dir'], 'desc')
+
+    def test_sort_by_trip_count(self):
+        # Give c2 more trips so it sorts first when descending by trip_count.
+        make_trip(self.c2, worker_name='Alice')
+        make_trip(self.c2, worker_name='Bob')
+        make_trip(self.c1, worker_name='Carol')
+        campaigns = self._campaigns('?sort=trip_count&dir=desc')
+        slugs = self._slugs(campaigns)
+        self.assertLess(slugs.index('sort-beta'), slugs.index('sort-alpha'))
+        self.assertLess(slugs.index('sort-alpha'), slugs.index('sort-gamma'))
+
+    def test_template_renders_sort_arrow_for_active_column(self):
+        resp = self.client.get('/manage/?sort=name&dir=asc')
+        self.assertContains(resp, 'sort-active')
+
+    def test_template_renders_up_arrow_for_ascending_active_column(self):
+        resp = self.client.get('/manage/?sort=name&dir=asc')
+        # The up arrow character ↑ should appear in the active header
+        content = resp.content.decode()
+        self.assertIn('&uarr;', content)
+
+    def test_template_renders_down_arrow_for_descending_active_column(self):
+        resp = self.client.get('/manage/?sort=name&dir=desc')
+        content = resp.content.decode()
+        self.assertIn('&darr;', content)
 
 
 # ── View tests: streets.geojson ───────────────────────────────────────────────
