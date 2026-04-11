@@ -298,6 +298,12 @@
     .hamburger-menu button:last-child { border-bottom: none; }
     .hamburger-menu a:hover,
     .hamburger-menu button:hover { background: #f5f5f5; }
+    .hamburger-menu a.back-link {
+      color: #1a6b3c;
+      font-weight: 600;
+      border-bottom: 2px solid #e8f5e9;
+    }
+    .hamburger-menu a.back-link:hover { background: #e8f5e9; }
   </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-STEDJ3HETF"></script>
@@ -350,7 +356,7 @@
       </svg>
     </button>
     <nav class="hamburger-menu" id="hamburger-menu" role="menu">
-      <a href="/" role="menuitem">Home</a>
+      <a href="/" role="menuitem" class="back-link">&#8592; All Campaigns</a>
       {% if user.is_authenticated %}
         <a href="/manage/{{ campaign.slug }}/" role="menuitem">Manage campaign</a>
       {% endif %}
