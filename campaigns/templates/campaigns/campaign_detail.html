@@ -345,7 +345,9 @@
     </button>
     <nav class="hamburger-menu" id="hamburger-menu" role="menu">
       <a href="/" role="menuitem">Home</a>
-      <a href="/manage/{{ campaign.slug }}/" role="menuitem">Manage campaign</a>
+      {% if user.is_authenticated %}
+        <a href="/manage/{{ campaign.slug }}/" role="menuitem">Manage campaign</a>
+      {% endif %}
       <a href="/about/" role="menuitem">About</a>
       {% if user.is_authenticated %}
         <form method="post" action="/manage/logout/">

@@ -207,7 +207,9 @@
       </svg>
     </button>
     <nav class="hamburger-menu" id="hamburger-menu" role="menu">
-      <a href="/manage/" role="menuitem">Manage campaigns</a>
+      {% if user.is_authenticated %}
+        <a href="/manage/" role="menuitem">Manage campaigns</a>
+      {% endif %}
       <a href="/about/" role="menuitem">About</a>
       {% if user.is_authenticated %}
         <form method="post" action="/manage/logout/">
