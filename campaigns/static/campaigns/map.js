@@ -469,12 +469,23 @@
   // ── UI helpers ────────────────────────────────────────────────────────────
   function updateSelectionCount() {
     const el = document.getElementById('selection-count');
-    if (selectedIds.size > 0) {
-      el.textContent = `● ${selectedIds.size} block${selectedIds.size === 1 ? '' : 's'}`;
+    const btnDone = document.getElementById('btn-done');
+    const n = selectedIds.size;
+    if (n > 0) {
+      el.textContent = `● ${n} block${n === 1 ? '' : 's'}`;
       el.style.display = 'inline-flex';
     } else {
       el.textContent = '';
       el.style.display = 'none';
+    }
+    if (btnDone) {
+      if (n > 0) {
+        btnDone.textContent = `Add ${n} Segment${n === 1 ? '' : 's'}`;
+        btnDone.disabled = false;
+      } else {
+        btnDone.textContent = 'Add This Trip';
+        btnDone.disabled = true;
+      }
     }
     updateDebugPanel();
   }
