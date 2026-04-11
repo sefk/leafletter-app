@@ -100,17 +100,18 @@ private struct BannerView: View {
     let onAbout: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip. ")
+        HStack(alignment: .center, spacing: 12) {
+            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip.")
                 .font(.footnote)
                 .foregroundColor(.white.opacity(0.9))
+            Spacer()
             Button(action: onAbout) {
-                Text("About this app")
-                    .font(.footnote.bold())
-                    .foregroundColor(.white)
-                    .underline()
+                Image(systemName: "info.circle")
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundColor(.white.opacity(0.7))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("About this app")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
