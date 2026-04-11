@@ -183,25 +183,17 @@ class CampaignDetailViewTest(TestCase):
         resp = self.client.get('/c/detail-camp/')
         self.assertContains(resp, 'Test Campaign')
 
-    def test_draft_campaign_returns_200(self):
+    def test_draft_campaign_returns_404(self):
         make_campaign(slug='draft-v', status='draft')
         resp = self.client.get('/c/draft-v/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 404)
 
-    def test_draft_campaign_shows_unpublished_modal_to_anonymous(self):
-        make_campaign(slug='draft-modal', status='draft')
-        resp = self.client.get('/c/draft-modal/')
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, 'Not Published Yet')
-
-    def test_draft_campaign_shows_preview_banner_to_signed_in_user(self):
+    def test_draft_campaign_returns_404_for_signed_in_user(self):
         user = User.objects.create_user(username='previewuser', password='pw')
         self.client.force_login(user)
         make_campaign(slug='draft-banner', status='draft')
         resp = self.client.get('/c/draft-banner/')
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, 'preview-banner')
-        self.assertNotContains(resp, 'Not Published Yet')
+        self.assertEqual(resp.status_code, 404)
 
     def test_deleted_campaign_returns_404(self):
         make_campaign(slug='del-v', status='deleted')
