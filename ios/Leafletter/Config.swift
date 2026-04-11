@@ -3,8 +3,8 @@ import Darwin
 
 enum Config {
     static let stagingURL = "https://staging.leafletter.app"
-    private static let productionURL = "https://leafletter.app"
-    private static let userOverrideKey = "leafletter_base_url_override"
+    nonisolated(unsafe) private static let productionURL = "https://leafletter.app"
+    nonisolated(unsafe) private static let userOverrideKey = "leafletter_base_url_override"
 
     // When a debugger is attached (i.e. running from Xcode), uses the local
     // dev server. Otherwise uses the production server.
