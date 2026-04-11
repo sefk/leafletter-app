@@ -9,6 +9,7 @@ from django.contrib.gis.geos import Polygon
 from django.db.models import Count, F, Q
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
@@ -16,9 +17,12 @@ from .forms import CampaignForm, ImageUploadForm
 from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, update_campaign_size_cache, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
 
-_login_required = login_required(login_url='/manage/login/')
+def _login_required(view):
+    """login_required + never_cache — prevents stale CSRF tokens after login."""
+    return never_cache(login_required(view, login_url='/manage/login/'))
 
 
+@never_cache
 def manage_login(request):
     if request.user.is_authenticated:
         return redirect('/manage/')
@@ -39,7 +43,7 @@ def manage_login(request):
 @require_POST
 def manage_logout(request):
     logout(request)
-    return redirect('/manage/login/')
+    return redirect('/')
 
 
 def public_campaign_list(request):
@@ -333,8 +337,20 @@ def manage_campaign_list(request):
         )
         all_users = []
 
+    # Sort params — default: start_date descending.
+    # Valid column keys match what we annotate onto each campaign object below.
+    VALID_SORT_COLS = {'name', 'status', 'start_date', 'trip_count', 'street_count'}
+    sort_col = request.GET.get('sort', 'start_date')
+    if sort_col not in VALID_SORT_COLS:
+        sort_col = 'start_date'
+    sort_dir = request.GET.get('dir', 'desc')
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'desc'
+
     # Fetch campaigns without any multi-table JOIN annotations — multiple
     # COUNT DISTINCT JOINs in one query cause a row explosion on MySQL.
+    # Pre-sort by is_test so test campaigns stay grouped; secondary sort will
+    # be applied in Python after annotated counts are attached (see below).
     campaigns = list(qs.order_by('is_test', '-created_at'))
     campaign_pks = [c.pk for c in campaigns]
 
@@ -374,6 +390,16 @@ def manage_campaign_list(request):
         c.size_street_count = c.cached_size_street_count
         c.size_household_count = c.cached_size_household_count
 
+    # Apply requested sort.  None-safe key: None sorts before everything when
+    # ascending (i.e. campaigns with no start_date float to the top), which is
+    # consistent with the DB NULLs-first behaviour for ascending sorts.
+    def _sort_key(c):
+        val = getattr(c, sort_col, None)
+        # Make None sort consistently (put None/null at end for desc, start for asc).
+        return (val is None, val if val is not None else '')
+
+    campaigns.sort(key=_sort_key, reverse=(sort_dir == 'desc'))
+
     inflight = [c for c in campaigns if c.map_status in ('pending', 'generating', 'rendering') and c.cities]
     inflight.sort(key=lambda c: c.updated_at)
 
@@ -404,6 +430,8 @@ def manage_campaign_list(request):
         'all_users': all_users,
         'owner_param': owner_param,
         'deleted_campaigns': deleted_campaigns,
+        'sort_col': sort_col,
+        'sort_dir': sort_dir,
     })
 
 
