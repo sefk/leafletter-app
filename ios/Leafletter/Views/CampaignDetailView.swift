@@ -91,6 +91,18 @@ private struct CampaignWebView: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.allowsBackForwardNavigationGestures = false
         webView.navigationDelegate = context.coordinator
+
+        // Pull-to-refresh: attach a UIRefreshControl to the scroll view.
+        let refreshControl = UIRefreshControl()
+        refreshControl.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.handleRefresh(_:)),
+            for: .valueChanged
+        )
+        webView.scrollView.bounces = true
+        webView.scrollView.addSubview(refreshControl)
+        context.coordinator.refreshControl = refreshControl
+
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -102,10 +114,29 @@ private struct CampaignWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate {
         let host: String?
         let onAbout: () -> Void
+        weak var refreshControl: UIRefreshControl?
 
         init(host: String?, onAbout: @escaping () -> Void) {
             self.host = host
             self.onAbout = onAbout
+        }
+
+        @objc func handleRefresh(_ sender: UIRefreshControl) {
+            // Reload the web view; the refresh spinner stops when loading finishes.
+            sender.attributedTitle = NSAttributedString(string: "Refreshing…")
+            guard let webView = sender.superview?.superview as? WKWebView else {
+                sender.endRefreshing()
+                return
+            }
+            webView.reload()
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            refreshControl?.endRefreshing()
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            refreshControl?.endRefreshing()
         }
 
         func webView(_ webView: WKWebView,
