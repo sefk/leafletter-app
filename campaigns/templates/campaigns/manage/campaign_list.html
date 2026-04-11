@@ -92,6 +92,8 @@
     <tr
       data-name="{{ campaign.name|lower }}"
       data-status="{{ campaign.status }}"
+      data-owner="{{ campaign.owner.username|default:'' }}"
+      data-size_street_count="{{ campaign.size_street_count|default:'0' }}"
       data-street_count="{{ campaign.street_count }}"
       data-trip_count="{{ campaign.trip_count }}"
       data-start_date="{{ campaign.start_date|default:'' }}"
@@ -148,7 +150,7 @@
   function sortTable(col, dir) {
     var tbody = document.querySelector('#campaigns-table tbody');
     var rows = Array.from(tbody.querySelectorAll('tr'));
-    var numeric = ['street_count', 'trip_count'];
+    var numeric = ['street_count', 'trip_count', 'size_street_count'];
     rows.sort(function (a, b) {
       var av = a.dataset[col] || '';
       var bv = b.dataset[col] || '';
