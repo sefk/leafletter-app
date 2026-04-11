@@ -4027,3 +4027,115 @@ class ManageCampaignDetailInlineBasicsTest(TestCase):
     def test_detail_page_shows_campaign_name_in_form(self):
         resp = self.client.get('/manage/detail-inline-camp/')
         self.assertContains(resp, 'Test Campaign')
+
+
+# ── View tests: manage_export_trips ──────────────────────────────────────────
+
+class ManageExportTripsTest(TestCase):
+    """CSV export of trips at /manage/<slug>/export-trips/."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='export-user', password='pw')
+        self.client.login(username='export-user', password='pw')
+        self.campaign = make_campaign(slug='export-camp')
+        self.street1 = make_street(self.campaign, osm_id=1, name='Main St')
+        self.street2 = make_street(self.campaign, osm_id=2, name='Oak Ave')
+
+    def _get(self, slug=None):
+        slug = slug or self.campaign.slug
+        return self.client.get(f'/manage/{slug}/export-trips/')
+
+    def test_requires_login(self):
+        self.client.logout()
+        resp = self._get()
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/manage/login/', resp['Location'])
+
+    def test_returns_csv_content_type(self):
+        resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('text/csv', resp['Content-Type'])
+
+    def test_csv_attachment_filename(self):
+        resp = self._get()
+        self.assertIn('export-camp', resp['Content-Disposition'])
+        self.assertIn('.csv', resp['Content-Disposition'])
+
+    def test_csv_header_row(self):
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        first_line = content.splitlines()[0]
+        self.assertIn('trip_entry_gmt', first_line)
+        self.assertIn('worker_name', first_line)
+        self.assertIn('worker_email', first_line)
+        self.assertIn('notes', first_line)
+        self.assertIn('blocks', first_line)
+        self.assertIn('streets', first_line)
+        self.assertIn('cities', first_line)
+
+    def test_empty_campaign_returns_header_only(self):
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        lines = [l for l in content.splitlines() if l]
+        self.assertEqual(len(lines), 1)  # header only
+
+    def test_trip_appears_in_csv(self):
+        Trip.objects.create(
+            campaign=self.campaign,
+            worker_name='Alice',
+            worker_email='alice@example.com',
+            notes='Cold day',
+        )
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        self.assertIn('Alice', content)
+        self.assertIn('alice@example.com', content)
+        self.assertIn('Cold day', content)
+
+    def test_blocks_streets_and_cities_in_csv(self):
+        trip = Trip.objects.create(campaign=self.campaign, worker_name='Bob')
+        trip.streets.set([self.street1, self.street2])
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        # Find the data row (skip header)
+        lines = content.splitlines()
+        data_row = lines[1]
+        self.assertIn('2', data_row)  # blocks
+        self.assertIn('Main St', data_row)
+        self.assertIn('Oak Ave', data_row)
+        self.assertIn('test-city-export-camp', data_row)  # city name
+
+    def test_deleted_trips_excluded(self):
+        Trip.objects.create(
+            campaign=self.campaign, worker_name='Deleted Worker', deleted=True
+        )
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        self.assertNotIn('Deleted Worker', content)
+
+    def test_active_trips_included_deleted_excluded(self):
+        Trip.objects.create(campaign=self.campaign, worker_name='Active Worker', deleted=False)
+        Trip.objects.create(campaign=self.campaign, worker_name='Gone Worker', deleted=True)
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        self.assertIn('Active Worker', content)
+        self.assertNotIn('Gone Worker', content)
+
+    def test_street_names_are_deduped(self):
+        street3 = make_street(self.campaign, osm_id=3, name='Main St', block_index=1)
+        trip = Trip.objects.create(campaign=self.campaign, worker_name='Carol')
+        trip.streets.set([self.street1, street3])  # both named "Main St"
+        resp = self._get()
+        content = resp.content.decode('utf-8')
+        data_row = content.splitlines()[1]
+        # "Main St" should appear only once, not twice
+        self.assertEqual(data_row.count('Main St'), 1)
+
+    def test_404_for_unknown_campaign(self):
+        resp = self.client.get('/manage/no-such-camp/export-trips/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_post_not_allowed(self):
+        resp = self.client.post(f'/manage/{self.campaign.slug}/export-trips/')
+        self.assertEqual(resp.status_code, 405)

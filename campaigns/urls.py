@@ -56,5 +56,6 @@ manage_urlpatterns = [
     path('<slug:slug>/trip/<uuid:trip_id>/delete/', views.manage_trip_delete, name='manage_trip_delete'),
     path('<slug:slug>/trip/<uuid:trip_id>/restore/', views.manage_trip_restore, name='manage_trip_restore'),
     path('<slug:slug>/trip/<uuid:trip_id>/edit/', views.manage_trip_edit, name='manage_trip_edit'),
+    path('<slug:slug>/export-trips/', views.manage_export_trips, name='manage_export_trips'),
     path('<slug:slug>/remove-image/', views.manage_campaign_remove_image, name='manage_remove_image'),
 ]

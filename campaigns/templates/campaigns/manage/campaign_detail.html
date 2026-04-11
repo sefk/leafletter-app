@@ -1113,7 +1113,13 @@
     <span id="manage-map-loading-text">Loading streets… 0%</span>
   </div>
   <div id="manage-trip-legend" style="display:none; margin-top:8px;">
-    <div style="font-size:0.8rem; color:#555; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Trips</div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+      <div style="font-size:0.8rem; color:#555; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">Trips</div>
+      <a href="/manage/{{ campaign.slug }}/export-trips/"
+         style="font-size:0.78rem; padding:2px 8px; border:1px solid #1a6b3c; border-radius:4px; color:#1a6b3c; background:#fff; text-decoration:none; white-space:nowrap;">
+        Download CSV
+      </a>
+    </div>
     <div id="manage-trip-legend-items"></div>
   </div>
   {% if not campaign.bbox %}
@@ -1130,7 +1136,7 @@
     // Server-side trip data (all trips, including deleted)
     var allTripData = [
       {% for trip in all_trips %}
-      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", notes: "{{ trip.notes|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'c' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/", editUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/edit/" },
+      { id: "{{ trip.pk }}", worker_name: "{{ trip.worker_name|default:'Anonymous'|escapejs }}", worker_email: "{{ trip.worker_email|escapejs }}", notes: "{{ trip.notes|escapejs }}", recorded_at: "{{ trip.recorded_at|date:'c' }}", deleted: {{ trip.deleted|lower }}, deleteUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/delete/", restoreUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/restore/", editUrl: "/manage/{{ campaign.slug }}/trip/{{ trip.pk }}/edit/" },
       {% endfor %}
     ];
 
@@ -1304,11 +1310,23 @@
         var swatch = document.createElement('span');
         var swatchColor = meta ? meta.color : '#aaa';
         swatch.style.cssText = 'width:20px; height:4px; border-radius:2px; flex-shrink:0; background:' + swatchColor + ';';
+
+        // Name + email
+        var nameGroup = document.createElement('span');
+        nameGroup.style.cssText = 'display:flex; flex-direction:column; line-height:1.2;';
         var label = document.createElement('span');
         label.style.color = '#333';
         label.textContent = trip.worker_name;
+        nameGroup.appendChild(label);
+        if (trip.worker_email) {
+          var emailSpan = document.createElement('span');
+          emailSpan.style.cssText = 'color:#777; font-size:0.78rem;';
+          emailSpan.textContent = trip.worker_email;
+          nameGroup.appendChild(emailSpan);
+        }
+
         var metaSpan = document.createElement('span');
-        metaSpan.style.cssText = 'color:#888; font-size:0.8rem; margin-left:2px;';
+        metaSpan.style.cssText = 'color:#888; font-size:0.8rem; margin-left:2px; white-space:nowrap;';
         var d = new Date(trip.recorded_at);
         var day = String(d.getDate()).padStart(2, '0');
         var mon = d.toLocaleString(undefined, { month: 'short' });
@@ -1317,7 +1335,26 @@
         metaSpan.textContent = day + '-' + mon + '-' + yr + ' ' + time;
 
         var btnGroup = document.createElement('span');
-        btnGroup.style.cssText = 'margin-left:auto; display:flex; gap:4px;';
+        btnGroup.style.cssText = 'margin-left:auto; display:flex; gap:4px; align-items:center;';
+
+        // Notes expand chevron (only shown when trip has notes)
+        var notesPanel = document.createElement('div');
+        notesPanel.style.cssText = 'display:none; margin-top:5px; padding:6px 10px; background:#fffde7; border:1px solid #ffe082; border-radius:4px; font-size:0.82rem; color:#555; white-space:pre-wrap; word-break:break-word;';
+        notesPanel.textContent = trip.notes;
+
+        if (trip.notes) {
+          var chevronBtn = document.createElement('button');
+          chevronBtn.title = 'Show notes';
+          chevronBtn.style.cssText = 'padding:2px 6px; font-size:0.78rem; cursor:pointer; border-radius:4px; border:1px solid #ccc; background:#fff; color:#555; line-height:1;';
+          chevronBtn.textContent = '\u25bc'; // down arrow
+          chevronBtn.addEventListener('click', function() {
+            var open = notesPanel.style.display !== 'none';
+            notesPanel.style.display = open ? 'none' : '';
+            chevronBtn.textContent = open ? '\u25bc' : '\u25b2';
+            chevronBtn.title = open ? 'Show notes' : 'Hide notes';
+          });
+          btnGroup.appendChild(chevronBtn);
+        }
 
         var editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
@@ -1377,10 +1414,11 @@
         btnGroup.appendChild(editBtn);
         btnGroup.appendChild(actionBtn);
         row.appendChild(swatch);
-        row.appendChild(label);
+        row.appendChild(nameGroup);
         row.appendChild(metaSpan);
         row.appendChild(btnGroup);
         wrapper.appendChild(row);
+        wrapper.appendChild(notesPanel);
         wrapper.appendChild(editForm);
         itemsEl.appendChild(wrapper);
       });

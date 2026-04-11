@@ -1055,6 +1055,42 @@ def manage_trip_edit(request, slug, trip_id):
 
 @_login_required
 @require_GET
+def manage_export_trips(request, slug):
+    """Export all non-deleted trips for a campaign as a CSV download."""
+    import csv
+    campaign = get_object_or_404(Campaign, slug=slug)
+    trips = (
+        campaign.trips
+        .filter(deleted=False)
+        .prefetch_related('streets')
+        .order_by('recorded_at')
+    )
+
+    response = HttpResponse(content_type='text/csv')
+    filename = f"trips-{campaign.slug}.csv"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+    writer.writerow(['trip_entry_gmt', 'worker_name', 'worker_email', 'notes', 'blocks', 'streets', 'cities'])
+    for trip in trips:
+        streets = trip.streets.all()
+        street_names = sorted(set(s.name for s in streets if s.name))
+        city_names = sorted(set(s.city_name for s in streets if s.city_name))
+        writer.writerow([
+            trip.recorded_at.strftime('%Y-%m-%d %H:%M:%S'),
+            trip.worker_name,
+            trip.worker_email,
+            trip.notes,
+            streets.count(),
+            ', '.join(street_names),
+            ', '.join(city_names),
+        ])
+
+    return response
+
+
+@_login_required
+@require_GET
 def cities_prefetched(request):
     """Return display_names of cities that already have streets downloaded.
 
