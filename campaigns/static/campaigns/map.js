@@ -327,8 +327,17 @@
       setLoadingStatus(null);
     });
 
+  // ── Empty-state helper ────────────────────────────────────────────────────
+  function setEmptyState(visible) {
+    const el = document.getElementById('empty-state');
+    if (el) el.style.display = visible ? 'block' : 'none';
+  }
+
   // ── Coverage layer ────────────────────────────────────────────────────────
   function loadCoverage() {
+    // Hide empty-state while the fetch is in flight so it never appears
+    // mid-load — only show it once we know there are truly no trips.
+    setEmptyState(false);
     fetchJSON(window.COVERAGE_URL, pct => { setLoadingStatus(`Loading coverage… ${pct}%`); })
       .then(geojson => {
         // Remove existing layers
@@ -394,6 +403,7 @@
 
         applyCoverageMode();
         renderTripLegend();
+        setEmptyState(tripMeta.size === 0);
         enableLogTripButton();
         setLoadingStatus(null);
       })
