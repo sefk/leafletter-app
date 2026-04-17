@@ -311,6 +311,25 @@
       border-bottom: 2px solid #e8f5e9;
     }
     .hamburger-menu a.back-link:hover { background: #e8f5e9; }
+
+    /* Trip confirmation panel */
+    #trip-confirm {
+      display: none;
+      padding: 16px 20px;
+      background: #fff;
+      border-top: 1px solid #ddd;
+    }
+    #trip-confirm h3 { margin-bottom: 12px; font-size: 1rem; }
+    #trip-confirm .confirm-detail {
+      font-size: 0.9rem;
+      color: #444;
+      margin-bottom: 8px;
+    }
+    #trip-confirm .confirm-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
   </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-STEDJ3HETF"></script>
@@ -464,6 +483,16 @@
   <label for="notes">Notes (optional)</label>
   <textarea id="notes" rows="3" placeholder="Any observations..."></textarea>
   <p style="font-size:0.8rem; color:#777; margin-top:4px;">Name, email, and comments provided here are visible to the manager of the campaign, but not other users nor yourself once the trip is added.</p>
+</div>
+
+<div id="trip-confirm">
+  <h3>Confirm Trip</h3>
+  <div class="confirm-detail" id="confirm-street-count"></div>
+  <div class="confirm-detail" id="confirm-worker-name"></div>
+  <div class="confirm-actions">
+    <button id="btn-confirm" class="btn btn-primary">Confirm</button>
+    <button id="btn-goback" class="btn btn-secondary">Go back</button>
+  </div>
 </div>
 
 <div id="loading-status"></div>

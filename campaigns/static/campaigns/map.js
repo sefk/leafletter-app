@@ -640,17 +640,63 @@
     document.getElementById('debug-section').style.display = 'none';
   });
 
-  document.getElementById('btn-done').addEventListener('click', () => {
-    if (selectedIds.size === 0) {
-      alert('Please tap at least one street segment first.');
-      return;
+  // ── Confirm-panel helpers ─────────────────────────────────────────────────
+
+  // Show the confirm panel: hide toolbar action buttons and trip form,
+  // populate summary text.
+  function showConfirmPanel() {
+    const n = selectedIds.size;
+    const workerName = document.getElementById('worker-name').value.trim();
+
+    // Populate summary
+    const countEl = document.getElementById('confirm-street-count');
+    countEl.textContent = `You selected ${n} street${n === 1 ? '' : 's'}.`;
+
+    const nameEl = document.getElementById('confirm-worker-name');
+    if (workerName) {
+      nameEl.textContent = `As: ${workerName}`;
+      nameEl.style.display = '';
+    } else {
+      nameEl.style.display = 'none';
     }
+
+    // Hide toolbar action buttons (keep Log a Trip hidden — still in selection mode)
+    document.getElementById('btn-done').style.display = 'none';
+    document.getElementById('btn-cancel').style.display = 'none';
+    document.getElementById('btn-undo').style.display = 'none';
+    document.getElementById('selection-count').style.display = 'none';
+
+    // Hide trip form
+    document.getElementById('trip-form').style.display = 'none';
+
+    // Show confirm panel
+    document.getElementById('trip-confirm').style.display = 'block';
+    document.getElementById('trip-confirm').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // Hide the confirm panel and restore the selection-mode UI.
+  function hideConfirmPanel() {
+    document.getElementById('trip-confirm').style.display = 'none';
+
+    // Restore toolbar action buttons
+    document.getElementById('btn-done').style.display = '';
+    document.getElementById('btn-cancel').style.display = '';
+    document.getElementById('trip-form').style.display = 'block';
+
+    // Restore undo button and selection count (respects current state)
+    updateUndoButton();
+    updateSelectionCount();
+  }
+
+  // The actual POST logic, extracted so it can be called from btn-confirm.
+  function submitTrip() {
     const workerName = document.getElementById('worker-name').value.trim();
     const workerEmail = document.getElementById('worker-email').value.trim();
     const notes = document.getElementById('notes').value.trim();
     const segmentIds = Array.from(selectedIds);
 
-    document.getElementById('btn-done').disabled = true;
+    const btnConfirm = document.getElementById('btn-confirm');
+    btnConfirm.disabled = true;
 
     fetch(window.TRIP_URL, {
       method: 'POST',
@@ -662,12 +708,14 @@
         return r.json();
       })
       .then(data => {
+        // Hide confirm panel before tearing down selection mode
+        document.getElementById('trip-confirm').style.display = 'none';
         setSelectionMode(false);
         document.getElementById('debug-section').style.display = 'none';
         document.getElementById('worker-name').value = '';
         document.getElementById('worker-email').value = '';
         document.getElementById('notes').value = '';
-        document.getElementById('btn-done').disabled = false;
+        btnConfirm.disabled = false;
         resetSelection();
         if (coverageMode !== 'hidden') loadCoverage();
 
@@ -687,9 +735,29 @@
         statusEl.scrollIntoView({ behavior: 'smooth' });
       })
       .catch(err => {
+        // On error, go back to the confirm panel so the user can retry or cancel
         showStatus('Error submitting trip: ' + err.message, 'error');
-        document.getElementById('btn-done').disabled = false;
+        btnConfirm.disabled = false;
       });
+  }
+
+  // Stage 1: show confirmation summary instead of immediately POSTing.
+  document.getElementById('btn-done').addEventListener('click', () => {
+    if (selectedIds.size === 0) {
+      alert('Please tap at least one street segment first.');
+      return;
+    }
+    showConfirmPanel();
+  });
+
+  // Stage 2: user confirmed — do the actual submit.
+  document.getElementById('btn-confirm').addEventListener('click', () => {
+    submitTrip();
+  });
+
+  // "Go back": return to selection mode with all state intact.
+  document.getElementById('btn-goback').addEventListener('click', () => {
+    hideConfirmPanel();
   });
 
   document.getElementById('btn-undo').addEventListener('click', () => {
