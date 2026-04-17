@@ -47,7 +47,16 @@
 - Trip legend with per-trip color swatches and visibility checkboxes (detail mode only)
 - Undo button for deselecting last lasso batch or individual click
 
-## Known UX Issues (updated 2026-04-09)
+## Known UX Issues (updated 2026-04-17)
+
+### Access Code Gate (issue #143, redesigned 2026-04-17)
+- Original shipped design: yellow access-code-bar rendered below toolbar in DOM — off-screen on mobile; button disabled with no explanation; live debounced validation while typing; session persistence makes demoing hard.
+- Two alternatives in draft PRs (not merged):
+  - Approach A (branch ux/access-code-unlock-on-intent): button always enabled; gate deferred to click moment; unlock strip appears above map on click; validate on submit only; no persistence.
+  - Approach B (branch ux/access-code-toolbar-inline): input moves inside toolbar (always in view); button stays disabled but has title tooltip; validate on submit only; no persistence.
+- Hard constraint confirmed: gate must NOT block observers who just want to view coverage — only activates on intent to log.
+- Session persistence (request.session flag) should be REMOVED from client — server-side 403 enforcement stays.
+- Live keystroke validation is wrong pattern for passcode entry — validate on submit only.
 
 ### iOS Worker
 - CampaignRow: TestBadgeView component defined separately but plain-text TEST badge duplicated inline in else branch (code inconsistency, not UX issue per se)
