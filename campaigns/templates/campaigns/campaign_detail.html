@@ -412,11 +412,25 @@
 </div>
 
 <div class="toolbar">
+  {% if has_access_code %}
+  <button id="btn-log-trip" class="btn btn-primary" title="Enter access code to enable">Log a Trip</button>
+  {% else %}
   <button id="btn-log-trip" class="btn btn-primary">Log a Trip</button>
+  {% endif %}
   <button id="btn-done" class="btn btn-primary" style="display:none;">Add This Trip</button>
   <button id="btn-cancel" class="btn btn-danger" style="display:none;">Cancel</button>
   <button id="btn-undo" class="btn btn-secondary" style="display:none;">↩ Undo</button>
   <span id="selection-count"></span>
+  {% if has_access_code %}
+  <span id="access-code-group" style="display:inline-flex; align-items:center; gap:6px;">
+    <input type="text" id="access-code-input"
+           placeholder="Access code"
+           autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+           style="padding:5px 8px; border:1px solid #ccc; border-radius:4px; font-size:0.88rem; font-family:inherit; width:130px;">
+    <button id="btn-unlock" class="btn btn-secondary" style="white-space:nowrap;">Unlock</button>
+    <span id="access-code-status" style="font-size:0.82rem; color:#c62828;"></span>
+  </span>
+  {% endif %}
   <label for="coverage-mode" style="font-size:0.85rem; color:#555; white-space:nowrap;">Show:</label>
   <select id="coverage-mode" class="btn btn-secondary" style="cursor:pointer;" aria-label="Coverage display mode">
     <option value="summary">Coverage summary</option>
@@ -425,15 +439,6 @@
   </select>
 </div>
 
-{% if has_access_code and not access_granted %}
-<div id="access-code-bar" style="padding:10px 16px; background:#fffbea; border-top:1px solid #ffe082; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-  <label for="access-code-input" style="font-size:0.88rem; color:#5d4037; font-weight:600; white-space:nowrap;">Access Code:</label>
-  <input type="text" id="access-code-input" placeholder="Enter code to log a trip"
-         style="padding:6px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; font-family:inherit; width:200px;"
-         autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
-  <span id="access-code-status" style="font-size:0.85rem;"></span>
-</div>
-{% endif %}
 
 <div class="trip-form" id="trip-form">
   <div class="trip-form-row">
@@ -493,7 +498,7 @@
   window.GEO_LIMIT = {{ geo_limit_json|safe }};
   window.MAP_READY = {% if campaign.map_status == 'ready' %}true{% else %}false{% endif %};
   window.HAS_ACCESS_CODE = {% if has_access_code %}true{% else %}false{% endif %};
-  window.ACCESS_GRANTED = {% if access_granted %}true{% else %}false{% endif %};
+  window.ACCESS_CODE_REQUIRED = {% if has_access_code %}true{% else %}false{% endif %};
 </script>
 <script src="{% static 'campaigns/map.js' %}"></script>
 <script>
@@ -535,62 +540,49 @@
     toolbar.scrollIntoView({ behavior: 'instant', block: 'end' });
   }
 
-{% if has_access_code and not access_granted %}
-  // ── Access code validation ──────────────────────────────────────────────
-  (function() {
-    var input = document.getElementById('access-code-input');
-    var statusEl = document.getElementById('access-code-status');
-    if (!input) return;
 
-    var lastChecked = '';
-    var debounceTimer = null;
-    var lastCheckTime = 0;
-    var MIN_INTERVAL_MS = 2000;
-
-    function checkCode() {
-      var code = input.value.trim();
-      if (!code || code === lastChecked) return;
-
-      var now = Date.now();
-      var wait = Math.max(0, MIN_INTERVAL_MS - (now - lastCheckTime));
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(function() {
-        lastChecked = code;
-        lastCheckTime = Date.now();
-        statusEl.textContent = '';
-        statusEl.style.color = '';
-        fetch(window.VALIDATE_CODE_URL, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({code: code}),
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.valid) {
-            statusEl.textContent = 'Code accepted';
-            statusEl.style.color = '#2e7d32';
-            var bar = document.getElementById('access-code-bar');
-            if (bar) bar.style.display = 'none';
-            // map.js listens for this event to enable the "Log a Trip" button.
-            window.ACCESS_GRANTED = true;
-            window.dispatchEvent(new CustomEvent('accessGranted'));
-          } else {
-            statusEl.textContent = 'Incorrect code';
-            statusEl.style.color = '#c62828';
-            lastChecked = '';  // allow re-check on next keystroke
-          }
-        })
-        .catch(function() {
-          statusEl.textContent = '';
-        });
-      }, wait);
-    }
-
-    input.addEventListener('input', checkCode);
-    input.addEventListener('change', checkCode);
-  })();
-{% endif %}
 </script>
+
+{% if has_access_code %}
+<script>
+(function() {
+  var input = document.getElementById('access-code-input');
+  var statusEl = document.getElementById('access-code-status');
+  var btn = document.getElementById('btn-unlock');
+  if (!input || !btn) return;
+
+  function attemptUnlock() {
+    var code = input.value.trim();
+    if (!code) { input.focus(); return; }
+    statusEl.textContent = '';
+    fetch(window.VALIDATE_CODE_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code: code}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.valid) {
+        var group = document.getElementById('access-code-group');
+        if (group) group.style.display = 'none';
+        window.ACCESS_GRANTED = true;
+        window.dispatchEvent(new CustomEvent('accessGranted'));
+      } else {
+        statusEl.textContent = 'Incorrect';
+        input.value = '';
+        input.focus();
+      }
+    })
+    .catch(function() { statusEl.textContent = 'Error — try again'; });
+  }
+
+  btn.addEventListener('click', attemptUnlock);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); attemptUnlock(); }
+  });
+})();
+</script>
+{% endif %}
 
 </body>
 </html>
