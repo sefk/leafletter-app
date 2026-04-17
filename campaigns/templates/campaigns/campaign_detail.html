@@ -421,6 +421,12 @@
   <button id="btn-cancel" class="btn btn-danger" style="display:none;">Cancel</button>
   <button id="btn-undo" class="btn btn-secondary" style="display:none;">↩ Undo</button>
   <span id="selection-count"></span>
+  <label for="coverage-mode" style="font-size:0.85rem; color:#555; white-space:nowrap;">Show:</label>
+  <select id="coverage-mode" class="btn btn-secondary" style="cursor:pointer;" aria-label="Coverage display mode">
+    <option value="summary">Coverage summary</option>
+    <option value="detail">Coverage detail</option>
+    <option value="hidden">Hide coverage</option>
+  </select>
   {% if has_access_code %}
   <span id="access-code-group" style="display:inline-flex; align-items:center; gap:6px;">
     <input type="text" id="access-code-input"
@@ -431,12 +437,6 @@
     <span id="access-code-status" style="font-size:0.82rem; color:#c62828;"></span>
   </span>
   {% endif %}
-  <label for="coverage-mode" style="font-size:0.85rem; color:#555; white-space:nowrap;">Show:</label>
-  <select id="coverage-mode" class="btn btn-secondary" style="cursor:pointer;" aria-label="Coverage display mode">
-    <option value="summary">Coverage summary</option>
-    <option value="detail">Coverage detail</option>
-    <option value="hidden">Hide coverage</option>
-  </select>
 </div>
 
 
