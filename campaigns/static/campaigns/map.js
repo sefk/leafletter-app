@@ -502,7 +502,7 @@
     const btnDone = document.getElementById('btn-done');
     const n = selectedIds.size;
     if (n > 0) {
-      el.textContent = `● ${n} block${n === 1 ? '' : 's'}`;
+      el.textContent = `● ${n} street${n === 1 ? '' : 's'}`;
       el.style.display = 'inline-flex';
     } else {
       el.textContent = '';
