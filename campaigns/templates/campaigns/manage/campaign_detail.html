@@ -60,6 +60,15 @@
   .step-icon-optional   { background: #ddd;    color: #999; }
   .step-label-blocked   { color: #aaa; }
   .step-label-optional  { color: #aaa; }
+  .step-item a {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    text-decoration: none;
+    color: inherit;
+  }
+  .step-item a:hover { text-decoration: underline; }
   @media (max-width: 760px) {
     .campaign-layout { flex-direction: column; }
     .step-sidebar { width: auto; position: static; }
@@ -81,6 +90,7 @@
 
   <!-- Step 1: Basics -->
   <div class="step-item">
+    <a href="#step-basics">
     {% if step_states.basics == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
     <span class="step-label">1 Basics</span>
@@ -88,10 +98,12 @@
     <span class="step-icon step-icon-available">&#9679;</span>
     <span class="step-label">1 Basics</span>
     {% endif %}
+    </a>
   </div>
 
   <!-- Step 2: Hero Image -->
   <div class="step-item">
+    <a href="#step-hero">
     {% if step_states.hero == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
     <span class="step-label">2 Hero Image</span>
@@ -99,10 +111,12 @@
     <span class="step-icon step-icon-optional">&#9675;</span>
     <span class="step-label step-label-optional">2 Hero Image</span>
     {% endif %}
+    </a>
   </div>
 
   <!-- Step 3: Cities -->
   <div class="step-item">
+    <a href="#step-cities">
     {% if step_states.cities == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
     <span class="step-label">3 Cities</span>
@@ -116,10 +130,12 @@
     <span class="step-icon step-icon-available">&#9679;</span>
     <span class="step-label">3 Cities</span>
     {% endif %}
+    </a>
   </div>
 
   <!-- Step 4: Boundary -->
   <div class="step-item">
+    <a href="#step-boundary">
     {% if step_states.boundary == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
     <span class="step-label">4 Boundary</span>
@@ -130,10 +146,12 @@
     <span class="step-icon step-icon-blocked">&#9675;</span>
     <span class="step-label step-label-blocked">4 Boundary</span>
     {% endif %}
+    </a>
   </div>
 
   <!-- Step 5: Review -->
   <div class="step-item">
+    <a href="#step-review">
     {% if step_states.review == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
     <span class="step-label">5 Review</span>
@@ -144,10 +162,12 @@
     <span class="step-icon step-icon-blocked">&#9675;</span>
     <span class="step-label step-label-blocked">5 Review</span>
     {% endif %}
+    </a>
   </div>
 
   <!-- Step 6: Publish -->
   <div class="step-item">
+    <a href="#step-publish">
     {% if step_states.publish == 'complete' %}
     <span class="step-icon step-icon-complete">&#10003;</span>
     <span class="step-label">6 Publish</span>
@@ -155,6 +175,7 @@
     <span class="step-icon step-icon-available">&#9679;</span>
     <span class="step-label">6 Publish</span>
     {% endif %}
+    </a>
   </div>
 </aside>
 
@@ -840,14 +861,14 @@
 
 <!-- Campaign Boundary Editor -->
 {% if not campaign.bbox %}
-<div class="card" style="opacity:0.6;">
+<div class="card" id="step-boundary" style="opacity:0.6;">
   <div class="card-title">Campaign Boundary</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:0;">
     Available after street data finishes importing.
   </p>
 </div>
 {% else %}
-<div class="card">
+<div class="card" id="step-boundary">
   <div class="card-title">Campaign Boundary</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
     The Campaign Boundary defines the area of this campaign. Only streets inside this polygon
@@ -1102,7 +1123,7 @@
   </p>
 </div>
 {% endif %}
-<div class="card">
+<div class="card" id="step-review">
   <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
     Campaign Map
     <div id="campaign-map-stale-banner" style="display:none; font-size:0.8rem; font-weight:400; padding:4px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:4px; color:#5a4000;">
