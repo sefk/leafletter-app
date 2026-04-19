@@ -647,17 +647,30 @@
   function showConfirmPanel() {
     const n = selectedIds.size;
     const workerName = document.getElementById('worker-name').value.trim();
+    const workerEmail = document.getElementById('worker-email').value.trim();
+    const notes = document.getElementById('notes').value.trim();
 
     // Populate summary
     const countEl = document.getElementById('confirm-street-count');
     countEl.textContent = `You selected ${n} street${n === 1 ? '' : 's'}.`;
 
-    const nameEl = document.getElementById('confirm-worker-name');
-    if (workerName) {
-      nameEl.textContent = `As: ${workerName}`;
-      nameEl.style.display = '';
+    const infoEl = document.getElementById('confirm-worker-info');
+    const infoParts = [];
+    if (workerName) infoParts.push(workerName);
+    if (workerEmail) infoParts.push(`<${workerEmail}>`);
+    if (infoParts.length) {
+      infoEl.textContent = `As: ${infoParts.join(' ')}`;
+      infoEl.style.display = '';
     } else {
-      nameEl.style.display = 'none';
+      infoEl.style.display = 'none';
+    }
+
+    const notesEl = document.getElementById('confirm-notes');
+    if (notes) {
+      notesEl.textContent = `With note: "${notes}"`;
+      notesEl.style.display = '';
+    } else {
+      notesEl.style.display = 'none';
     }
 
     // Hide toolbar action buttons (keep Log a Trip hidden — still in selection mode)
