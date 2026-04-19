@@ -172,7 +172,7 @@ struct AboutWebView: View {
                 }
             }
             .alert(
-                Config.isStaging ? "Using Staging Server" : "Using Production Server",
+                "Developer Option — Switch Server",
                 isPresented: $showingServerAlert
             ) {
                 Button(Config.isStaging ? "Switch to Production" : "Switch to Staging") {
@@ -181,8 +181,8 @@ struct AboutWebView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(Config.isStaging
-                     ? "Currently pointing to \(Config.stagingURL). Switch back to production?"
-                     : "Switch to \(Config.stagingURL)? Changes take effect on next app launch.")
+                     ? "Currently using staging server (\(Config.stagingURL)). Switch back to production?"
+                     : "Currently using production server. Switch to staging (\(Config.stagingURL))? Changes take effect on next app launch.")
             }
     }
 }
