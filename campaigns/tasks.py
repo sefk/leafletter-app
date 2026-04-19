@@ -631,6 +631,11 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
                     f'skipping city "{city_label}". Remove some cities to stay within the limit.'
                 )
 
+            # Build Street objects for the whole city, then bulk-upsert in one pass.
+            # This replaces the per-block update_or_create loop and dramatically reduces
+            # write pressure on the MySQL redo log (issue #83).
+            STREET_BATCH_SIZE = 500
+            street_objs = []
             block_count = 0
             for way in ways:
                 for block in split_way_at_intersections(way, intersection_nodes):
@@ -642,25 +647,53 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
                             f'"{city_label}". Import stopped at {existing_blocks + block_count:,} total blocks. '
                             f'Use a more specific city or draw a tighter geo boundary.'
                         )
-                    # Upsert the Street keyed by city_name + osm_id + block_index
-                    street, _ = Street.objects.update_or_create(
+                    street_objs.append(Street(
                         city_name=city_label,
                         osm_id=way['osm_id'],
                         block_index=block['block_index'],
-                        defaults={
-                            'name': way['name'],
-                            'geometry': LineString(block['coords']),
-                            'start_node_id': block['start_node_id'],
-                            'end_node_id': block['end_node_id'],
-                        },
-                    )
-                    # Link street to this campaign (upsert; update city_index if it changed)
+                        name=way['name'],
+                        geometry=LineString(block['coords']),
+                        start_node_id=block['start_node_id'],
+                        end_node_id=block['end_node_id'],
+                    ))
+                    block_count += 1
+
+            # Upsert Streets in batches.  update_conflicts=True without
+            # unique_fields works on MySQL (uses ON DUPLICATE KEY UPDATE
+            # across all unique indexes) and is supported by GeoDjango's
+            # MySQL backend.  ignore_conflicts=True is used as a safe fallback
+            # for backends that support neither (e.g. SQLite in tests).
+            if connection.features.supports_update_conflicts:
+                Street.objects.bulk_create(
+                    street_objs,
+                    batch_size=STREET_BATCH_SIZE,
+                    update_conflicts=True,
+                    update_fields=['name', 'geometry', 'start_node_id', 'end_node_id'],
+                )
+            else:
+                Street.objects.bulk_create(
+                    street_objs,
+                    batch_size=STREET_BATCH_SIZE,
+                    ignore_conflicts=True,
+                )
+
+            # Link all imported streets to this campaign.  On MySQL we use a
+            # single INSERT … ON DUPLICATE KEY UPDATE; on other backends (e.g.
+            # SQLite in tests) we fall back to individual update_or_create.
+            if connection.vendor == 'mysql':
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO campaigns_campaignstreet (campaign_id, street_id, city_index)
+                        SELECT %s, id, %s FROM campaigns_street WHERE city_name = %s
+                        ON DUPLICATE KEY UPDATE city_index = VALUES(city_index)
+                    """, [campaign.pk, city_index, city_label])
+            else:
+                for street in Street.objects.filter(city_name=city_label):
                     CampaignStreet.objects.update_or_create(
                         campaign=campaign,
                         street=street,
                         defaults={'city_index': city_index},
                     )
-                    block_count += 1
 
             logger.info("fetch_city_osm_data: imported %d blocks for %s", block_count, city_label)
             if block_count == 0:
