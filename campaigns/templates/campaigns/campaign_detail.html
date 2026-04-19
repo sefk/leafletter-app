@@ -87,6 +87,12 @@
       font-size: 0.85rem;
       color: #555;
     }
+    /* Show the correct pan hint for touch vs. non-touch devices */
+    .mobile-pan-hint { display: none; }
+    @media (pointer: coarse) {
+      .desktop-pan-hint { display: none; }
+      .mobile-pan-hint  { display: inline; }
+    }
 
     .toolbar {
       padding: 12px 16px;
@@ -370,7 +376,7 @@
   <div class="header-text">
     <h1>{{ campaign.name }}</h1>
     <div class="meta">
-      {{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}
+      {{ campaign.start_date|date:"N j, Y" }}{% if campaign.end_date %} – {{ campaign.end_date|date:"N j, Y" }}{% endif %}
     </div>
   </div>
   <div class="header-icons" style="position:relative;">
@@ -409,7 +415,7 @@
   {% if campaign.instructions %}
     <div class="instructions-wrap">
       <div class="instructions" id="instructions-body">{{ campaign.instructions|safe }}</div>
-      <button class="instructions-toggle" id="instructions-toggle" onclick="toggleInstructions()"></button>
+      <button class="instructions-toggle" id="instructions-toggle" aria-expanded="false" aria-controls="instructions-body" onclick="toggleInstructions()"></button>
     </div>
   {% endif %}
   <div class="links">
@@ -433,7 +439,7 @@
 </div>
 
 <div id="drawing-instructions" style="display:none; padding:8px 16px; background:#f0f4ff; border-bottom:1px solid #ccd; font-size:0.9rem; color:#333;">
-  Swipe across streets to add them to this trip. You can swipe across multiple streets at once. Add with as many swipes as you want, and undo as needed. Hold <kbd>Space</kbd> and drag to pan the map.
+  Swipe across streets to add them to this trip. You can swipe across multiple streets at once. Add with as many swipes as you want, and undo as needed. <span class="desktop-pan-hint">Hold <kbd>Space</kbd> and drag to pan the map.</span><span class="mobile-pan-hint">Two-finger drag to pan the map.</span>
 </div>
 
 <div id="lasso-warning">
@@ -557,6 +563,7 @@
     window.toggleInstructions = function() {
       var expanded = body.classList.toggle('expanded');
       toggle.textContent = expanded ? '▲ less' : '▼ more';
+      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     };
   })();
 
