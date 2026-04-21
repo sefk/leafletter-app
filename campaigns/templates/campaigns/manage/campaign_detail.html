@@ -1572,8 +1572,12 @@
     }
   }, 100);
 
-  // Clear flag when the basics form is submitted.
-  form.addEventListener('submit', function () { formDirty = false; });
+  // Clear flag when any section form on the page is submitted (basics, hero,
+  // cities, publish, etc.) — all legitimate user actions that should not trigger
+  // the beforeunload warning.
+  document.querySelectorAll('form').forEach(function (f) {
+    f.addEventListener('submit', function () { formDirty = false; });
+  });
 
   window.addEventListener('beforeunload', function (e) {
     if (formDirty) {
