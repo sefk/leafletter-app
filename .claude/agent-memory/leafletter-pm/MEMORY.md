@@ -66,6 +66,12 @@ Every open issue should have:
 - `views.py` changes (auth/publish logic) should be isolated from template-only agents
 - Issue #136 (island-in-city, labeled large) requires design approval before implementation
 
+## Django/GeoDjango Quirks (learned 2026-04-19)
+
+- GeoDjango MySQL backend (`django.contrib.gis.db.backends.mysql`): `supports_update_conflicts=True` but `supports_update_conflicts_with_target=False` — cannot use `unique_fields` in `bulk_create`. Use `update_conflicts=True` without `unique_fields` (MySQL handles ON DUPLICATE KEY across all unique indexes). Fall back to `ignore_conflicts=True` for non-MySQL backends.
+- Test DB is also MySQL (`test_leafletter`), not SQLite — check `connection.features` flags rather than vendor string when branching on DB capabilities.
+- iOS xcodeproj is at `ios/Leafletter.xcodeproj` (NOT `ios/Leafletter/Leafletter.xcodeproj` as CLAUDE.md states). Available simulators: iPhone 17e, iPhone Air (OS 26.x).
+
 ## Worktree Dev Pattern
 
 - Use `EnterWorktree` tool to create `.claude/worktrees/<name>/` on branch `worktree-<name>`
