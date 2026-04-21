@@ -340,11 +340,7 @@
     {% if campaign.uploaded_image %}
     <div id="hero-uploaded-existing" style="margin-bottom:10px;">
       <img src="{{ campaign.uploaded_image.image.url }}" alt="Current hero image"
-           style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd; display:block; margin-bottom:6px;">
-      <button type="button" onclick="heroRemoveImage()"
-              style="font-size:0.82rem; color:#c62828; background:none; border:none; cursor:pointer; padding:0;">
-        Remove uploaded image
-      </button>
+           style="max-width:100%; max-height:180px; border-radius:4px; object-fit:cover; border:1px solid #ddd; display:block;">
     </div>
     {% endif %}
 
@@ -372,8 +368,10 @@
           </label>
         </div>
 
-        <div style="margin-top:12px;">
+        <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
           <button type="submit" id="hero-upload-save-btn" class="btn btn-primary" disabled>Save Hero Image</button>
+          <button type="button" id="hero-remove-btn" class="btn btn-secondary" onclick="heroRemoveImage()"
+                  {% if not campaign.uploaded_image %}disabled{% endif %}>Remove Hero Image</button>
         </div>
       </form>
     </div>
@@ -469,6 +467,8 @@
         document.getElementById('hero-upload-preview').style.display = 'none';
         var status = document.getElementById('hero-upload-status');
         if (status) status.textContent = 'Image removed.';
+        var removeBtn = document.getElementById('hero-remove-btn');
+        if (removeBtn) removeBtn.disabled = true;
       }
     });
   };
