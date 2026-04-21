@@ -15,7 +15,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm, ImageUploadForm
 from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
-from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, update_campaign_size_cache, _sync_campaign_map_status, NOMINATIM_URL, NOMINATIM_HEADERS, CITY_TYPES
+from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, update_campaign_size_cache, _sync_campaign_map_status, NOMINATIM_URL, OSM_HEADERS, CITY_TYPES
 
 def _login_required(view):
     """login_required + never_cache — prevents stale CSRF tokens after login."""
@@ -1201,7 +1201,7 @@ def city_search(request):
         resp = requests.get(
             NOMINATIM_URL,
             params={'q': q, 'format': 'json', 'limit': 10},
-            headers=NOMINATIM_HEADERS,
+            headers=OSM_HEADERS,
             timeout=10,
         )
         resp.raise_for_status()

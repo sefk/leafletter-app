@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-NOMINATIM_HEADERS = {'User-Agent': 'Leafletter/1.0 (github.com/sefk/leafletter-app)'}
+OSM_HEADERS = {'User-Agent': 'Leafletter/1.0 (github.com/sefk/leafletter-app)'}
 CITY_TYPES = {'city', 'town', 'village', 'municipality', 'borough'}
 
 # Overpass server-side timeout (embedded in query) and HTTP client timeout.
@@ -54,7 +54,7 @@ def lookup_city(city_name: str) -> None:
     resp = requests.get(
         NOMINATIM_URL,
         params={'q': city_name, 'format': 'json', 'limit': 10},
-        headers=NOMINATIM_HEADERS,
+        headers=OSM_HEADERS,
         timeout=10,
     )
     resp.raise_for_status()
@@ -96,7 +96,7 @@ out geom;
         city_label, OVERPASS_SERVER_TIMEOUT, OVERPASS_HTTP_TIMEOUT,
     )
     try:
-        resp = requests.post(OVERPASS_URL, data={'data': query}, timeout=OVERPASS_HTTP_TIMEOUT)
+        resp = requests.post(OVERPASS_URL, data={'data': query}, headers=OSM_HEADERS, timeout=OVERPASS_HTTP_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
@@ -163,7 +163,7 @@ out center qt;
 """
     logger.info("query_overpass_addresses: fetching address points for %s", city_label)
     try:
-        resp = requests.post(OVERPASS_URL, data={'data': query}, timeout=OVERPASS_HTTP_TIMEOUT)
+        resp = requests.post(OVERPASS_URL, data={'data': query}, headers=OSM_HEADERS, timeout=OVERPASS_HTTP_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
