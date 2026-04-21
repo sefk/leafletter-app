@@ -2760,6 +2760,50 @@ class RepairMissingCityJobsTest(TestCase):
         mock_queue.assert_not_called()
 
 
+class ManageCityDeleteViewTest(TestCase):
+    """POST /manage/<slug>/delete-city/<city_index>/ — removes a city from the
+    campaign and cleans up its jobs/streets. Regression: the old implementation
+    never updated campaign.cities and left the CityFetchJob as 'pending', so
+    the watchdog or a refetch would re-download the city the user had just
+    removed."""
+
+    def setUp(self):
+        user = User.objects.create_user(username='owner', password='pw')
+        self.client.force_login(user)
+        self.cities = [_make_city('A', 1), _make_city('B', 2), _make_city('C', 3)]
+        self.campaign = Campaign.objects.create(
+            name='Test', slug='delete-city-test', cities=self.cities,
+            owner=user, map_status='ready',
+        )
+        _make_fetch_job(self.campaign, 0, 'A')
+        _make_fetch_job(self.campaign, 1, 'B')
+        _make_fetch_job(self.campaign, 2, 'C')
+
+    def test_removes_city_from_campaign_cities_list(self):
+        self.client.post(f'/manage/{self.campaign.slug}/delete-city/1/')
+        self.campaign.refresh_from_db()
+        names = [c['name'] for c in self.campaign.cities]
+        self.assertEqual(names, ['A', 'C'])
+
+    def test_deletes_fetch_job_for_removed_city(self):
+        self.client.post(f'/manage/{self.campaign.slug}/delete-city/1/')
+        self.assertFalse(
+            CityFetchJob.objects.filter(campaign=self.campaign, city_name='B').exists()
+        )
+
+    def test_renumbers_remaining_city_indices(self):
+        self.client.post(f'/manage/{self.campaign.slug}/delete-city/1/')
+        remaining = list(
+            CityFetchJob.objects.filter(campaign=self.campaign)
+            .order_by('city_index').values_list('city_index', 'city_name')
+        )
+        self.assertEqual(remaining, [(0, 'A'), (1, 'C')])
+
+    def test_invalid_city_index_returns_400(self):
+        resp = self.client.post(f'/manage/{self.campaign.slug}/delete-city/99/')
+        self.assertEqual(resp.status_code, 400)
+
+
 # ── Fetch-status endpoint tests ───────────────────────────────────────────────
 
 class FetchStatusEndpointTest(TestCase):

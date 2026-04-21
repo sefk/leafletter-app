@@ -971,14 +971,16 @@ def manage_city_refetch(request, slug, city_index):
 @require_POST
 def manage_city_delete(request, slug, city_index):
     campaign = get_object_or_404(Campaign, slug=slug)
-    # Unlink streets from this campaign (Street objects persist for re-use).
-    CampaignStreet.objects.filter(campaign=campaign, city_index=city_index).delete()
-    AddressPoint.objects.filter(campaign=campaign, city_index=city_index).delete()
-    CityFetchJob.objects.filter(campaign=campaign, city_index=city_index).update(status='pending', error='')
-    update = {'streets_geojson': ''}
-    if not campaign.streets.exists():
-        update['map_status'] = 'pending'
-    Campaign.objects.filter(pk=campaign.pk).update(**update)
+    old_cities = list(campaign.cities or [])
+    if city_index < 0 or city_index >= len(old_cities):
+        return HttpResponseBadRequest('Invalid city index')
+    new_cities = old_cities[:city_index] + old_cities[city_index + 1:]
+    campaign.cities = new_cities
+    campaign.save(update_fields=['cities'])
+    # Helper handles: delete CampaignStreet/AddressPoint/CityFetchJob for the
+    # removed city, renumber city_index on kept cities, and invalidate cached
+    # GeoJSON / map_status as appropriate.
+    _apply_city_list_changes(old_cities, campaign)
     return redirect('manage_campaign_detail', slug=slug)
 
 
