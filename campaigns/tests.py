@@ -3668,8 +3668,8 @@ class ResizeHeroImageTest(TestCase):
         f = self._make_jpeg(3840, 2160)
         result = _resize_hero_image(f)
         img = self._open_result(result)
-        self.assertLessEqual(img.width, 1920)
-        self.assertLessEqual(img.height, 1080)
+        self.assertLessEqual(img.width, 1200)
+        self.assertLessEqual(img.height, 675)
 
     def test_aspect_ratio_preserved(self):
         # 4:3 image that is too wide
@@ -3683,7 +3683,7 @@ class ResizeHeroImageTest(TestCase):
         f = self._make_jpeg(800, 2200)
         result = _resize_hero_image(f)
         img = self._open_result(result)
-        self.assertLessEqual(img.height, 1080)
+        self.assertLessEqual(img.height, 675)
 
     def test_png_rgba_output_is_png(self):
         f = self._make_png_rgba(100, 100)

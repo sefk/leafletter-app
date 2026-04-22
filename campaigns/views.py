@@ -478,15 +478,15 @@ def manage_campaign_list(request):
     })
 
 
-def _resize_hero_image(uploaded_file, max_width=1920, max_height=1080):
+def _resize_hero_image(uploaded_file, max_width=1200, max_height=675):
     """
     Downscale uploaded_file so it fits within max_width x max_height while
     preserving aspect ratio.  Images already within the limit are returned
     as-is (no re-encoding).  Returns a Django InMemoryUploadedFile.
 
     Output format:
-      - JPEG/JPG  → JPEG (quality 85)
-      - WebP      → WebP (quality 85)
+      - JPEG/JPG  → JPEG (quality 80)
+      - WebP      → WebP (quality 80)
       - PNG       → PNG
       - GIF       → PNG (first frame only; GIF animation is not preserved)
     """
@@ -539,9 +539,9 @@ def _resize_hero_image(uploaded_file, max_width=1920, max_height=1080):
     buf = io.BytesIO()
     save_kwargs = {}
     if out_format == 'jpeg':
-        save_kwargs = {'quality': 85, 'optimize': True}
+        save_kwargs = {'quality': 80, 'optimize': True, 'progressive': True}
     elif out_format == 'webp':
-        save_kwargs = {'quality': 85}
+        save_kwargs = {'quality': 80}
     img.save(buf, format=out_format.upper(), **save_kwargs)
     buf.seek(0)
 

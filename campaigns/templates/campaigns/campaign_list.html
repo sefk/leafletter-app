@@ -230,7 +230,7 @@
       <a href="/c/{{ campaign.slug }}/" class="campaign-link">
         {% if campaign.hero_image_effective_url %}
           <div class="campaign-hero">
-            <img src="{{ campaign.hero_image_effective_url }}" alt="{{ campaign.name }}" loading="lazy">
+            <img src="{{ campaign.hero_image_effective_url }}" alt="{{ campaign.name }}"{% if forloop.first %} fetchpriority="high"{% else %} loading="lazy"{% endif %}>
             <div class="campaign-hero-overlay">
               <h2>{{ campaign.name }}</h2>
               <div class="meta">{{ campaign.start_date }}{% if campaign.end_date %} – {{ campaign.end_date }}{% endif %}</div>
