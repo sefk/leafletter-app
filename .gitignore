@@ -35,5 +35,6 @@ android/local.properties
 
 # Development junk
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .tmp/
 media
