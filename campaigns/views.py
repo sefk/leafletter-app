@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CampaignForm, ImageUploadForm
-from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
+from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip, UsageEvent
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, update_campaign_size_cache, _sync_campaign_map_status, NOMINATIM_URL, OSM_HEADERS, CITY_TYPES
 
 def _login_required(view):
@@ -110,6 +110,15 @@ def validate_access_code(request, slug):
     valid = submitted.lower() == campaign.access_code.lower()
     if valid:
         request.session[f'access_granted_{campaign.slug}'] = True
+
+    UsageEvent.record(
+        'access_code_attempt',
+        path=request.path,
+        method=request.method,
+        status_code=200,
+        campaign_slug=campaign.slug,
+        success=valid,
+    )
 
     return JsonResponse({'valid': valid})
 
@@ -223,6 +232,18 @@ def log_trip(request, slug):
     trip.streets.set(streets)
 
     request.session[f'last_trip_{campaign.slug}'] = str(trip.pk)
+
+    UsageEvent.record(
+        'trip_logged',
+        path=request.path,
+        method=request.method,
+        status_code=200,
+        campaign_slug=campaign.slug,
+        segment_count=streets.count(),
+        worker_name_provided=bool(worker_name),
+        has_email=bool(worker_email),
+        has_notes=bool(notes),
+    )
 
     return JsonResponse({'status': 'ok', 'trip_id': str(trip.pk)})
 
@@ -1280,6 +1301,69 @@ def api_campaign_detail(request, slug):
         'bbox': campaign.bbox,
     })
 
+
+@_login_required
+@require_GET
+def manage_usage_report(request):
+    """Export usage events as a CSV download. Superuser only.
+
+    Query params:
+        from=YYYY-MM-DD   start of date range (inclusive); default 30 days ago
+        to=YYYY-MM-DD     end of date range (inclusive); default today
+        campaign=<slug>   filter to a single campaign; default all campaigns
+    """
+    if not request.user.is_superuser:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Superuser access required.')
+
+    import csv
+    from datetime import datetime, timedelta
+
+    today = date.today()
+    default_from = today - timedelta(days=30)
+
+    try:
+        from_date = datetime.strptime(request.GET.get('from', ''), '%Y-%m-%d').date()
+    except ValueError:
+        from_date = default_from
+
+    try:
+        to_date = datetime.strptime(request.GET.get('to', ''), '%Y-%m-%d').date()
+    except ValueError:
+        to_date = today
+
+    campaign_slug = request.GET.get('campaign', '').strip()
+
+    events = UsageEvent.objects.filter(
+        created_at__date__gte=from_date,
+        created_at__date__lte=to_date,
+    ).order_by('created_at')
+
+    if campaign_slug:
+        events = events.filter(campaign_slug=campaign_slug)
+
+    response = HttpResponse(content_type='text/csv')
+    filename = f"usage-{from_date}-to-{to_date}.csv"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'created_at_gmt', 'event_type', 'campaign_slug',
+        'path', 'method', 'status_code', 'response_time_ms', 'metadata',
+    ])
+    for event in events:
+        writer.writerow([
+            event.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            event.event_type,
+            event.campaign_slug,
+            event.path,
+            event.method,
+            event.status_code,
+            event.response_time_ms if event.response_time_ms is not None else '',
+            json.dumps(event.metadata) if event.metadata else '',
+        ])
+
+    return response
 
 @_login_required
 @require_POST

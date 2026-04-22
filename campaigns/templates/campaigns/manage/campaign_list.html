@@ -221,6 +221,12 @@
   <p style="color:#666;">No campaigns yet. <a href="/manage/new/">Create your first campaign.</a></p>
 {% endif %}
 
+{% if user.is_superuser %}
+<div style="margin-top:20px; font-size:0.82rem;">
+  <a href="/manage/usage-report/" style="color:#1a6b3c;">Download usage report (last 30 days)</a>
+</div>
+{% endif %}
+
 <div style="margin-top:24px; font-size:0.82rem; color:#666;">
   <strong>Notes</strong>
   <ul style="margin:4px 0 0; padding-left:20px;">

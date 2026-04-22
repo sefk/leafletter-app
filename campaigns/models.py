@@ -190,3 +190,57 @@ class Trip(models.Model):
 
     class Meta:
         ordering = ['-recorded_at']
+
+
+class UsageEvent(models.Model):
+    """Append-only log of public-facing requests and key user actions.
+
+    No PII is recorded — no worker names, emails, notes, or IP addresses.
+    Only counts and boolean flags appear in metadata.
+
+    event_type values:
+        page_view          — generic HTTP request (middleware)
+        trip_logged        — worker submitted a trip (log_trip view)
+        access_code_attempt — worker tried to unlock a campaign
+    """
+
+    EVENT_TYPES = [
+        ('page_view', 'Page View'),
+        ('trip_logged', 'Trip Logged'),
+        ('access_code_attempt', 'Access Code Attempt'),
+    ]
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    event_type = models.CharField(max_length=50, choices=EVENT_TYPES, db_index=True)
+    campaign_slug = models.CharField(max_length=200, blank=True, default='', db_index=True)
+    path = models.CharField(max_length=500, db_index=True)
+    method = models.CharField(max_length=10, default='')
+    status_code = models.IntegerField(default=0)
+    response_time_ms = models.IntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.event_type} {self.path} ({self.created_at:%Y-%m-%d %H:%M})"
+
+    @classmethod
+    def record(cls, event_type, path, method='', status_code=0,
+               campaign_slug='', response_time_ms=None, **metadata):
+        """Convenience method so callers are a one-liner. Swallows all errors."""
+        import logging
+        try:
+            cls.objects.create(
+                event_type=event_type,
+                path=path,
+                method=method,
+                status_code=status_code,
+                campaign_slug=campaign_slug,
+                response_time_ms=response_time_ms,
+                metadata=metadata,
+            )
+        except Exception:
+            logging.getLogger('campaigns.usage').exception(
+                'UsageEvent.record failed for %s %s', event_type, path
+            )

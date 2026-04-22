@@ -23,7 +23,7 @@ from django.test import Client, RequestFactory, TestCase
 from django.utils import timezone
 
 from .admin import CampaignAdmin, MAP_STATUS_COLORS
-from .models import Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip
+from .models import Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip, UsageEvent
 from .tasks import (fetch_city_osm_data, fetch_osm_segments, find_intersection_nodes,
                     lookup_city, queue_city_fetches, query_overpass, query_overpass_addresses,
                     render_campaign_geojson,
@@ -4467,4 +4467,179 @@ class ManageExportTripsTest(TestCase):
 
     def test_post_not_allowed(self):
         resp = self.client.post(f'/manage/{self.campaign.slug}/export-trips/')
+        self.assertEqual(resp.status_code, 405)
+
+
+# ── UsageEvent middleware and model tests ─────────────────────────────────────
+
+class UsageEventMiddlewareTest(TestCase):
+    """Test that UsageEventMiddleware records (or skips) events correctly."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='mw-campaign', status='published')
+        # Ensure a fresh event count for each test.
+        UsageEvent.objects.all().delete()
+
+    def test_records_event_for_public_page(self):
+        self.client.get(f'/c/{self.campaign.slug}/')
+        self.assertEqual(UsageEvent.objects.filter(path=f'/c/{self.campaign.slug}/').count(), 1)
+
+    def test_event_has_correct_fields(self):
+        self.client.get(f'/c/{self.campaign.slug}/')
+        event = UsageEvent.objects.get(path=f'/c/{self.campaign.slug}/')
+        self.assertEqual(event.event_type, 'page_view')
+        self.assertEqual(event.method, 'GET')
+        self.assertEqual(event.status_code, 200)
+        self.assertEqual(event.campaign_slug, self.campaign.slug)
+        self.assertIsNotNone(event.response_time_ms)
+
+    def test_skips_manage_paths(self):
+        # /manage/ requires login; the redirect itself should not be recorded.
+        self.client.get('/manage/')
+        self.assertEqual(UsageEvent.objects.filter(path='/manage/').count(), 0)
+
+    def test_skips_admin_path(self):
+        self.client.get('/admin/')
+        self.assertEqual(UsageEvent.objects.filter(path__startswith='/admin/').count(), 0)
+
+    def test_survives_model_save_failure(self):
+        """Middleware must not break the request when DB write fails."""
+        with patch('campaigns.models.UsageEvent.objects') as mock_mgr:
+            mock_mgr.create.side_effect = Exception('DB down')
+            response = self.client.get(f'/c/{self.campaign.slug}/')
+        # Response still succeeds despite the DB error.
+        self.assertEqual(response.status_code, 200)
+
+
+class LogTripUsageEventTest(TestCase):
+    """Test that log_trip emits a trip_logged UsageEvent with correct metadata."""
+
+    def setUp(self):
+        self.campaign = make_campaign(slug='trip-event-camp', status='published')
+        self.street = make_street(self.campaign, osm_id=9001)
+        UsageEvent.objects.all().delete()
+
+    def _post_trip(self, extra=None):
+        payload = {'segment_ids': [self.street.pk]}
+        if extra:
+            payload.update(extra)
+        return self.client.post(
+            f'/c/{self.campaign.slug}/trip/',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+
+    def test_trip_logged_event_created(self):
+        self._post_trip({'worker_name': 'Bob', 'worker_email': 'b@example.com', 'notes': 'hi'})
+        self.assertEqual(
+            UsageEvent.objects.filter(event_type='trip_logged',
+                                      campaign_slug=self.campaign.slug).count(),
+            1,
+        )
+
+    def test_trip_logged_metadata_correct(self):
+        self._post_trip({'worker_name': 'Alice', 'worker_email': 'a@example.com', 'notes': 'note'})
+        event = UsageEvent.objects.get(event_type='trip_logged')
+        self.assertEqual(event.metadata['segment_count'], 1)
+        self.assertTrue(event.metadata['worker_name_provided'])
+        self.assertTrue(event.metadata['has_email'])
+        self.assertTrue(event.metadata['has_notes'])
+
+    def test_trip_logged_metadata_anonymous(self):
+        self._post_trip()
+        event = UsageEvent.objects.get(event_type='trip_logged')
+        self.assertFalse(event.metadata['worker_name_provided'])
+        self.assertFalse(event.metadata['has_email'])
+        self.assertFalse(event.metadata['has_notes'])
+
+    def test_no_pii_in_metadata(self):
+        self._post_trip({'worker_name': 'Secret Name', 'worker_email': 'secret@example.com', 'notes': 'Secret note'})
+        event = UsageEvent.objects.get(event_type='trip_logged')
+        meta_str = json.dumps(event.metadata)
+        self.assertNotIn('Secret', meta_str)
+        self.assertNotIn('secret@', meta_str)
+
+
+class UsageReportViewTest(TestCase):
+    """Test the /manage/usage-report/ CSV export view."""
+
+    def setUp(self):
+        self.user = User.objects.create_superuser('report_admin', password='pw')
+        self.client.force_login(self.user)
+        self.campaign = make_campaign(slug='report-campaign', status='published')
+        UsageEvent.objects.all().delete()
+
+    def test_requires_login(self):
+        self.client.logout()
+        resp = self.client.get('/manage/usage-report/')
+        self.assertNotEqual(resp.status_code, 200)
+
+    def test_non_superuser_forbidden(self):
+        self.client.logout()
+        regular = User.objects.create_user('regular_user', password='pw')
+        self.client.force_login(regular)
+        resp = self.client.get('/manage/usage-report/')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_returns_csv(self):
+        resp = self.client.get('/manage/usage-report/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('text/csv', resp['Content-Type'])
+
+    def test_csv_has_header_row(self):
+        resp = self.client.get('/manage/usage-report/')
+        content = resp.content.decode('utf-8')
+        self.assertIn('created_at_gmt', content)
+        self.assertIn('event_type', content)
+
+    def test_date_range_filter(self):
+        from django.utils import timezone as tz
+        import datetime
+
+        # Create an event in the past (outside the range we will request).
+        old_event = UsageEvent.objects.create(
+            event_type='page_view',
+            path='/c/report-campaign/',
+            method='GET',
+            status_code=200,
+            campaign_slug='report-campaign',
+        )
+        # Force created_at to be older than the filter range.
+        UsageEvent.objects.filter(pk=old_event.pk).update(
+            created_at=tz.now() - datetime.timedelta(days=60)
+        )
+
+        recent_event = UsageEvent.objects.create(
+            event_type='page_view',
+            path='/c/report-campaign/recent/',
+            method='GET',
+            status_code=200,
+            campaign_slug='report-campaign',
+        )
+
+        today = datetime.date.today()
+        from_str = (today - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+        to_str = today.strftime('%Y-%m-%d')
+        resp = self.client.get(f'/manage/usage-report/?from={from_str}&to={to_str}')
+        content = resp.content.decode('utf-8')
+        self.assertIn('/c/report-campaign/recent/', content)
+        self.assertNotIn('/c/report-campaign/,', content)  # old event path not present
+
+    def test_campaign_slug_filter(self):
+        other_campaign = make_campaign(slug='other-camp', status='published')
+        UsageEvent.objects.create(
+            event_type='page_view', path='/c/report-campaign/', method='GET',
+            status_code=200, campaign_slug='report-campaign',
+        )
+        UsageEvent.objects.create(
+            event_type='page_view', path='/c/other-camp/', method='GET',
+            status_code=200, campaign_slug='other-camp',
+        )
+        resp = self.client.get('/manage/usage-report/?campaign=report-campaign')
+        content = resp.content.decode('utf-8')
+        self.assertIn('/c/report-campaign/', content)
+        self.assertNotIn('/c/other-camp/', content)
+
+    def test_post_not_allowed(self):
+        resp = self.client.post('/manage/usage-report/')
         self.assertEqual(resp.status_code, 405)
