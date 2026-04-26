@@ -200,6 +200,7 @@ Railway will pick up the push to `prod` and deploy to the production environment
 | `/about/` | About, privacy policy, and legal |
 | `/manage/` | Campaign manager UI |
 | `/manage/new/` | Create a new campaign |
+| `/manage/usage-report/` | CSV export of usage events (superuser only); supports `from=YYYY-MM-DD`, `to=YYYY-MM-DD`, and `campaign=<slug>` query params |
 | `/manage/<slug>/` | Campaign detail / edit page |
 | `/admin/` | Django Admin |
 | `/c/<slug>/` | Worker campaign map |
