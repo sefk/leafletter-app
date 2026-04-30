@@ -78,6 +78,7 @@
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
   <h1>{{ campaign.name }}</h1>
   <div style="display:flex; gap:10px; align-items:center;">
+    <a href="{% url 'manage_campaign_regions' slug=campaign.slug %}" class="btn btn-secondary">Regions</a>
     <a href="/manage/" class="btn btn-secondary">List</a>
   </div>
 </div>

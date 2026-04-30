@@ -1,0 +1,172 @@
+{% extends "campaigns/manage/base.html" %}
+
+{% block title %}{{ campaign.name }} — Regions — Leafletter Manager{% endblock %}
+
+{% block content %}
+<style>
+  .breadcrumb { font-size: 0.9rem; color: #666; margin-bottom: 12px; }
+  .breadcrumb a { color: #1a6b3c; text-decoration: none; }
+  .breadcrumb a:hover { text-decoration: underline; }
+
+  .source-list { list-style: none; padding: 0; margin: 0; }
+  .source-list li {
+    padding: 14px 16px; border: 1px solid #e0e0e0; border-radius: 8px;
+    margin-bottom: 10px; background: #fff;
+  }
+  .source-list .source-label { font-weight: 600; }
+  .source-list .source-meta {
+    font-size: 0.85rem; color: #666; margin-top: 4px;
+  }
+  .source-list .source-samples {
+    font-size: 0.85rem; color: #444; margin-top: 6px; font-style: italic;
+  }
+
+  .form-row { margin-bottom: 14px; }
+  .form-row label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.9rem; }
+  .form-row input[type="text"], .form-row textarea, .form-row input[type="file"] {
+    width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 0.95rem; font-family: inherit;
+  }
+  .form-row .help { font-size: 0.8rem; color: #777; margin-top: 4px; }
+  .form-row .errorlist { list-style: none; padding: 0; margin: 4px 0 0 0; color: #c62828; font-size: 0.85rem; }
+
+  .empty {
+    padding: 20px; text-align: center; color: #666;
+    background: #fff; border: 1px dashed #ccc; border-radius: 8px;
+  }
+
+  #regions-map { height: 480px; border-radius: 6px; }
+  .source-swatch {
+    display: inline-block; width: 12px; height: 12px;
+    border-radius: 2px; margin-right: 6px; vertical-align: middle;
+  }
+  .map-legend {
+    margin-top: 10px; font-size: 0.85rem; color: #444;
+    display: flex; flex-wrap: wrap; gap: 12px;
+  }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<div class="breadcrumb">
+  <a href="{% url 'manage_campaign_detail' slug=campaign.slug %}">← {{ campaign.name }}</a>
+</div>
+
+<h1>Sub-region sources</h1>
+
+<div class="card">
+  <div class="card-title">Available sources covering this campaign</div>
+  {% if not has_geo_limit %}
+    <div class="empty">
+      This campaign has no boundary drawn yet. Draw one on the campaign page first,
+      then come back here to see which region sources cover it.
+    </div>
+  {% elif sources_with_counts %}
+    <ul class="source-list">
+      {% for entry in sources_with_counts %}
+        <li>
+          <div class="source-label">
+            <span class="source-swatch" style="background: {{ entry.color }};"></span>
+            {{ entry.source.label }}
+          </div>
+          <div class="source-meta">
+            <code>{{ entry.source.slug }}</code> ·
+            {{ entry.intersect_count }} region{{ entry.intersect_count|pluralize }} intersect this campaign
+            {% if entry.source.attribution %}· {{ entry.source.attribution }}{% endif %}
+          </div>
+          {% if entry.sample_names %}
+            <div class="source-samples">
+              e.g. {{ entry.sample_names|join:", " }}{% if entry.intersect_count > entry.sample_names|length %} …{% endif %}
+            </div>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">
+      No region sources cover this campaign yet. Upload a GeoJSON below to get started.
+    </div>
+  {% endif %}
+</div>
+
+{% if has_geo_limit %}
+<div class="card">
+  <div class="card-title">Map preview</div>
+  <div id="regions-map"></div>
+  {% if sources_with_counts %}
+    <div class="map-legend">
+      <span><span class="source-swatch" style="background: #1a6b3c; border: 1px dashed #1a6b3c;"></span>Campaign boundary</span>
+      {% for entry in sources_with_counts %}
+        <span><span class="source-swatch" style="background: {{ entry.color }};"></span>{{ entry.source.label }}</span>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="map-legend">
+      <span><span class="source-swatch" style="background: #1a6b3c; border: 1px dashed #1a6b3c;"></span>Campaign boundary (no region sources cover it yet)</span>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-title">Upload a GeoJSON source</div>
+  <form method="post" enctype="multipart/form-data" action="{% url 'manage_region_source_upload' slug=campaign.slug %}">
+    {% csrf_token %}
+    {% for field in upload_form %}
+      <div class="form-row">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        {{ field.errors }}
+      </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Upload</button>
+  </form>
+</div>
+
+{% if has_geo_limit %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  var geoLimit = {{ geo_limit_json|safe }};
+  var regionsUrl = "{% url 'manage_campaign_regions_geojson' slug=campaign.slug %}";
+
+  var map = L.map('regions-map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors',
+    referrerPolicy: 'origin',
+  }).addTo(map);
+
+  var limitLayer = L.geoJSON(geoLimit, {
+    style: { color: '#1a6b3c', weight: 3, fillOpacity: 0, dashArray: '6,4' },
+  }).addTo(map);
+  map.fitBounds(limitLayer.getBounds(), { padding: [20, 20], animate: false });
+
+  fetch(regionsUrl)
+    .then(function(r) { return r.json(); })
+    .then(function(geojson) {
+      L.geoJSON(geojson, {
+        style: function(feature) {
+          var c = (feature.properties && feature.properties.color) || '#888';
+          return { color: c, weight: 1.5, fillColor: c, fillOpacity: 0.18 };
+        },
+        onEachFeature: function(feature, layer) {
+          var p = feature.properties || {};
+          var html = '<strong>' + escapeHtml(p.name || '(unnamed)') + '</strong>';
+          if (p.source_label) html += '<br><span style="color:#666;font-size:0.85em;">' + escapeHtml(p.source_label) + '</span>';
+          layer.bindPopup(html);
+        },
+      }).addTo(map);
+    })
+    .catch(function() {});
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+})();
+</script>
+{% endif %}
+
+{% endblock %}

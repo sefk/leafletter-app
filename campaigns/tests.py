@@ -4643,3 +4643,180 @@ class UsageReportViewTest(TestCase):
     def test_post_not_allowed(self):
         resp = self.client.post('/manage/usage-report/')
         self.assertEqual(resp.status_code, 405)
+
+
+# ── Region sources (issue #182) ───────────────────────────────────────────────
+
+class RegionSourceUploadTest(TestCase):
+    """Cover the GeoJSON upload adapter and the manage-page intersect query."""
+
+    SAMPLE_GEOJSON = {
+        'type': 'FeatureCollection',
+        'features': [
+            {
+                'type': 'Feature',
+                'properties': {'name': 'West Block', 'GEOID': 'wb-1'},
+                'geometry': {
+                    'type': 'Polygon',
+                    'coordinates': [[
+                        [-122.30, 37.50], [-122.20, 37.50],
+                        [-122.20, 37.55], [-122.30, 37.55],
+                        [-122.30, 37.50],
+                    ]],
+                },
+            },
+            {
+                'type': 'Feature',
+                'properties': {'name': 'East Block', 'GEOID': 'eb-1'},
+                'geometry': {
+                    'type': 'Polygon',
+                    'coordinates': [[
+                        [-122.20, 37.50], [-122.10, 37.50],
+                        [-122.10, 37.55], [-122.20, 37.55],
+                        [-122.20, 37.50],
+                    ]],
+                },
+            },
+        ],
+    }
+
+    def setUp(self):
+        self.user = User.objects.create_user('manager', password='pw')
+        self.client.login(username='manager', password='pw')
+        # Campaign whose geo_limit overlaps only the West Block.
+        from django.contrib.gis.geos import Polygon
+        self.campaign = make_campaign(slug='peninsula', status='draft')
+        self.campaign.geo_limit = Polygon((
+            (-122.28, 37.51), (-122.25, 37.51),
+            (-122.25, 37.54), (-122.28, 37.54),
+            (-122.28, 37.51),
+        ), srid=4326)
+        self.campaign.save()
+
+    def _upload_payload(self, name_property=''):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return {
+            'label': 'San Mateo neighborhoods (test)',
+            'geojson_file': SimpleUploadedFile(
+                'test.geojson',
+                json.dumps(self.SAMPLE_GEOJSON).encode('utf-8'),
+                content_type='application/geo+json',
+            ),
+            'name_property': name_property,
+            'id_property': 'GEOID',
+            'license_text': '',
+            'attribution': '',
+        }
+
+    def test_upload_creates_source_and_regions(self):
+        from .models import Region, RegionSource
+        resp = self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        self.assertEqual(resp.status_code, 302)
+
+        source = RegionSource.objects.get()
+        self.assertEqual(source.owner, self.user)
+        self.assertEqual(source.adapter_type, 'upload')
+        self.assertTrue(source.slug.startswith(f'user{self.user.id}-'))
+        self.assertIsNotNone(source.coverage)
+        self.assertIsNotNone(source.last_ingested_at)
+
+        regions = Region.objects.filter(source=source).order_by('name')
+        self.assertEqual(regions.count(), 2)
+        self.assertEqual(list(regions.values_list('name', flat=True)), ['East Block', 'West Block'])
+        self.assertEqual(set(regions.values_list('external_id', flat=True)), {'wb-1', 'eb-1'})
+
+    def test_intersect_query_filters_to_overlapping_regions(self):
+        from .models import Region, RegionSource
+        self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        source = RegionSource.objects.get()
+        intersecting = Region.objects.filter(
+            source=source, geometry__intersects=self.campaign.geo_limit,
+        )
+        self.assertEqual(intersecting.count(), 1)
+        self.assertEqual(intersecting.first().name, 'West Block')
+
+    def test_regions_page_shows_source_and_count(self):
+        self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        resp = self.client.get(f'/manage/{self.campaign.slug}/regions/')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode('utf-8')
+        self.assertIn('San Mateo neighborhoods (test)', body)
+        self.assertIn('1 region', body)
+        self.assertIn('West Block', body)
+        self.assertNotIn('East Block', body)  # not intersecting → not in samples
+
+    def test_upload_with_no_geo_limit_still_creates_source(self):
+        """Uploading is allowed even before a campaign has a boundary."""
+        from .models import RegionSource
+        self.campaign.geo_limit = None
+        self.campaign.save()
+        resp = self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(RegionSource.objects.count(), 1)
+
+    def test_invalid_geojson_returns_no_source(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import RegionSource
+        payload = self._upload_payload(name_property='name')
+        payload['geojson_file'] = SimpleUploadedFile(
+            'bad.geojson', b'{"not": "a feature collection"}',
+            content_type='application/geo+json',
+        )
+        resp = self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/', payload,
+        )
+        self.assertEqual(resp.status_code, 302)  # redirect with error message
+        self.assertEqual(RegionSource.objects.count(), 0)  # rolled back
+
+    def test_two_uploads_get_unique_slugs(self):
+        from .models import RegionSource
+        self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        slugs = list(RegionSource.objects.values_list('slug', flat=True))
+        self.assertEqual(len(slugs), 2)
+        self.assertEqual(len(set(slugs)), 2)
+
+    def test_regions_geojson_returns_intersecting_features(self):
+        self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        resp = self.client.get(f'/manage/{self.campaign.slug}/regions.geojson')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['type'], 'FeatureCollection')
+        self.assertEqual(len(data['features']), 1)
+        feature = data['features'][0]
+        self.assertEqual(feature['properties']['name'], 'West Block')
+        self.assertEqual(feature['properties']['source_label'], 'San Mateo neighborhoods (test)')
+        self.assertIn('color', feature['properties'])
+        self.assertIn(feature['geometry']['type'], ('Polygon', 'MultiPolygon'))
+
+    def test_regions_geojson_empty_when_no_geo_limit(self):
+        self.campaign.geo_limit = None
+        self.campaign.save()
+        self.client.post(
+            f'/manage/{self.campaign.slug}/regions/upload/',
+            self._upload_payload(name_property='name'),
+        )
+        resp = self.client.get(f'/manage/{self.campaign.slug}/regions.geojson')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {'type': 'FeatureCollection', 'features': []})

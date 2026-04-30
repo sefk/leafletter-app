@@ -13,8 +13,9 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from .forms import CampaignForm, ImageUploadForm
-from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Street, Trip, UsageEvent
+from .forms import CampaignForm, ImageUploadForm, RegionSourceUploadForm
+from .models import AddressPoint, Campaign, CampaignImage, CampaignStreet, CityFetchJob, Region, RegionSource, Street, Trip, UsageEvent
+from .region_sources import IngestError, ingest_geojson_upload
 from .tasks import build_streets_geojson, fetch_city_osm_data, queue_city_fetches, refresh_campaign_address_points, render_campaign_geojson, update_campaign_size_cache, _sync_campaign_map_status, NOMINATIM_URL, OSM_HEADERS, CITY_TYPES
 
 def _login_required(view):
@@ -1376,3 +1377,126 @@ def manage_campaign_remove_image(request, slug):
     except CampaignImage.DoesNotExist:
         pass
     return JsonResponse({'ok': True})
+
+
+@_login_required
+def manage_campaign_regions(request, slug):
+    """List RegionSources whose coverage intersects this campaign and show
+    intersect counts. Includes an upload form for adding new sources."""
+    campaign = get_object_or_404(Campaign, slug=slug)
+    sources_with_counts = []
+    if campaign.geo_limit:
+        candidate_sources = RegionSource.objects.filter(
+            coverage__intersects=campaign.geo_limit,
+        ).order_by('label')
+        for idx, source in enumerate(candidate_sources):
+            intersecting = Region.objects.filter(
+                source=source, geometry__intersects=campaign.geo_limit,
+            )
+            sources_with_counts.append({
+                'source': source,
+                'intersect_count': intersecting.count(),
+                'sample_names': list(intersecting.values_list('name', flat=True)[:5]),
+                'color': _SOURCE_PALETTE[idx % len(_SOURCE_PALETTE)],
+            })
+    geo_limit_json = campaign.geo_limit.geojson if campaign.geo_limit else 'null'
+    return render(request, 'campaigns/manage/campaign_regions.html', {
+        'campaign': campaign,
+        'sources_with_counts': sources_with_counts,
+        'has_geo_limit': bool(campaign.geo_limit),
+        'upload_form': RegionSourceUploadForm(),
+        'geo_limit_json': geo_limit_json,
+    })
+
+
+# Distinct, color-blind-friendly palette assigned to each RegionSource on the map.
+_SOURCE_PALETTE = ['#e65100', '#1565c0', '#6a1b9a', '#00838f', '#558b2f', '#c62828']
+
+
+@_login_required
+@require_GET
+def manage_campaign_regions_geojson(request, slug):
+    """Return a FeatureCollection of regions intersecting the campaign's geo_limit,
+    one Feature per region. Properties carry the source slug+label for the map UI."""
+    campaign = get_object_or_404(Campaign, slug=slug)
+    if not campaign.geo_limit:
+        return JsonResponse({'type': 'FeatureCollection', 'features': []})
+    features = []
+    sources = list(
+        RegionSource.objects.filter(coverage__intersects=campaign.geo_limit).order_by('label')
+    )
+    color_by_source = {s.id: _SOURCE_PALETTE[i % len(_SOURCE_PALETTE)] for i, s in enumerate(sources)}
+    regions = (
+        Region.objects.filter(source__in=sources, geometry__intersects=campaign.geo_limit)
+        .select_related('source')
+    )
+    for region in regions:
+        features.append({
+            'type': 'Feature',
+            'geometry': json.loads(region.geometry.geojson),
+            'properties': {
+                'name': region.name,
+                'source_label': region.source.label,
+                'source_slug': region.source.slug,
+                'color': color_by_source.get(region.source_id, '#888'),
+            },
+        })
+    return JsonResponse({'type': 'FeatureCollection', 'features': features})
+
+
+@_login_required
+@require_POST
+def manage_region_source_upload(request, slug):
+    campaign = get_object_or_404(Campaign, slug=slug)
+    form = RegionSourceUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return render(request, 'campaigns/manage/campaign_regions.html', {
+            'campaign': campaign,
+            'sources_with_counts': [],
+            'has_geo_limit': bool(campaign.geo_limit),
+            'upload_form': form,
+        }, status=400)
+
+    label = form.cleaned_data['label'].strip()
+    slug_value = _unique_region_source_slug(request.user, label)
+
+    source = RegionSource.objects.create(
+        slug=slug_value,
+        label=label,
+        adapter_type='upload',
+        config={
+            'name_property': form.cleaned_data['name_property'].strip(),
+            'id_property': form.cleaned_data['id_property'].strip(),
+            'original_filename': form.cleaned_data['geojson_file'].name,
+        },
+        license=form.cleaned_data['license_text'].strip(),
+        attribution=form.cleaned_data['attribution'].strip(),
+        owner=request.user,
+    )
+    try:
+        result = ingest_geojson_upload(source, form.cleaned_data['geojson_file'])
+    except IngestError as e:
+        source.delete()
+        from django.contrib import messages
+        messages.error(request, f'Upload failed: {e}')
+        return redirect('manage_campaign_regions', slug=slug)
+
+    from django.contrib import messages
+    msg = f'Created source "{source.label}" with {result["created"]} regions.'
+    if result['skipped']:
+        msg += f' Skipped {result["skipped"]} feature(s).'
+    messages.success(request, msg)
+    return redirect('manage_campaign_regions', slug=slug)
+
+
+def _unique_region_source_slug(user, label):
+    """Build a globally-unique slug prefixed with the user id, based on the label."""
+    from django.utils.text import slugify
+    base = f'user{user.id}-{slugify(label) or "source"}'[:90]
+    candidate = base
+    n = 2
+    while RegionSource.objects.filter(slug=candidate).exists():
+        suffix = f'-{n}'
+        candidate = (base[: 100 - len(suffix)]) + suffix
+        n += 1
+    return candidate

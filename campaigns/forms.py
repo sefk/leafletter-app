@@ -87,3 +87,49 @@ class ImageUploadForm(forms.Form):
                 'Image exceeds the 20 MB size limit. Please use a smaller source file.'
             )
         return f
+
+
+REGION_SOURCE_MAX_BYTES = 20 * 1024 * 1024  # 20 MB upload cap, same as images
+
+
+class RegionSourceUploadForm(forms.Form):
+    label = forms.CharField(
+        max_length=200,
+        label='Label',
+        help_text='Shown to managers when picking this source. e.g. "Belmont neighborhoods (uploaded)".',
+    )
+    geojson_file = forms.FileField(
+        label='GeoJSON file',
+        help_text='A GeoJSON FeatureCollection of Polygon or MultiPolygon features.',
+    )
+    name_property = forms.CharField(
+        max_length=100, required=False,
+        label='Name property (optional)',
+        help_text='Which feature property holds the region name. Leave blank to auto-detect (name, NAME, label, …).',
+    )
+    id_property = forms.CharField(
+        max_length=100, required=False,
+        label='ID property (optional)',
+        help_text='Which feature property holds a stable ID. Leave blank to auto-detect.',
+    )
+    license_text = forms.CharField(
+        max_length=200, required=False, label='License (optional)',
+    )
+    attribution = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={'rows': 2}),
+        label='Attribution (optional)',
+        help_text='Text shown to users when this source is used (per source terms).',
+    )
+
+    def clean_geojson_file(self):
+        f = self.cleaned_data['geojson_file']
+        ext = os.path.splitext(f.name)[1].lstrip('.').lower()
+        if ext not in ('geojson', 'json'):
+            raise forms.ValidationError(
+                f'Unsupported file type ".{ext}". Upload a .geojson or .json file.'
+            )
+        if f.size > REGION_SOURCE_MAX_BYTES:
+            raise forms.ValidationError(
+                f'File exceeds the {REGION_SOURCE_MAX_BYTES // (1024 * 1024)} MB size limit.'
+            )
+        return f

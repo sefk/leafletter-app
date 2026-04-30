@@ -244,3 +244,57 @@ class UsageEvent(models.Model):
             logging.getLogger('campaigns.usage').exception(
                 'UsageEvent.record failed for %s %s', event_type, path
             )
+
+
+class RegionSource(models.Model):
+    """A source of named sub-regions (neighborhoods, precincts, blocks).
+
+    Sources are first-class DB rows so users can upload their own without code
+    changes. Adapter classes (keyed off `adapter_type`) know how to fetch and
+    parse the underlying data into Region rows.
+    """
+
+    ADAPTER_TYPES = [
+        ('upload', 'User upload'),
+        # future: 'geojson_url', 'arcgis_layer', 'scripted'
+    ]
+
+    slug = models.SlugField(max_length=100, unique=True)         # "user42_belmont_neighborhoods"
+    label = models.CharField(max_length=200)                      # "Belmont Neighborhoods (uploaded)"
+    coverage = models.PolygonField(srid=4326, null=True, blank=True)  # union of regions, used for matching
+    license = models.CharField(max_length=200, blank=True, default='')
+    attribution = models.TextField(blank=True, default='')
+    adapter_type = models.CharField(max_length=20, choices=ADAPTER_TYPES)
+    config = models.JSONField(default=dict, blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='owned_region_sources',
+    )
+    last_ingested_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['label']
+
+    def __str__(self):
+        return self.label
+
+
+class Region(models.Model):
+    """One named sub-region within a RegionSource (e.g., 'Belmont Heights')."""
+
+    source = models.ForeignKey(RegionSource, on_delete=models.CASCADE, related_name='regions')
+    external_id = models.CharField(max_length=200, blank=True, default='')   # source-side stable ID for upserts
+    name = models.CharField(max_length=200)
+    geometry = models.MultiPolygonField(srid=4326)
+    parent_admin_area = models.CharField(max_length=200, blank=True, default='')
+
+    class Meta:
+        ordering = ['source', 'name']
+        indexes = [
+            models.Index(fields=['source', 'external_id'], name='campaigns_region_src_ext_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.source.slug})"

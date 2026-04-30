@@ -60,4 +60,7 @@ manage_urlpatterns = [
     path('<slug:slug>/trip/<uuid:trip_id>/edit/', views.manage_trip_edit, name='manage_trip_edit'),
     path('<slug:slug>/export-trips/', views.manage_export_trips, name='manage_export_trips'),
     path('<slug:slug>/remove-image/', views.manage_campaign_remove_image, name='manage_remove_image'),
+    path('<slug:slug>/regions/', views.manage_campaign_regions, name='manage_campaign_regions'),
+    path('<slug:slug>/regions/upload/', views.manage_region_source_upload, name='manage_region_source_upload'),
+    path('<slug:slug>/regions.geojson', views.manage_campaign_regions_geojson, name='manage_campaign_regions_geojson'),
 ]
