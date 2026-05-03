@@ -872,7 +872,9 @@
   <div class="card-title">Campaign Boundary</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
     The Campaign Boundary defines the area of this campaign. Only streets inside this polygon
-    are shown to workers. Draw a polygon that matches the true campaign area for best results.
+    are shown to workers. Draw a polygon by hand, or upload a GeoJSON file of regions
+    (e.g. precinct boundaries from your county elections office, or neighborhood polygons from
+    your city's open data portal) and select the ones that make up the campaign.
   </p>
   <div id="geo-limit-stale-banner" style="display:none; padding:8px 12px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; margin-bottom:12px; font-size:0.875rem; color:#5a4000;">
     Street data has been updated since this map loaded.
@@ -880,19 +882,48 @@
   </div>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-  <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
-  {% if campaign.geo_limit and not address_fetch_too_large and estimated_addresses > 0 %}
-  <div id="sm-address-wrap" style="margin-bottom:12px; font-size:0.9rem; color:#444;">
-    Estimated houses within boundary:
-    <strong id="sm-estimated-addresses">{{ estimated_addresses|intcomma }}</strong>
-    {% if estimated_addresses_sparse %}
-    <span style="display:inline-block; margin-left:8px; padding:2px 8px; background:#fff3e0; border:1px solid #ffcc80; border-radius:4px; font-size:0.8rem; color:#e65100;">
-      Warning: Low OpenStreetMap address coverage — estimate may be incomplete.
-    </span>
-    {% endif %}
+  <style>
+    .bbox-mode-toggle {
+      display: inline-flex; border: 1px solid #ccc; border-radius: 6px;
+      overflow: hidden; margin-bottom: 10px;
+    }
+    .bbox-mode-toggle button {
+      background: #fff; border: 0; padding: 6px 14px; font-size: 0.85rem;
+      font-weight: 600; color: #333; cursor: pointer; font-family: inherit;
+    }
+    .bbox-mode-toggle button + button { border-left: 1px solid #ccc; }
+    .bbox-mode-toggle button.active { background: #1a6b3c; color: #fff; }
+    .bbox-mode-toggle button:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+  <div class="bbox-mode-toggle" role="tablist" aria-label="Boundary mode">
+    <button type="button" class="active" data-mode="draw" role="tab" aria-selected="true">Draw freehand</button>
+    <button type="button" data-mode="select" role="tab" aria-selected="false">Select from file</button>
   </div>
-  {% endif %}
+  <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
 
+  <div id="bbox-select-controls" style="display:none; margin-bottom:12px;">
+    <div id="bbox-file-prompt">
+      <label for="bbox-file-input" style="font-size:0.9rem; font-weight:600; color:#333; display:block; margin-bottom:4px;">
+        Upload a GeoJSON file of regions
+      </label>
+      <input type="file" id="bbox-file-input" accept=".geojson,.json,application/geo+json,application/json"
+             style="font-size:0.9rem;" />
+      <div style="font-size:0.8rem; color:#777; margin-top:4px;">
+        Tip: most county election offices publish precinct boundaries as a downloadable GeoJSON or shapefile.
+      </div>
+    </div>
+    <div id="bbox-file-loaded" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;">
+      <span style="font-size:0.9rem; color:#444;">Uploaded: <strong id="bbox-file-name"></strong></span>
+      <button type="button" id="bbox-file-replace" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;">Replace file</button>
+      <button type="button" id="bbox-clear-selection" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem; display:none;">Clear selection</button>
+    </div>
+    <div id="bbox-select-instructions" style="display:none; margin-top:8px; padding:8px 12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.85rem; color:#2e4a32;">
+      <strong>Click a region</strong> to add it to the boundary.
+      <strong>Click an already-selected region</strong> to remove it.
+      Or use the <strong>Clear selection</strong> button above to start over.
+    </div>
+    <div id="bbox-select-error" style="display:none; margin-top:8px; padding:8px 12px; background:#ffebee; border:1px solid #ef9a9a; border-radius:6px; font-size:0.85rem; color:#c62828;"></div>
+  </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
     <button id="btn-edit-bbox" class="btn btn-secondary">Edit Campaign Boundary</button>
     <button id="btn-save-bbox" class="btn btn-primary" style="display:none;" disabled>Save Campaign Boundary</button>
@@ -901,6 +932,7 @@
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/@turf/turf@7.1.0/turf.min.js"></script>
   <script>
   (function() {
     var currentBbox = {{ bbox_json }};
@@ -955,6 +987,23 @@
     var btnCancel = document.getElementById('btn-cancel-bbox');
     var statusEl  = document.getElementById('bbox-status');
 
+    // ── Select-from-file mode state ──────────────────────────────────────────
+    var modeButtons = document.querySelectorAll('.bbox-mode-toggle button');
+    var selectControls = document.getElementById('bbox-select-controls');
+    var filePrompt = document.getElementById('bbox-file-prompt');
+    var fileLoaded = document.getElementById('bbox-file-loaded');
+    var fileInput = document.getElementById('bbox-file-input');
+    var fileNameEl = document.getElementById('bbox-file-name');
+    var fileReplaceBtn = document.getElementById('bbox-file-replace');
+    var clearSelectionBtn = document.getElementById('bbox-clear-selection');
+    var selectInstructionsEl = document.getElementById('bbox-select-instructions');
+    var selectErrorEl = document.getElementById('bbox-select-error');
+    var currentMode = 'draw';
+    var regionsLayer = null;        // L.GeoJSON of all uploaded polygons
+    var unionPreviewLayer = null;   // L.GeoJSON of the live union outline
+    var selectedFeatureIds = new Set();  // which features are picked
+    var uploadedFeatures = [];      // raw GeoJSON Features (Polygon / MultiPolygon)
+
     // ── Spacebar panning: hold Space to pan while draw tool is active ─────
     var inEditMode = false;
     var spacebarPanning = false;
@@ -998,10 +1047,10 @@
     function exitEditMode() {
       inEditMode = false;
       spacebarPanning = false;
-      btnEdit.style.display = '';
+      btnEdit.style.display = (currentMode === 'draw') ? '' : 'none';
       btnSave.style.display = 'none';
       btnCancel.style.display = 'none';
-      map.removeControl(drawControl);
+      try { map.removeControl(drawControl); } catch (e) {}
       drawnItems.clearLayers();
       newPolygon = null;
       statusEl.textContent = '';
@@ -1009,10 +1058,247 @@
       document.removeEventListener('keyup', onBboxKeyUp);
     }
 
+    // ── Select-from-file mode ────────────────────────────────────────────────
+    function showSelectError(msg) {
+      if (msg) { selectErrorEl.textContent = msg; selectErrorEl.style.display = 'block'; }
+      else { selectErrorEl.textContent = ''; selectErrorEl.style.display = 'none'; }
+    }
+
+    function setMode(mode) {
+      if (mode === currentMode) return;
+      // Discard any unsaved work from the leaving mode.
+      if (currentMode === 'draw' && inEditMode) {
+        exitEditMode();
+      } else if (currentMode === 'select') {
+        clearSelectMode();
+      }
+      currentMode = mode;
+      modeButtons.forEach(function(b) {
+        var on = b.dataset.mode === mode;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      if (mode === 'draw') {
+        selectControls.style.display = 'none';
+        btnEdit.style.display = '';
+        btnSave.style.display = 'none';
+        btnCancel.style.display = 'none';
+        statusEl.textContent = '';
+      } else {
+        selectControls.style.display = '';
+        btnEdit.style.display = 'none';
+        // Save/Cancel appear once the user has uploaded a file & made selections.
+        btnSave.style.display = 'none';
+        btnCancel.style.display = 'none';
+        statusEl.textContent = '';
+      }
+    }
+
+    function clearSelectMode() {
+      if (regionsLayer) { map.removeLayer(regionsLayer); regionsLayer = null; }
+      if (unionPreviewLayer) { map.removeLayer(unionPreviewLayer); unionPreviewLayer = null; }
+      selectedFeatureIds.clear();
+      uploadedFeatures = [];
+      newPolygon = null;
+      filePrompt.style.display = '';
+      fileLoaded.style.display = 'none';
+      fileNameEl.textContent = '';
+      fileInput.value = '';
+      selectInstructionsEl.style.display = 'none';
+      clearSelectionBtn.style.display = 'none';
+      showSelectError('');
+      btnSave.style.display = 'none';
+      btnSave.disabled = true;
+      btnCancel.style.display = 'none';
+      statusEl.textContent = '';
+    }
+
+    function clearAllSelections() {
+      if (selectedFeatureIds.size === 0) return;
+      selectedFeatureIds.clear();
+      if (regionsLayer) {
+        regionsLayer.eachLayer(function(layer) {
+          if (layer.feature) layer.setStyle(regionStyle(layer.feature));
+        });
+      }
+      updateUnionPreview();
+    }
+
+    function loadGeojsonFile(file) {
+      showSelectError('');
+      var reader = new FileReader();
+      reader.onload = function() {
+        var data;
+        try { data = JSON.parse(reader.result); }
+        catch (err) { showSelectError('File is not valid JSON.'); return; }
+        if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
+          showSelectError('Expected a GeoJSON FeatureCollection at the top level.');
+          return;
+        }
+        var feats = [];
+        var skipped = 0;
+        data.features.forEach(function(f, i) {
+          if (!f || !f.geometry) { skipped++; return; }
+          var t = f.geometry.type;
+          if (t !== 'Polygon' && t !== 'MultiPolygon') { skipped++; return; }
+          var props = f.properties || {};
+          var name = props.name || props.NAME || props.Name || props.NAMELSAD || props.label
+                     || props.PRECINCT || ('Region ' + (i + 1));
+          feats.push({
+            type: 'Feature',
+            id: 'r' + i,  // stable id for selection tracking
+            geometry: f.geometry,
+            properties: { __name: String(name), __idx: i },
+          });
+        });
+        if (feats.length === 0) {
+          showSelectError('No usable Polygon/MultiPolygon features found in the file.');
+          return;
+        }
+        uploadedFeatures = feats;
+        renderRegionsLayer();
+        filePrompt.style.display = 'none';
+        fileLoaded.style.display = 'flex';
+        fileNameEl.textContent = file.name;
+        selectInstructionsEl.style.display = 'block';
+        btnCancel.style.display = '';
+        var msg = 'Loaded ' + feats.length + ' region' + (feats.length === 1 ? '' : 's') + '.';
+        if (skipped > 0) msg += ' (Skipped ' + skipped + ' feature' + (skipped === 1 ? '' : 's') + ' with unsupported geometry.)';
+        statusEl.textContent = msg;
+      };
+      reader.onerror = function() { showSelectError('Could not read the file.'); };
+      reader.readAsText(file);
+    }
+
+    function renderRegionsLayer() {
+      if (regionsLayer) map.removeLayer(regionsLayer);
+      regionsLayer = L.geoJSON({ type: 'FeatureCollection', features: uploadedFeatures }, {
+        style: regionStyle,
+        onEachFeature: function(feature, layer) {
+          layer.bindTooltip(feature.properties.__name, { sticky: true });
+          layer.on('click', function() { toggleSelection(feature.id, layer); });
+        },
+      }).addTo(map);
+      // Intentionally do NOT fitBounds to the uploaded regions — the map stays
+      // zoomed to the campaign's street area so the user keeps their context.
+      // Uploaded files often cover a much larger area (e.g. a whole county).
+    }
+
+    function regionStyle(feature) {
+      var selected = selectedFeatureIds.has(feature.id);
+      return selected
+        ? { color: '#1a6b3c', weight: 3,   fillColor: '#1a6b3c', fillOpacity: 0.35 }
+        : { color: '#1565c0', weight: 1.5, fillColor: '#1565c0', fillOpacity: 0    };
+    }
+
+    function toggleSelection(featureId, layer) {
+      if (selectedFeatureIds.has(featureId)) selectedFeatureIds.delete(featureId);
+      else selectedFeatureIds.add(featureId);
+      layer.setStyle(regionStyle({ id: featureId }));
+      updateUnionPreview();
+    }
+
+    function updateUnionPreview() {
+      if (unionPreviewLayer) { map.removeLayer(unionPreviewLayer); unionPreviewLayer = null; }
+      var picked = uploadedFeatures.filter(function(f) { return selectedFeatureIds.has(f.id); });
+      var n = picked.length;
+      clearSelectionBtn.style.display = (n > 0) ? '' : 'none';
+      if (n === 0) {
+        newPolygon = null;
+        btnSave.style.display = 'none';
+        btnSave.disabled = true;
+        showSelectError('');
+        statusEl.textContent = '';
+        return;
+      }
+      var unioned;
+      try {
+        if (n === 1) {
+          unioned = picked[0];
+        } else if (typeof turf.union === 'function') {
+          // Newer turf accepts a FeatureCollection; older expects pairs.
+          try {
+            unioned = turf.union(turf.featureCollection(picked));
+          } catch (innerErr) {
+            unioned = picked[0];
+            for (var i = 1; i < picked.length; i++) {
+              unioned = turf.union(unioned, picked[i]);
+            }
+          }
+        } else {
+          throw new Error('turf.union unavailable');
+        }
+      } catch (err) {
+        showSelectError('Could not compute union of selected regions: ' + (err && err.message || err));
+        btnSave.disabled = true;
+        return;
+      }
+      var geom = unioned && unioned.geometry ? unioned.geometry : unioned;
+      if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) {
+        showSelectError('Unexpected geometry from region union.');
+        btnSave.disabled = true;
+        return;
+      }
+      if (geom.type === 'MultiPolygon') {
+        showSelectError('Selected regions must form a single connected area. ' +
+                        'Either pick neighbors of what you have, or unselect the outliers.');
+        unionPreviewLayer = L.geoJSON(geom, {
+          style: { color: '#c62828', weight: 2.5, fillOpacity: 0, dashArray: '4,4' },
+          interactive: false,  // let clicks pass through to the precincts underneath
+        }).addTo(map);
+        newPolygon = null;
+        btnSave.style.display = '';
+        btnSave.disabled = true;
+        btnCancel.style.display = '';
+        statusEl.textContent = n + ' region' + (n === 1 ? '' : 's') + ' selected.';
+        return;
+      }
+      // Single Polygon — happy path. Save is enabled.
+      showSelectError('');
+      newPolygon = geom;
+      unionPreviewLayer = L.geoJSON(geom, {
+        style: { color: '#1a6b3c', weight: 3, fillOpacity: 0, dashArray: '4,4' },
+        interactive: false,  // let clicks pass through to the precincts underneath
+      }).addTo(map);
+      btnSave.style.display = '';
+      btnSave.disabled = false;
+      btnCancel.style.display = '';
+      statusEl.textContent = n + ' region' + (n === 1 ? '' : 's') + ' selected.';
+      // Live address-count preview for the selection.
+      fetch(addressCountUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify(geom),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          statusEl.textContent = n + ' region' + (n === 1 ? '' : 's') + ' selected — ~' +
+            data.count.toLocaleString() + ' addresses in this area.';
+        })
+        .catch(function() {});
+    }
+
+    modeButtons.forEach(function(b) {
+      b.addEventListener('click', function() { setMode(b.dataset.mode); });
+    });
+    fileInput.addEventListener('change', function(e) {
+      var f = e.target.files && e.target.files[0];
+      if (f) loadGeojsonFile(f);
+    });
+    fileReplaceBtn.addEventListener('click', function() {
+      // Keep mode but reset file state so the user can pick a new file.
+      clearSelectMode();
+    });
+    clearSelectionBtn.addEventListener('click', clearAllSelections);
+
     btnEdit.addEventListener('click', enterEditMode);
 
     btnCancel.addEventListener('click', function() {
-      exitEditMode();
+      if (currentMode === 'select') {
+        clearSelectMode();
+      } else {
+        exitEditMode();
+      }
     });
 
     map.on(L.Draw.Event.CREATED, function(e) {
@@ -1049,7 +1335,11 @@
           if (data.status === 'ok' || data.status === 'rendering') {
             currentGeoLimit = newPolygon;
             currentBbox = data.bbox;
-            exitEditMode();
+            if (currentMode === 'select') {
+              clearSelectMode();
+            } else {
+              exitEditMode();
+            }
             if (limitLayer) map.removeLayer(limitLayer);
             limitLayer = L.geoJSON(currentGeoLimit, {
               style: { color: '#1a6b3c', weight: 2, fillOpacity: 0.05, dashArray: '6,4' }
@@ -1089,14 +1379,17 @@
               if (addrEl) {
                 addrEl.textContent = data.estimated_addresses.toLocaleString();
               } else if (data.estimated_addresses > 0) {
-                // Block wasn't rendered (no geo_limit before) — inject it above the buttons.
-                var btnRow = document.querySelector('#btn-edit-bbox').closest('div');
-                var wrap = document.createElement('div');
-                wrap.id = 'sm-address-wrap';
-                wrap.style.cssText = 'margin-bottom:12px; font-size:0.9rem; color:#444;';
-                wrap.innerHTML = 'Estimated houses within boundary: <strong id="sm-estimated-addresses">' +
-                  data.estimated_addresses.toLocaleString() + '</strong>';
-                btnRow.parentNode.insertBefore(wrap, btnRow);
+                // Block wasn't rendered (no geo_limit before) — inject it
+                // into the Campaign Map card, above the rendered map.
+                var manageMapEl = document.getElementById('manage-map');
+                if (manageMapEl) {
+                  var wrap = document.createElement('div');
+                  wrap.id = 'sm-address-wrap';
+                  wrap.style.cssText = 'margin-bottom:8px; font-size:0.9rem; color:#444;';
+                  wrap.innerHTML = 'Estimated houses within boundary: <strong id="sm-estimated-addresses">' +
+                    data.estimated_addresses.toLocaleString() + '</strong>';
+                  manageMapEl.parentNode.insertBefore(wrap, manageMapEl);
+                }
               }
             }
             if (window.reloadManageMap) window.reloadManageMap(currentBbox);
@@ -1142,6 +1435,17 @@
   </p>
   {% else %}
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  {% endif %}
+  {% if campaign.geo_limit and not address_fetch_too_large and estimated_addresses > 0 %}
+  <div id="sm-address-wrap" style="margin-bottom:8px; font-size:0.9rem; color:#444;">
+    Estimated houses within boundary:
+    <strong id="sm-estimated-addresses">{{ estimated_addresses|intcomma }}</strong>
+    {% if estimated_addresses_sparse %}
+    <span style="display:inline-block; margin-left:8px; padding:2px 8px; background:#fff3e0; border:1px solid #ffcc80; border-radius:4px; font-size:0.8rem; color:#e65100;">
+      Warning: Low OpenStreetMap address coverage — estimate may be incomplete.
+    </span>
+    {% endif %}
+  </div>
   {% endif %}
   <div id="manage-map" style="height:420px; border-radius:6px; margin-bottom:8px;"></div>
   <style>@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }</style>
