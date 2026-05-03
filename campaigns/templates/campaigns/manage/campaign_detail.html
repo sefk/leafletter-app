@@ -871,10 +871,22 @@
 <div class="card" id="step-boundary">
   <div class="card-title">Campaign Boundary</div>
   <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
-    The Campaign Boundary defines the area of this campaign. Only streets inside this polygon
-    are shown to workers. Draw a polygon by hand, or upload a GeoJSON file of regions
-    (e.g. precinct boundaries from your county elections office, or neighborhood polygons from
-    your city's open data portal) and select the ones that make up the campaign.
+    Define the  boundary of your campaign here. The full set of streets from your whole
+    city or county is often larger than a targeted leafletting campaign.
+    Selecting good campaign boundary not only gives better direction to your leaflet workers
+    but also makes logging of leaflet trips faster and easier.
+  </p>
+  <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+    There's two options: you can download a <tt>geojson</tt> file that splits up your areas
+    in useful ways, e.g. by precinct, neighborhood, or wards. County election office websites
+    are often the best source.
+    Once you have that file, use <strong>Select From GeoJSON Upload</strong> button, upload
+    your file, and then select one or more regions. They must be contiguous and without holes.
+  </p>
+  <p style="color:#666; font-size:0.9rem; margin-bottom:12px;">
+    Or, you can select the <strong>Draw Freehand</strong> tool to draw a polygonal boundary
+    yourself. No finding and uploading external files required but can be a bit tricky to
+    get right.
   </p>
   <div id="geo-limit-stale-banner" style="display:none; padding:8px 12px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; margin-bottom:12px; font-size:0.875rem; color:#5a4000;">
     Street data has been updated since this map loaded.
@@ -882,23 +894,6 @@
   </div>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-  <style>
-    .bbox-mode-toggle {
-      display: inline-flex; border: 1px solid #ccc; border-radius: 6px;
-      overflow: hidden; margin-bottom: 10px;
-    }
-    .bbox-mode-toggle button {
-      background: #fff; border: 0; padding: 6px 14px; font-size: 0.85rem;
-      font-weight: 600; color: #333; cursor: pointer; font-family: inherit;
-    }
-    .bbox-mode-toggle button + button { border-left: 1px solid #ccc; }
-    .bbox-mode-toggle button.active { background: #1a6b3c; color: #fff; }
-    .bbox-mode-toggle button:disabled { opacity: 0.5; cursor: not-allowed; }
-  </style>
-  <div class="bbox-mode-toggle" role="tablist" aria-label="Boundary mode">
-    <button type="button" class="active" data-mode="draw" role="tab" aria-selected="true">Draw freehand</button>
-    <button type="button" data-mode="select" role="tab" aria-selected="false">Select from file</button>
-  </div>
   <div id="bbox-map" style="height:380px; border-radius:6px; margin-bottom:12px;"></div>
 
   <div id="bbox-select-controls" style="display:none; margin-bottom:12px;">
@@ -909,12 +904,11 @@
       <input type="file" id="bbox-file-input" accept=".geojson,.json,application/geo+json,application/json"
              style="font-size:0.9rem;" />
       <div style="font-size:0.8rem; color:#777; margin-top:4px;">
-        Tip: most county election offices publish precinct boundaries as a downloadable GeoJSON or shapefile.
       </div>
     </div>
     <div id="bbox-file-loaded" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;">
       <span style="font-size:0.9rem; color:#444;">Uploaded: <strong id="bbox-file-name"></strong></span>
-      <button type="button" id="bbox-file-replace" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;">Replace file</button>
+      <button type="button" id="bbox-file-replace" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;">Replace GeoJSON</button>
       <button type="button" id="bbox-clear-selection" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem; display:none;">Clear selection</button>
     </div>
     <div id="bbox-select-instructions" style="display:none; margin-top:8px; padding:8px 12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.85rem; color:#2e4a32;">
@@ -925,7 +919,8 @@
     <div id="bbox-select-error" style="display:none; margin-top:8px; padding:8px 12px; background:#ffebee; border:1px solid #ef9a9a; border-radius:6px; font-size:0.85rem; color:#c62828;"></div>
   </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <button id="btn-edit-bbox" class="btn btn-secondary">Edit Campaign Boundary</button>
+    <button id="btn-draw-bbox" class="btn btn-secondary">Draw Freehand</button>
+    <button id="btn-select-bbox" class="btn btn-secondary">Select from GeoJSON Upload</button>
     <button id="btn-save-bbox" class="btn btn-primary" style="display:none;" disabled>Save Campaign Boundary</button>
     <button id="btn-cancel-bbox" class="btn btn-danger" style="display:none;">Cancel</button>
     <span id="bbox-status" style="font-size:0.85rem; color:#666;"></span>
@@ -982,13 +977,13 @@
     });
 
     var newPolygon = null;
-    var btnEdit   = document.getElementById('btn-edit-bbox');
+    var btnDraw   = document.getElementById('btn-draw-bbox');
+    var btnSelect = document.getElementById('btn-select-bbox');
     var btnSave   = document.getElementById('btn-save-bbox');
     var btnCancel = document.getElementById('btn-cancel-bbox');
     var statusEl  = document.getElementById('bbox-status');
 
     // ── Select-from-file mode state ──────────────────────────────────────────
-    var modeButtons = document.querySelectorAll('.bbox-mode-toggle button');
     var selectControls = document.getElementById('bbox-select-controls');
     var filePrompt = document.getElementById('bbox-file-prompt');
     var fileLoaded = document.getElementById('bbox-file-loaded');
@@ -1034,7 +1029,8 @@
 
     function enterEditMode() {
       inEditMode = true;
-      btnEdit.style.display = 'none';
+      btnDraw.style.display = 'none';
+      btnSelect.style.display = 'none';
       btnSave.style.display = '';
       btnCancel.style.display = '';
       btnSave.disabled = true;
@@ -1047,7 +1043,8 @@
     function exitEditMode() {
       inEditMode = false;
       spacebarPanning = false;
-      btnEdit.style.display = (currentMode === 'draw') ? '' : 'none';
+      btnDraw.style.display = '';
+      btnSelect.style.display = '';
       btnSave.style.display = 'none';
       btnCancel.style.display = 'none';
       try { map.removeControl(drawControl); } catch (e) {}
@@ -1064,37 +1061,32 @@
       else { selectErrorEl.textContent = ''; selectErrorEl.style.display = 'none'; }
     }
 
-    function setMode(mode) {
-      if (mode === currentMode) return;
-      // Discard any unsaved work from the leaving mode.
-      if (currentMode === 'draw' && inEditMode) {
-        exitEditMode();
-      } else if (currentMode === 'select') {
-        clearSelectMode();
-      }
-      currentMode = mode;
-      modeButtons.forEach(function(b) {
-        var on = b.dataset.mode === mode;
-        b.classList.toggle('active', on);
-        b.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
-      if (mode === 'draw') {
-        selectControls.style.display = 'none';
-        btnEdit.style.display = '';
-        btnSave.style.display = 'none';
-        btnCancel.style.display = 'none';
-        statusEl.textContent = '';
-      } else {
-        selectControls.style.display = '';
-        btnEdit.style.display = 'none';
-        // Save/Cancel appear once the user has uploaded a file & made selections.
-        btnSave.style.display = 'none';
-        btnCancel.style.display = 'none';
-        statusEl.textContent = '';
-      }
+    function startDraw() {
+      currentMode = 'draw';
+      selectControls.style.display = 'none';
+      enterEditMode();  // hides btnDraw/btnSelect, shows Save/Cancel, adds draw control
     }
 
-    function clearSelectMode() {
+    function startSelect() {
+      currentMode = 'select';
+      selectControls.style.display = '';
+      btnDraw.style.display = 'none';
+      btnSelect.style.display = 'none';
+      btnCancel.style.display = '';
+      btnSave.style.display = 'none';
+      btnSave.disabled = true;
+      filePrompt.style.display = '';
+      fileLoaded.style.display = 'none';
+      selectInstructionsEl.style.display = 'none';
+      clearSelectionBtn.style.display = 'none';
+      showSelectError('');
+      statusEl.textContent = '';
+    }
+
+    function _resetSelectFile() {
+      // Reset file/selection state without changing mode visibility.
+      // Used by both the "Replace file" action (stays in select mode) and
+      // by clearSelectMode (which then also returns to view state).
       if (regionsLayer) { map.removeLayer(regionsLayer); regionsLayer = null; }
       if (unionPreviewLayer) { map.removeLayer(unionPreviewLayer); unionPreviewLayer = null; }
       selectedFeatureIds.clear();
@@ -1109,8 +1101,16 @@
       showSelectError('');
       btnSave.style.display = 'none';
       btnSave.disabled = true;
-      btnCancel.style.display = 'none';
       statusEl.textContent = '';
+    }
+
+    function clearSelectMode() {
+      // Full exit from select mode → back to view state (Cancel, Save success).
+      _resetSelectFile();
+      selectControls.style.display = 'none';
+      btnCancel.style.display = 'none';
+      btnDraw.style.display = '';
+      btnSelect.style.display = '';
     }
 
     function clearAllSelections() {
@@ -1153,6 +1153,23 @@
         });
         if (feats.length === 0) {
           showSelectError('No usable Polygon/MultiPolygon features found in the file.');
+          return;
+        }
+        // Validation: at least one feature must overlap the campaign's street area.
+        // currentBbox is [[sw_lat, sw_lon], [ne_lat, ne_lon]]; convert to [w, s, e, n].
+        var campaignBox = [currentBbox[0][1], currentBbox[0][0], currentBbox[1][1], currentBbox[1][0]];
+        var anyOverlap = feats.some(function(f) {
+          try {
+            var fb = turf.bbox(f);  // [w, s, e, n]
+            return fb[0] <= campaignBox[2] && fb[2] >= campaignBox[0]
+                && fb[1] <= campaignBox[3] && fb[3] >= campaignBox[1];
+          } catch (e) { return false; }
+        });
+        if (!anyOverlap) {
+          showSelectError(
+            'None of the regions in this file overlap the campaign’s street area. ' +
+            'Make sure you uploaded a file for the right city or county.'
+          );
           return;
         }
         uploadedFeatures = feats;
@@ -1278,20 +1295,18 @@
         .catch(function() {});
     }
 
-    modeButtons.forEach(function(b) {
-      b.addEventListener('click', function() { setMode(b.dataset.mode); });
-    });
     fileInput.addEventListener('change', function(e) {
       var f = e.target.files && e.target.files[0];
       if (f) loadGeojsonFile(f);
     });
     fileReplaceBtn.addEventListener('click', function() {
-      // Keep mode but reset file state so the user can pick a new file.
-      clearSelectMode();
+      // Stay in select mode but reset the file so the user can pick a new one.
+      _resetSelectFile();
     });
     clearSelectionBtn.addEventListener('click', clearAllSelections);
 
-    btnEdit.addEventListener('click', enterEditMode);
+    btnDraw.addEventListener('click', startDraw);
+    btnSelect.addEventListener('click', startSelect);
 
     btnCancel.addEventListener('click', function() {
       if (currentMode === 'select') {
