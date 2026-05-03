@@ -101,7 +101,7 @@ private struct BannerView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text("Track where leaflets have been distributed by feet-on-the-street. Select a campaign below to browse coverage or log your own trip.")
+            Text("Track where leaflets have been distributed for progressive political causes. Select a campaign to browse existing coverage or log your own leaflet drop.")
                 .font(.footnote)
                 .foregroundColor(.white.opacity(0.9))
             Spacer()
