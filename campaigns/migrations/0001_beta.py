@@ -5,6 +5,7 @@ import django.contrib.gis.db.models.fields
 import django.db.migrations.operations.special
 import django.db.models.deletion
 import uuid
+from django.contrib.postgres.operations import CreateExtension
 from django.db import migrations, models
 
 
@@ -41,6 +42,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # PostGIS must exist before any spatial field is created. CreateExtension
+        # is vendor-aware: a no-op on non-Postgres backends (SQLite/MySQL).
+        CreateExtension('postgis'),
         migrations.CreateModel(
             name='Campaign',
             fields=[

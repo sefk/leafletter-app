@@ -248,7 +248,7 @@ No special caching or real-time infrastructure is required at MVP scale.
 
 OSM geometry fetching at campaign creation runs as a background job.
 
-- **Queue:** Celery with MySQL as the broker
+- **Queue:** Celery with Postgres as the broker (Kombu SQLAlchemy transport)
 - **Tasks:** `fetch_osm_segments(campaign_id)` — queries Overpass API, stores segments in PostGIS, updates campaign `map_status` field (`generating` → `ready` or `error`)
 - The admin UI polls or refreshes to reflect the current `map_status`.
 

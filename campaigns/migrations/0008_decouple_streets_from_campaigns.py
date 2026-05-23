@@ -46,6 +46,12 @@ def populate_city_name_and_campaignstreet(apps, schema_editor):
     Step 3: Bulk-insert CampaignStreet rows in chunks.
     """
     db = schema_editor.connection
+    # MySQL-specific SQL (UPDATE ... JOIN, INSERT IGNORE, SET SESSION timeouts).
+    # This migration ran on the original MySQL prod DB; on any other vendor
+    # (Postgres dev, SQLite tests) the source data was never present, so the
+    # data migration is a no-op.
+    if db.vendor not in ('mysql', 'mariadb'):
+        return
 
     with db.cursor() as cursor:
         _set_session_timeouts(cursor)
@@ -156,6 +162,10 @@ def deduplicate_streets(apps, schema_editor):
       - Orphaned streets are NOT deleted.
     """
     db = schema_editor.connection
+    # MySQL-specific (UPDATE IGNORE ... JOIN). No-op on other backends —
+    # see populate_city_name_and_campaignstreet for the reasoning.
+    if db.vendor not in ('mysql', 'mariadb'):
+        return
 
     # Fetch all non-canonical IDs in one query (avoids temp table scope issues).
     with db.cursor() as cur:
@@ -252,6 +262,8 @@ def reverse_populate(apps, schema_editor):
     arbitrarily assigned to the first campaign found (acceptable for rollback).
     """
     db = schema_editor.connection
+    if db.vendor not in ('mysql', 'mariadb'):
+        return
     with db.cursor() as cursor:
         _set_session_timeouts(cursor)
         cursor.execute("""

@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "Django>=5.0",
-    "mysqlclient",
+    "psycopg2-binary",
+    "dj-database-url",
     "django[argon2]",
     "celery",
     "kombu[sqlalchemy]",

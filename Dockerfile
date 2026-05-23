@@ -2,14 +2,12 @@ FROM python:3.13-slim
 
 # System dependencies:
 #   gdal-bin + libgdal-dev  — GeoDjango / GDAL Python bindings
-#   default-libmysqlclient-dev + pkg-config — mysqlclient compilation
-#   build-essential — C compiler for pip packages that build from source
+#   postgresql-client       — pg_dump for the daily backup task (also brings libpq)
+#   build-essential         — C compiler for pip packages that build from source
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gdal-bin \
         libgdal-dev \
-        default-libmysqlclient-dev \
-        default-mysql-client \
-        pkg-config \
+        postgresql-client \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 

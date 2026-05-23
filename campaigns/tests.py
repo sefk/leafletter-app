@@ -3778,12 +3778,12 @@ class BackupDatabaseTaskTest(TestCase):
         self.assertIn('pruned', result)
         self.assertIsInstance(result['pruned'], int)
 
-    # ── _run_backup: mysqldump failure ───────────────────────────────────────
+    # ── _run_backup: pg_dump failure ─────────────────────────────────────────
 
     @patch('campaigns.tasks.subprocess.run')
-    def test_run_backup_raises_on_mysqldump_failure(self, mock_run):
-        """If mysqldump exits non-zero, _run_backup should propagate the exception."""
-        mock_run.side_effect = subprocess.CalledProcessError(1, 'mysqldump', stderr=b'Access denied')
+    def test_run_backup_raises_on_pg_dump_failure(self, mock_run):
+        """If pg_dump exits non-zero, _run_backup should propagate the exception."""
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'pg_dump', stderr=b'permission denied')
         with self.assertRaises(subprocess.CalledProcessError):
             _run_backup()
 
@@ -4109,17 +4109,19 @@ class UsernameOrEmailBackendTest(TestCase):
         user = backend.authenticate(None, username='testuser', password='secret123')
         self.assertIsNone(user)
 
-    def test_authenticate_ambiguous_email_rejected(self):
-        """When two accounts share the same email, neither should be able to log in via email."""
-        from campaigns.backends import UsernameOrEmailBackend
-        User.objects.create_user(
-            username='otheruser',
-            email='test@example.com',
-            password='secret123',
-        )
-        backend = UsernameOrEmailBackend()
-        user = backend.authenticate(None, username='test@example.com', password='secret123')
-        self.assertIsNone(user)
+    def test_db_blocks_duplicate_email_case_insensitive(self):
+        """The partial unique index from migration 0010 enforces email uniqueness
+        on Postgres (case-insensitive, ignoring empty strings). UsernameOrEmailBackend
+        still has a defensive duplicate check for older data, but the DB constraint
+        means this case can't arise in new writes."""
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                User.objects.create_user(
+                    username='otheruser',
+                    email='TEST@example.com',  # different case, same email
+                    password='secret123',
+                )
 
     # ── Login view integration tests ──────────────────────────────────────────
 

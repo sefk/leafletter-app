@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = (
         'Run the database backup task synchronously.  '
-        'Dumps MySQL, compresses with gzip, and uploads to S3.'
+        'Dumps Postgres, compresses with gzip, and uploads to S3.'
     )
 
     def handle(self, *args, **options):

@@ -11,6 +11,7 @@ import boto3
 import requests
 from botocore.exceptions import BotoCoreError, ClientError
 from celery import shared_task
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import LineString, Point
 from django.core.mail import send_mail
@@ -600,8 +601,9 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
                 )
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    INSERT IGNORE INTO campaigns_campaignstreet (campaign_id, street_id, city_index)
+                    INSERT INTO campaigns_campaignstreet (campaign_id, street_id, city_index)
                     SELECT %s, id, %s FROM campaigns_street WHERE city_name = %s
+                    ON CONFLICT (campaign_id, street_id) DO NOTHING
                 """, [campaign.pk, city_index, city_label])
             logger.info(
                 "fetch_city_osm_data: city %s already in DB (%d blocks) — "
@@ -658,16 +660,15 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
                     ))
                     block_count += 1
 
-            # Upsert Streets in batches.  update_conflicts=True without
-            # unique_fields works on MySQL (uses ON DUPLICATE KEY UPDATE
-            # across all unique indexes) and is supported by GeoDjango's
-            # MySQL backend.  ignore_conflicts=True is used as a safe fallback
-            # for backends that support neither (e.g. SQLite in tests).
+            # Upsert Streets in batches.  Postgres requires unique_fields to
+            # generate INSERT ... ON CONFLICT (cols) DO UPDATE; SQLite (tests)
+            # doesn't support upsert, so falls back to ignore_conflicts.
             if connection.features.supports_update_conflicts:
                 Street.objects.bulk_create(
                     street_objs,
                     batch_size=STREET_BATCH_SIZE,
                     update_conflicts=True,
+                    unique_fields=['city_name', 'osm_id', 'block_index'],
                     update_fields=['name', 'geometry', 'start_node_id', 'end_node_id'],
                 )
             else:
@@ -677,15 +678,16 @@ def fetch_city_osm_data(self, campaign_id: int, city_index: int) -> None:
                     ignore_conflicts=True,
                 )
 
-            # Link all imported streets to this campaign.  On MySQL we use a
-            # single INSERT … ON DUPLICATE KEY UPDATE; on other backends (e.g.
-            # SQLite in tests) we fall back to individual update_or_create.
-            if connection.vendor == 'mysql':
+            # Link all imported streets to this campaign.  On Postgres we use
+            # a single INSERT … ON CONFLICT; SQLite (tests) falls back to a
+            # loop of update_or_create calls.
+            if connection.vendor == 'postgresql':
                 with connection.cursor() as cursor:
                     cursor.execute("""
                         INSERT INTO campaigns_campaignstreet (campaign_id, street_id, city_index)
                         SELECT %s, id, %s FROM campaigns_street WHERE city_name = %s
-                        ON DUPLICATE KEY UPDATE city_index = VALUES(city_index)
+                        ON CONFLICT (campaign_id, street_id)
+                        DO UPDATE SET city_index = EXCLUDED.city_index
                     """, [campaign.pk, city_index, city_label])
             else:
                 for street in Street.objects.filter(city_name=city_label):
@@ -994,7 +996,7 @@ BACKUP_RETENTION_DAYS = 30
 @shared_task
 def backup_database() -> dict:
     """
-    Dump the MySQL database, compress it with gzip, and upload to S3.
+    Dump the Postgres database, compress it with gzip, and upload to S3.
 
     Key format: backups/leafletter-YYYY-MM-DD-HHMMSS.sql.gz
     Prunes objects under the backups/ prefix older than BACKUP_RETENTION_DAYS.
@@ -1013,30 +1015,32 @@ def backup_database() -> dict:
 
 def _run_backup() -> dict:
     """Core logic for backup_database, separated so the task wrapper can catch all exceptions."""
-    # ── Build mysqldump command ──────────────────────────────────────────────
-    db_name = os.environ.get('MYSQL_DATABASE', 'leafletter')
-    db_user = os.environ.get('MYSQL_USER', 'leafletter')
-    db_password = os.environ.get('MYSQL_PASSWORD', 'leafletter')
-    db_host = os.environ.get('MYSQL_HOST', 'localhost')
-    db_port = os.environ.get('MYSQL_PORT', '3306')
+    # ── Build pg_dump command ────────────────────────────────────────────────
+    db = settings.DATABASES['default']
+    db_name = db['NAME']
+    db_user = db['USER']
+    db_password = db['PASSWORD']
+    db_host = db['HOST']
+    db_port = str(db['PORT'])
 
     cmd = [
-        'mysqldump',
+        'pg_dump',
         f'--host={db_host}',
         f'--port={db_port}',
-        f'--user={db_user}',
-        f'--password={db_password}',
-        '--single-transaction',
-        '--routines',
-        '--triggers',
+        f'--username={db_user}',
+        '--format=plain',
+        '--no-owner',
+        '--no-privileges',
         db_name,
     ]
 
-    logger.info('backup_database: starting mysqldump for database %s on %s', db_name, db_host)
+    env = {**os.environ, 'PGPASSWORD': db_password}
+    logger.info('backup_database: starting pg_dump for database %s on %s', db_name, db_host)
     result = subprocess.run(
         cmd,
         capture_output=True,
         check=True,
+        env=env,
     )
     sql_bytes = result.stdout
     logger.info('backup_database: dump complete, %d bytes raw', len(sql_bytes))

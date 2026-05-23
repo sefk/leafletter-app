@@ -3,9 +3,23 @@ Django settings for leafletter project.
 """
 
 import os
+import sys
 from pathlib import Path
 
+import dj_database_url
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Django's GDAL/GEOS auto-discovery on macOS doesn't know about Homebrew's
+# /opt/homebrew/lib path or newer SONAME versions (GDAL 3.13+). On Linux
+# (Railway), find_library finds them by name; this branch is a no-op there.
+if sys.platform == 'darwin':
+    for _setting, _path in (
+        ('GDAL_LIBRARY_PATH', '/opt/homebrew/opt/gdal/lib/libgdal.dylib'),
+        ('GEOS_LIBRARY_PATH', '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'),
+    ):
+        if os.path.exists(_path):
+            globals()[_setting] = _path
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-wti#q9%lysc97#8y%cxo2ucna_kurpg2@gxhm(4-n01)t5=p4s')
 
@@ -93,18 +107,15 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'leafletter.wsgi.application'
 
+# Railway exposes DATABASE_URL on its Postgres service. Locally we fall back
+# to a postgis://leafletter:leafletter@localhost:5432/leafletter URL so dev
+# works without any env vars.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.mysql',
-        'NAME': os.environ.get('MYSQL_DATABASE', 'leafletter'),
-        'USER': os.environ.get('MYSQL_USER', 'leafletter'),
-        'PASSWORD': os.environ.get('MYSQL_PASSWORD', 'leafletter'),
-        'HOST': os.environ.get('MYSQL_HOST', 'localhost'),
-        'PORT': os.environ.get('MYSQL_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
-    }
+    'default': dj_database_url.config(
+        default='postgis://leafletter:leafletter@localhost:5432/leafletter',
+        engine='django.contrib.gis.db.backends.postgis',
+        conn_max_age=600,
+    ),
 }
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -195,13 +206,13 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
 
-# Celery
-_mysql_user = os.environ.get('MYSQL_USER', 'leafletter')
-_mysql_password = os.environ.get('MYSQL_PASSWORD', 'leafletter')
-_mysql_host = os.environ.get('MYSQL_HOST', 'localhost')
-_mysql_port = os.environ.get('MYSQL_PORT', '3306')
-_mysql_db = os.environ.get('MYSQL_DATABASE', 'leafletter')
-CELERY_BROKER_URL = f'sqla+mysql://{_mysql_user}:{_mysql_password}@{_mysql_host}:{_mysql_port}/{_mysql_db}'
+# Celery — reuse the Postgres DB as the broker via Kombu's SQLAlchemy transport.
+# SQLAlchemy's default Postgres driver is psycopg2, which matches our deps.
+_db = DATABASES['default']
+CELERY_BROKER_URL = (
+    f"sqla+postgresql://{_db['USER']}:{_db['PASSWORD']}"
+    f"@{_db['HOST']}:{_db['PORT']}/{_db['NAME']}"
+)
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'

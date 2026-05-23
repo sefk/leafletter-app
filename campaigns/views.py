@@ -410,13 +410,13 @@ def manage_campaign_list(request):
         sort_dir = 'desc'
 
     # Fetch campaigns without any multi-table JOIN annotations — multiple
-    # COUNT DISTINCT JOINs in one query cause a row explosion on MySQL.
+    # COUNT DISTINCT JOINs in one query cause a row explosion.
     # Pre-sort by is_test so test campaigns stay grouped; secondary sort will
     # be applied in Python after annotated counts are attached (see below).
     campaigns = list(qs.order_by('is_test', '-created_at'))
     campaign_pks = [c.pk for c in campaigns]
 
-    # Bulk counts — each is a separate simple query to avoid JOIN row explosion on MySQL.
+    # Bulk counts — each is a separate simple query to avoid JOIN row explosion.
     street_counts = dict(
         CampaignStreet.objects.filter(campaign_id__in=campaign_pks)
         .values('campaign_id').annotate(c=Count('id')).values_list('campaign_id', 'c')
